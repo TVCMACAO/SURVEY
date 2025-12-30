@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  django:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: survey-django
+    command: sh -c "python manage.py collectstatic --noinput && gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000"
+    volumes:
+      - ./backend:/app
+      - static_volume:/app/staticfiles
+    expose:
+      - 8000
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=${DEBUG:-0}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - MONGO_URI=${MONGO_URI:-mongodb://root:1b20629a87ea780a63aa@easypanel.clinicamaicao.com:27017/?authSource=admin&tls=false}
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-survey_db}
+    restart: unless-stopped
+    networks:
+      - survey-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/surveys/\")' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    container_name: survey-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - static_volume:/app/staticfiles
+    depends_on:
+      django:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - survey-network
+
+volumes:
+  static_volume:
+    driver: local
+
+networks:
+  survey-network:
+    driver: bridge
+
+
+

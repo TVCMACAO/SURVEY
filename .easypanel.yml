@@ -1,0 +1,82 @@
+# EasyPanel Configuration
+# Este archivo proporciona información para la configuración en EasyPanel
+
+name: survey-app
+description: Aplicación de encuestas con Django y React
+
+# Tipo de servicio
+type: docker-compose
+
+# Archivo docker-compose a usar
+compose_file: docker-compose-easypanel.yml
+
+# Variables de entorno requeridas
+environment:
+  SECRET_KEY:
+    required: true
+    description: "Clave secreta de Django. Generar con: python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'"
+    example: "django-insecure-change-this-in-production"
+  
+  DEBUG:
+    required: false
+    default: "0"
+    description: "Modo debug (0 = False, 1 = True)"
+  
+  ALLOWED_HOSTS:
+    required: true
+    description: "Hosts permitidos separados por comas"
+    example: "easypanel.clinicamaicao.com,www.clinicamaicao.com"
+  
+  MONGO_URI:
+    required: true
+    description: "URI de conexión a MongoDB"
+    example: "mongodb://root:password@easypanel.clinicamaicao.com:27017/?authSource=admin&tls=false"
+  
+  MONGO_DB_NAME:
+    required: false
+    default: "survey_db"
+    description: "Nombre de la base de datos MongoDB"
+
+# Puertos
+ports:
+  - container: 80
+    host: 80
+    protocol: http
+
+# Volúmenes
+volumes:
+  - name: static_volume
+    type: local
+
+# Redes
+networks:
+  - name: survey-network
+    driver: bridge
+
+# Health checks
+healthcheck:
+  django:
+    test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8000/api/surveys/ || exit 1"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+
+# Dependencias
+depends_on:
+  - django
+
+# Instrucciones de build
+build:
+  context: .
+  dockerfile: nginx/Dockerfile
+  args: []
+
+# Notas adicionales
+notes: |
+  Esta aplicación requiere:
+  1. MongoDB configurado y accesible
+  2. Variables de entorno configuradas correctamente
+  3. El frontend se construye automáticamente durante el build de nginx
+  
+  Para más información, consulta EASYPANEL_DEPLOY.md
+

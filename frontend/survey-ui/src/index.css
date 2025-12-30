@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Aggressively force white fill for icons */
+.fa-icon-force-white {
+    color: white !important; /* Ensure the SVG itself is white */
+}
+.fa-icon-force-white path {
+    fill: white !important; /* Force the path fill to white */
+}
+
+/* Aggressively force currentColor fill for icons */
+.fa-icon-force-current {
+    color: inherit !important; /* Ensure SVG inherits color from parent */
+}
+.fa-icon-force-current path {
+    fill: currentColor !important; /* Force the path fill to inherited color */
+}
+
+/* SOLUCIÓN DEFINITIVA: Forzar que TODOS los h3 con estas clases se muestren completos */
+h3.text-xl.font-black.text-gray-800,
+h3.text-xl.font-black.text-gray-900,
+h3.text-xl.font-black {
+    word-break: break-word !important;
+    overflow-wrap: anywhere !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    flex: 1 1 0% !important;
+    line-height: 1.5 !important;
+}
+
+/* Forzar también en contenedores flex */
+.flex.items-start.justify-between h3 {
+    min-width: 0 !important;
+    flex: 1 1 0% !important;
+}
+
+/* Hide scrollbar for mobile sidebar */
+.scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+}
