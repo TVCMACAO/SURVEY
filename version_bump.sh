@@ -74,9 +74,8 @@ if [ -f "$MOBILE_PUBSPEC" ]; then
     fi
     
     # Actualizar versión en pubspec.yaml usando Python para mayor robustez
-    python3 -c "
+    python3 <<EOF
 import re
-import sys
 new_version = '$NEW_VERSION'
 build_number = '$CURRENT_BUILD'
 file_path = '$MOBILE_PUBSPEC'
@@ -85,16 +84,15 @@ with open(file_path, 'r') as f:
 content = re.sub(r'^version:\s*[^\n]+', f'version: {new_version}+{build_number}', content, flags=re.MULTILINE)
 with open(file_path, 'w') as f:
     f.write(content)
-"
+EOF
     echo "✅ Actualizado: $MOBILE_PUBSPEC (versión: $NEW_VERSION+$CURRENT_BUILD)"
 fi
 
 # Actualizar package.json del frontend (si existe)
 if [ -f "$FRONTEND_PACKAGE" ]; then
     # Usar Python para actualizar JSON de forma segura
-    python3 -c "
+    python3 <<EOF
 import json
-import sys
 new_version = '$NEW_VERSION'
 file_path = '$FRONTEND_PACKAGE'
 with open(file_path, 'r') as f:
@@ -102,7 +100,7 @@ with open(file_path, 'r') as f:
 pkg['version'] = new_version
 with open(file_path, 'w') as f:
     json.dump(pkg, f, indent=2)
-"
+EOF
     echo "✅ Actualizado: $FRONTEND_PACKAGE"
 fi
 
