@@ -31,23 +31,30 @@ def serve_frontend(request, path=''):
     # #region agent log
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"Serving frontend - Host: {request.get_host()}, Path: {request.path}")
+    logger.info(f"Serving frontend - Host: {request.get_host()}, Path: {request.path}, Captured path: {path}")
     # #endregion
     
     frontend_root = Path(settings.FRONTEND_ROOT)
     
-    # Remove leading slash from path
-    file_path = path.lstrip('/')
+    # Use request.path if path parameter is empty (from regex capture)
+    url_path = path if path else request.path.lstrip('/')
+    
+    # #region agent log
+    logger.info(f"URL path to check: {url_path}, Frontend root: {frontend_root}")
+    # #endregion
     
     # Try to serve the actual file if it exists
-    if file_path:
-        full_path = frontend_root / file_path
+    if url_path:
+        full_path = frontend_root / url_path
         # #region agent log
-        logger.info(f"Checking for file: {full_path}, exists: {full_path.exists()}")
+        logger.info(f"Checking for file: {full_path}, exists: {full_path.exists()}, is_file: {full_path.is_file() if full_path.exists() else False}")
         # #endregion
         if full_path.exists() and full_path.is_file():
+            # #region agent log
+            logger.info(f"Serving actual file: {full_path}")
+            # #endregion
             # Serve the actual file with correct MIME type
-            return static_serve(request, file_path, document_root=str(frontend_root))
+            return static_serve(request, url_path, document_root=str(frontend_root))
     
     # If file doesn't exist, serve index.html for SPA routing
     index_path = frontend_root / 'index.html'
@@ -66,5 +73,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('surveys.urls')),
     # Serve frontend files and SPA routes
-    re_path(r'^(?!api|admin|static).*$', serve_frontend, name='frontend'),
+    # Capture the path to pass to the view
+    re_path(r'^(?!api|admin|static)(?P<path>.*)$', serve_frontend, name='frontend'),
 ]
