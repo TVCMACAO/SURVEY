@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">chat-survey-app.rhfh8t.easypanel.host</domain>
+        <domain includeSubdomains="true">easypanel.clinicamaicao.com</domain>
+        <domain includeSubdomains="true">www.clinicamaicao.com</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
+
