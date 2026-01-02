@@ -1775,10 +1775,10 @@ class UserListCreate(APIView):
         return Response(serializer.data)
 
     def post(self, request):
-        # Verificar que el usuario es 'root'
+        # Verificar que el usuario es 'root' o 'group_admin'
         try:
             user_role = getattr(request.user, 'role', None) if request.user and request.user.is_authenticated else None
-            if user_role != 'root':
+            if user_role not in ('root', 'group_admin'):
                 return Response(
                     {"detail": "No tienes permisos para crear usuarios."},
                     status=status.HTTP_403_FORBIDDEN
@@ -1790,7 +1790,6 @@ class UserListCreate(APIView):
             )
 
         # Para group_admin, forzar que el usuario se asigne a su grupo
-        user_role = getattr(request.user, 'role', None)
         user_group_id = getattr(request.user, 'user_group_id', None)
         
         if user_role == 'group_admin':
