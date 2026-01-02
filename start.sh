@@ -46,11 +46,22 @@ log "Creando directorio de staticfiles..."
 mkdir -p /app/staticfiles
 chmod 755 /app/staticfiles
 
-# Recolectar archivos estáticos
-log "Recolectando archivos estáticos..."
+# Ejecutar migraciones de Django
+log "Ejecutando migraciones de Django..."
 cd /app
 # #region agent log
-log "HYPOTHESIS B: Ejecutando collectstatic..."
+log "HYPOTHESIS B: Ejecutando migraciones de Django..."
+# #endregion
+if ! python manage.py migrate --noinput 2>&1 | tee -a "$LOG_FILE"; then
+    log "ERROR: Las migraciones fallaron"
+    exit 1
+fi
+log "✅ Migraciones completadas exitosamente!"
+
+# Recolectar archivos estáticos
+log "Recolectando archivos estáticos..."
+# #region agent log
+log "HYPOTHESIS C: Ejecutando collectstatic..."
 # #endregion
 if ! python manage.py collectstatic --noinput 2>&1 | tee -a "$LOG_FILE"; then
     log "Advertencia: collectstatic falló, continuando..."
@@ -59,7 +70,7 @@ fi
 # Verificar que Python y Django están disponibles
 log "Verificando instalación de Django..."
 # #region agent log
-log "HYPOTHESIS C: Verificando que Django está instalado..."
+log "HYPOTHESIS D: Verificando que Django está instalado..."
 # #endregion
 if ! python -c "import django; print(django.get_version())" 2>&1 | tee -a "$LOG_FILE"; then
     log "ERROR: Django no está instalado o no es accesible"
@@ -80,7 +91,7 @@ fi
 # Verificar conexión a MongoDB antes de iniciar Django
 log "Verificando conexión a MongoDB..."
 # #region agent log
-log "HYPOTHESIS D: Verificando conexión a MongoDB..."
+log "HYPOTHESIS E: Verificando conexión a MongoDB..."
 # #endregion
 if ! python -c "
 import pymongo
@@ -100,7 +111,7 @@ fi
 # Iniciar Django/Gunicorn
 log "Iniciando Django/Gunicorn en 0.0.0.0:8000..."
 # #region agent log
-log "HYPOTHESIS E: Iniciando Gunicorn en 0.0.0.0:8000 para EasyPanel..."
+log "HYPOTHESIS F: Iniciando Gunicorn en 0.0.0.0:8000 para EasyPanel..."
 # #endregion
 log "EasyPanel's Nginx se conectará a este puerto"
 exec gunicorn survey_project.wsgi:application \
