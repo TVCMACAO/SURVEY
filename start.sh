@@ -77,11 +77,25 @@ if ! python manage.py migrate --noinput 2>&1 | tee -a "$LOG_FILE"; then
     exit 1
 fi
 log "✅ Migraciones completadas exitosamente!"
+
+# Asegurar que los usuarios por defecto existan
+log "Verificando/creando usuarios por defecto..."
 # #region agent log
 if [ -f "$DEBUG_LOG" ] || [ -d "$(dirname "$DEBUG_LOG")" ]; then
     DB_PATH=$(python3 -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings'); django.setup(); from django.conf import settings; print(settings.DATABASES['default']['NAME'])" 2>/dev/null || echo "unknown")
-    USER_COUNT=$(python3 -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings'); django.setup(); from surveys.models import User; print(User.objects.count())" 2>/dev/null || echo "unknown")
-    echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh:75\",\"message\":\"After migrations - checking users\",\"data\":{\"db_path\":\"$DB_PATH\",\"db_exists\":$([ -f "$DB_PATH" ] && echo true || echo false),\"user_count\":\"$USER_COUNT\",\"hypothesisId\":\"D\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}" >> "$DEBUG_LOG" 2>/dev/null || true
+    USER_COUNT_BEFORE=$(python3 -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings'); django.setup(); from surveys.models import User; print(User.objects.count())" 2>/dev/null || echo "unknown")
+    echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh:75\",\"message\":\"Before ensuring users\",\"data\":{\"db_path\":\"$DB_PATH\",\"db_exists\":$([ -f "$DB_PATH" ] && echo true || echo false),\"user_count_before\":\"$USER_COUNT_BEFORE\",\"hypothesisId\":\"E\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}" >> "$DEBUG_LOG" 2>/dev/null || true
+fi
+# #endregion
+if python manage.py shell -c "from backend.ensure_users import ensure_users; ensure_users()" 2>&1 | tee -a "$LOG_FILE"; then
+    log "✅ Usuarios verificados/creados"
+else
+    log "⚠️  Advertencia: Error al verificar usuarios, continuando..."
+fi
+# #region agent log
+if [ -f "$DEBUG_LOG" ] || [ -d "$(dirname "$DEBUG_LOG")" ]; then
+    USER_COUNT_AFTER=$(python3 -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings'); django.setup(); from surveys.models import User; print(User.objects.count())" 2>/dev/null || echo "unknown")
+    echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh:82\",\"message\":\"After ensuring users\",\"data\":{\"user_count_after\":\"$USER_COUNT_AFTER\",\"hypothesisId\":\"E\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}" >> "$DEBUG_LOG" 2>/dev/null || true
 fi
 # #endregion
 
