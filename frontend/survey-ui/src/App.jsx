@@ -2373,6 +2373,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
 // --- VISTA: GESTIÓN DE USUARIOS ---
 
 const UserManagementView = ({ onBack, onLogout, userRole }) => {
+  const [activeTab, setActiveTab] = useState('users'); // 'users' or 'groups'
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showUserForm, setShowUserForm] = useState(false);
@@ -2677,7 +2678,14 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       </header>
 
       <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
-        {showUserForm ? (
+        {activeTab === 'groups' ? (
+          <UserGroupsManager 
+            onGroupSelect={(group) => {
+              setActiveTab('users');
+              // Opcional: filtrar usuarios por grupo o mostrar información del grupo
+            }}
+          />
+        ) : showUserForm ? (
           <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black text-gray-800">
