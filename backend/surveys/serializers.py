@@ -67,6 +67,30 @@ class UserSerializer(serializers.Serializer):
     
     def to_representation(self, instance):
         """Convierte el documento de MongoDB o MongoUser a dict"""
+        # #region agent log
+        import json
+        import time
+        log_file_path = '/app/debug.log'
+        try:
+            log_data = {
+                "timestamp": int(time.time() * 1000),
+                "location": "serializers.py:UserSerializer.to_representation:entry",
+                "message": "to_representation called",
+                "data": {
+                    "instance_type": type(instance).__name__,
+                    "is_dict": isinstance(instance, dict),
+                    "has_user_doc": hasattr(instance, '_user_doc') if instance else False,
+                    "hypothesisId": "E"
+                },
+                "sessionId": "debug-session",
+                "runId": "run1"
+            }
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps(log_data) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
         try:
             if isinstance(instance, dict):
                 data = instance.copy()
@@ -114,9 +138,30 @@ class UserSerializer(serializers.Serializer):
                 }
         except Exception as e:
             # Fallback seguro en caso de error
+            # #region agent log
             import logging
+            import traceback
             logger = logging.getLogger(__name__)
             logger.error(f"Error serializing user: {type(e).__name__}: {str(e)}")
+            try:
+                log_data = {
+                    "timestamp": int(time.time() * 1000),
+                    "location": "serializers.py:UserSerializer.to_representation:error",
+                    "message": "Error in to_representation",
+                    "data": {
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                        "traceback": ''.join(traceback.format_exception(type(e), e, e.__traceback__)),
+                        "hypothesisId": "F"
+                    },
+                    "sessionId": "debug-session",
+                    "runId": "run1"
+                }
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps(log_data) + '\n')
+            except Exception:
+                pass
+            # #endregion
             return {
                 'id': str(getattr(instance, 'id', '')),
                 'username': getattr(instance, 'username', ''),

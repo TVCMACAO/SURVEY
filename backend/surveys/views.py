@@ -1602,13 +1602,102 @@ class CurrentUserView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        # #region agent log
+        import json
+        import time
+        log_file_path = '/app/debug.log'
         try:
+            log_data = {
+                "timestamp": int(time.time() * 1000),
+                "location": "views.py:CurrentUserView.get",
+                "message": "CurrentUserView.get called",
+                "data": {
+                    "user_type": type(request.user).__name__ if request.user else "None",
+                    "user_authenticated": request.user.is_authenticated if request.user else False,
+                    "has_user": request.user is not None,
+                    "hypothesisId": "A"
+                },
+                "sessionId": "debug-session",
+                "runId": "run1"
+            }
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps(log_data) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        try:
+            # #region agent log
+            try:
+                user_attrs = {}
+                if request.user:
+                    user_attrs = {
+                        "has_username": hasattr(request.user, 'username'),
+                        "has_role": hasattr(request.user, 'role'),
+                        "has_user_group_id": hasattr(request.user, 'user_group_id'),
+                        "has_user_doc": hasattr(request.user, '_user_doc'),
+                        "username": getattr(request.user, 'username', None),
+                        "role": getattr(request.user, 'role', None),
+                        "user_group_id": getattr(request.user, 'user_group_id', None),
+                    }
+                log_data = {
+                    "timestamp": int(time.time() * 1000),
+                    "location": "views.py:CurrentUserView.get:before_serialize",
+                    "message": "Before serializing user",
+                    "data": {"user_attrs": user_attrs, "hypothesisId": "B"},
+                    "sessionId": "debug-session",
+                    "runId": "run1"
+                }
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps(log_data) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
             serializer = UserSerializer(request.user)
+            
+            # #region agent log
+            try:
+                log_data = {
+                    "timestamp": int(time.time() * 1000),
+                    "location": "views.py:CurrentUserView.get:after_serialize",
+                    "message": "After serializing user",
+                    "data": {"serializer_data_keys": list(serializer.data.keys()) if hasattr(serializer, 'data') else None, "hypothesisId": "C"},
+                    "sessionId": "debug-session",
+                    "runId": "run1"
+                }
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps(log_data) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
             return Response(serializer.data)
         except Exception as e:
+            # #region agent log
             import logging
+            import traceback
             logger = logging.getLogger(__name__)
             logger.error(f"Error in CurrentUserView: {type(e).__name__}: {str(e)}", exc_info=True)
+            try:
+                log_data = {
+                    "timestamp": int(time.time() * 1000),
+                    "location": "views.py:CurrentUserView.get:error",
+                    "message": "Error in CurrentUserView",
+                    "data": {
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                        "traceback": ''.join(traceback.format_exception(type(e), e, e.__traceback__)),
+                        "hypothesisId": "D"
+                    },
+                    "sessionId": "debug-session",
+                    "runId": "run1"
+                }
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps(log_data) + '\n')
+            except Exception:
+                pass
+            # #endregion
             return Response(
                 {"detail": f"Error al obtener información del usuario: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
