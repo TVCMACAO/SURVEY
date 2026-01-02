@@ -46,6 +46,22 @@ def ensure_users():
     logger.info(f"Verificando usuarios en: {db_path_resolved}")
     logger.info(f"Base de datos existe: {db_path_resolved.exists()}")
     
+    # Verificar que las tablas existan antes de intentar crear usuarios
+    from django.db import connection
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='surveys_user';")
+            table_exists = cursor.fetchone() is not None
+        if not table_exists:
+            logger.error("❌ La tabla surveys_user no existe. Las migraciones pueden no haberse ejecutado correctamente.")
+            logger.info("Intentando ejecutar migraciones...")
+            from django.core.management import call_command
+            call_command('migrate', verbosity=1, interactive=False)
+            logger.info("✅ Migraciones ejecutadas")
+    except Exception as e:
+        logger.error(f"❌ Error al verificar/crear tablas: {e}")
+        return 0, 0
+    
     created_count = 0
     updated_count = 0
     

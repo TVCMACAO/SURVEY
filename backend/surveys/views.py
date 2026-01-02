@@ -38,9 +38,9 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         username = request_data.get('username', '')
         has_password = 'password' in request_data
         logger.info(f"Token request received - username: {username}, has_password: {has_password}, data_keys: {list(request_data.keys())}")
-            DEBUG_LOG_PATH = Path('/app/debug.log')
-            # Ensure directory exists
-            DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DEBUG_LOG_PATH = Path('/app/debug.log')
+        # Ensure directory exists
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         try:
             from django.conf import settings
             from surveys.models import User
@@ -237,7 +237,7 @@ class SurveyListCreate(APIView):
         
         # #region agent log
         import json
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        log_file_path = '/app/debug.log'
         try:
             with open(log_file_path, 'a') as f:
                 f.write(json.dumps({
@@ -561,7 +561,7 @@ class PublicSurveyView(APIView):
             import json
             log_data = {"location": "views.py:325", "message": "PublicSurveyView.get entry", "data": {"pk": pk}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
             try:
-                with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                with open('/app/debug.log', 'a') as f:
                     f.write(json.dumps(log_data) + '\n')
             except: pass
             
@@ -582,13 +582,13 @@ class PublicSurveyView(APIView):
                 survey = surveys_collection.find_one(query)
                 log_data = {"location": "views.py:333", "message": "ObjectId search result", "data": {"found": survey is not None}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
                 try:
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                    with open('/app/debug.log', 'a') as f:
                         f.write(json.dumps(log_data) + '\n')
                 except: pass
             except Exception as e:
                 log_data = {"location": "views.py:336", "message": "ObjectId search exception", "data": {"error": str(e)}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
                 try:
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                    with open('/app/debug.log', 'a') as f:
                         f.write(json.dumps(log_data) + '\n')
                 except: pass
             
@@ -605,7 +605,7 @@ class PublicSurveyView(APIView):
             if not survey:
                 log_data = {"location": "views.py:346", "message": "Survey not found", "data": {"pk": pk}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
                 try:
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                    with open('/app/debug.log', 'a') as f:
                         f.write(json.dumps(log_data) + '\n')
                 except: pass
                 raise NotFound(detail="Encuesta no encontrada.")
@@ -614,13 +614,13 @@ class PublicSurveyView(APIView):
             is_public = survey.get('is_public', False)
             log_data = {"location": "views.py:350", "message": "Survey found, checking is_public", "data": {"is_public": is_public, "survey_id": str(survey.get('_id', 'N/A'))}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
             try:
-                with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                with open('/app/debug.log', 'a') as f:
                     f.write(json.dumps(log_data) + '\n')
             except: pass
             if not is_public:
                 log_data = {"location": "views.py:381", "message": "Survey is not public, raising ValidationError", "data": {"survey_id": str(survey.get('_id', 'N/A'))}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
                 try:
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                    with open('/app/debug.log', 'a') as f:
                         f.write(json.dumps(log_data) + '\n')
                 except: pass
                 raise ValidationError(detail="Esta encuesta no es pública. Se requiere autenticación para acceder.")
@@ -644,7 +644,7 @@ class PublicSurveyView(APIView):
             import traceback
             log_data = {"location": "views.py:409", "message": "Unexpected exception in PublicSurveyView", "data": {"error": str(e), "traceback": traceback.format_exc()}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
             try:
-                with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                with open('/app/debug.log', 'a') as f:
                     f.write(json.dumps(log_data) + '\n')
             except: pass
             raise NotFound(detail="Encuesta no encontrada o ID inválido.")
@@ -760,7 +760,7 @@ class ResponseSyncView(APIView):
         import logging
         import json
         logger = logging.getLogger(__name__)
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        log_file_path = '/app/debug.log'
         
         # Log ANTES de cualquier procesamiento
         try:
@@ -800,7 +800,7 @@ class ResponseSyncView(APIView):
         logger = logging.getLogger(__name__)
         
         # Log de entrada - escribir a archivo Y stdout
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        log_file_path = '/app/debug.log'
         log_message = f"=== SYNC REQUEST RECEIVED at {__import__('time').time()} ==="
         logger.info(log_message)
         print(log_message, flush=True)  # Forzar flush para gunicorn
@@ -931,7 +931,7 @@ class ResponseSyncView(APIView):
                             'runId': 'run1',
                             'hypothesisId': 'N'
                         }
-                        with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                        with open('/app/debug.log', 'a') as f:
                             f.write(json.dumps(log_entry) + '\n')
                     except Exception as log_err:
                         logger.warning(f"Could not write to debug log: {log_err}")
@@ -962,7 +962,7 @@ class ResponseSyncView(APIView):
                         'runId': 'run1',
                         'hypothesisId': 'P'
                     }
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                    with open('/app/debug.log', 'a') as f:
                         f.write(json.dumps(log_entry) + '\n')
                 except Exception as log_err:
                     logger.warning(f"Could not write survey found log: {log_err}")
@@ -1022,7 +1022,7 @@ class ResponseSyncView(APIView):
                         'runId': 'run1',
                         'hypothesisId': 'Q'
                     }
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                    with open('/app/debug.log', 'a') as f:
                         f.write(json.dumps(log_entry) + '\n')
                 except Exception as log_err:
                     logger.warning(f"Could not write success log: {log_err}")
@@ -1056,7 +1056,7 @@ class ResponseSyncView(APIView):
                         'runId': 'run1',
                         'hypothesisId': 'L'
                     }
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                    with open('/app/debug.log', 'a') as f:
                         f.write(json.dumps(log_entry) + '\n')
                 except Exception as log_err:
                     logger.warning(f"Could not write to debug log: {log_err}")
