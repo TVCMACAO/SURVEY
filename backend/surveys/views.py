@@ -490,65 +490,66 @@ class SurveyListCreate(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        surveys_collection = get_surveys_collection()
-        group_id = request.query_params.get('group_id')  # Grupo de encuestas (legacy)
-        user_group_id = request.query_params.get('user_group_id')  # Grupo de usuarios
-        show_deleted = request.query_params.get('show_deleted', 'false').lower() == 'true'
-        
-        query = {}
-        
-        # Filtro por grupo de encuestas (legacy)
-        if group_id:
-            try:
-                query['group'] = ObjectId(group_id)
-            except Exception:
-                query['group'] = group_id
+        try:
+            surveys_collection = get_surveys_collection()
+            group_id = request.query_params.get('group_id')  # Grupo de encuestas (legacy)
+            user_group_id = request.query_params.get('user_group_id')  # Grupo de usuarios
+            show_deleted = request.query_params.get('show_deleted', 'false').lower() == 'true'
+            
+            query = {}
+            
+            # Filtro por grupo de encuestas (legacy)
+            if group_id:
+                try:
+                    query['group'] = ObjectId(group_id)
+                except Exception:
+                    query['group'] = group_id
 
-        # Filtro por grupo de usuarios según rol
-        user_role = None
-        if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
-            try:
-                user_role = getattr(request.user, 'role', None)
-            except (AttributeError, TypeError):
-                user_role = None
-        
-        # Root puede ver todas las encuestas o filtrar por user_group_id si se especifica
-        if user_role == 'root':
-            if user_group_id:
+            # Filtro por grupo de usuarios según rol
+            user_role = None
+            if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
+                try:
+                    user_role = getattr(request.user, 'role', None)
+                except (AttributeError, TypeError):
+                    user_role = None
+            
+            # Root puede ver todas las encuestas o filtrar por user_group_id si se especifica
+            if user_role == 'root':
+                if user_group_id:
+                    try:
+                        query['user_group_id'] = str(user_group_id)
+                    except Exception:
+                        query['user_group_id'] = user_group_id
+            # Admin de grupo y usuarios regulares solo ven encuestas de su grupo
+            elif user_role in ('group_admin', 'encuestador', 'analista'):
+                try:
+                    user_group_id = getattr(request.user, 'user_group_id', None)
+                    if user_group_id:
+                        query['user_group_id'] = str(user_group_id)
+                except (AttributeError, TypeError):
+                    pass
+            # Si se especifica user_group_id en query params, usarlo (solo para root)
+            elif user_group_id and user_role == 'root':
                 try:
                     query['user_group_id'] = str(user_group_id)
                 except Exception:
                     query['user_group_id'] = user_group_id
-        # Admin de grupo y usuarios regulares solo ven encuestas de su grupo
-        elif user_role in ('group_admin', 'encuestador', 'analista'):
-            try:
-                user_group_id = getattr(request.user, 'user_group_id', None)
-                if user_group_id:
-                    query['user_group_id'] = str(user_group_id)
-            except (AttributeError, TypeError):
-                pass
-        # Si se especifica user_group_id en query params, usarlo (solo para root)
-        elif user_group_id and user_role == 'root':
-            try:
-                query['user_group_id'] = str(user_group_id)
-            except Exception:
-                query['user_group_id'] = user_group_id
 
-        # Solo usuarios root pueden ver eliminadas, y solo si lo solicitan explícitamente
-        if not show_deleted or user_role != 'root':
-            # Excluir eliminadas: campo no existe o es False/None
-            # Usar $and para combinar con otras condiciones si existen
-            deleted_condition = {
-                '$or': [
-                    {'is_deleted': {'$ne': True}},
-                    {'is_deleted': {'$exists': False}}
-                ]
-            }
-            if query:
-                # Combinar condiciones existentes con filtro de eliminadas
-                query = {'$and': [query, deleted_condition]}
-            else:
-                query = deleted_condition
+            # Solo usuarios root pueden ver eliminadas, y solo si lo solicitan explícitamente
+            if not show_deleted or user_role != 'root':
+                # Excluir eliminadas: campo no existe o es False/None
+                # Usar $and para combinar con otras condiciones si existen
+                deleted_condition = {
+                    '$or': [
+                        {'is_deleted': {'$ne': True}},
+                        {'is_deleted': {'$exists': False}}
+                    ]
+                }
+                if query:
+                    # Combinar condiciones existentes con filtro de eliminadas
+                    query = {'$and': [query, deleted_condition]}
+                else:
+                    query = deleted_condition
 
             surveys = list(surveys_collection.find(query))
             
