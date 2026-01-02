@@ -1157,7 +1157,11 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
   const [showPreview, setShowPreview] = useState(false);
   const [surveyData, setSurveyData] = useState(initialSurveyData || { title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Initialize with initialSurveyData or default
   const [showSectionManager, setShowSectionManager] = useState(false);
-  const [selectedUserGroupId, setSelectedUserGroupId] = useState(initialSurveyData?.user_group_id || currentUser?.user_group_id || '');
+  // Para group_admin, siempre usar su grupo asignado (no puede elegir)
+  const initialGroupId = currentUser?.role === 'group_admin' 
+    ? (currentUser?.user_group_id || '')
+    : (initialSurveyData?.user_group_id || currentUser?.user_group_id || '');
+  const [selectedUserGroupId, setSelectedUserGroupId] = useState(initialGroupId);
 
   // Auto-resize textarea when title changes
   React.useEffect(() => {
@@ -1220,17 +1224,32 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
         conditional_logic: q.conditional_logic || null
       }));
       
+      // Para group_admin, siempre usar su grupo asignado
+      const finalUserGroupId = currentUser?.role === 'group_admin' 
+        ? (currentUser?.user_group_id || '')
+        : (initialSurveyData.user_group_id || currentUser?.user_group_id || '');
+      
       setSurveyData({
         ...initialSurveyData,
         questions: questionsWithSections,
         sections: sections,
-        user_group_id: initialSurveyData.user_group_id || currentUser?.user_group_id || ''
+        user_group_id: finalUserGroupId
       });
-      setSelectedUserGroupId(initialSurveyData.user_group_id || currentUser?.user_group_id || '');
+      setSelectedUserGroupId(finalUserGroupId);
     } else {
-      setSurveyData({ title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [] }); // Reset if no initial data
+      // Para group_admin, siempre inicializar con su grupo
+      const defaultGroupId = currentUser?.role === 'group_admin' 
+        ? (currentUser?.user_group_id || '')
+        : '';
+      setSurveyData({ 
+        title: "Mi Nueva Encuesta", 
+        description: "Descripción breve de la encuesta", 
+        questions: [],
+        user_group_id: defaultGroupId
+      });
+      setSelectedUserGroupId(defaultGroupId);
     }
-  }, [initialSurveyData]);
+  }, [initialSurveyData, currentUser]);
 
   const questionTools = [
     { label: 'Texto Corto', icon: faFont, color: 'blue', type: 'Texto Corto' },
@@ -1322,9 +1341,15 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
   };
   
   const handlePublish = () => {
+    // Para group_admin, siempre usar su grupo asignado
+    let finalUserGroupId = selectedUserGroupId || null;
+    if (currentUser?.role === 'group_admin' && currentUser?.user_group_id) {
+      finalUserGroupId = currentUser.user_group_id;
+    }
+    
     const dataToSave = {
       ...surveyData,
-      user_group_id: selectedUserGroupId || null
+      user_group_id: finalUserGroupId
     };
     onSave(dataToSave);
   };
@@ -3689,8 +3714,11 @@ export default function App() {
       // Root puede especificar user_group_id, group_admin y usuarios regulares se asigna automáticamente
       if (userRole === 'root' && surveyData.user_group_id) {
         surveyPayload.user_group_id = surveyData.user_group_id;
+      } else if (userRole === 'group_admin' && currentUser.user_group_id) {
+        // Para group_admin, SIEMPRE asignar automáticamente su grupo (no puede elegir)
+        surveyPayload.user_group_id = currentUser.user_group_id;
       } else if (userRole !== 'root' && currentUser.user_group_id) {
-        // Para group_admin y usuarios regulares, asignar automáticamente su grupo
+        // Para usuarios regulares, asignar automáticamente su grupo
         surveyPayload.user_group_id = currentUser.user_group_id;
       }
     }
