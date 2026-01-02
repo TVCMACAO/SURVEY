@@ -255,11 +255,11 @@ class UserGroupListCreate(APIView):
 class UserGroupRetrieveUpdateDestroy(APIView):
     """
     Gestiona la recuperación, actualización y eliminación de un grupo de usuarios específico.
-    - GET: Recupera un grupo de usuarios por ID (solo root).
+    - GET: Recupera un grupo de usuarios por ID (root puede ver todos, group_admin solo el suyo).
     - PUT: Actualiza un grupo de usuarios por ID (solo root).
     - DELETE: Elimina un grupo de usuarios por ID (solo root).
     """
-    permission_classes = [IsRootUser]
+    permission_classes = [CanViewUserGroup]
 
     def get_object(self, pk):
         groups_collection = get_user_groups_collection()

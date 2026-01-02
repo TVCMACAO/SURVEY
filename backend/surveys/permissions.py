@@ -71,6 +71,41 @@ class CanManageGroupUsers(permissions.BasePermission):
         return False
 
 
+class CanViewUserGroup(permissions.BasePermission):
+    """
+    Permiso que permite a root ver cualquier grupo, o a group_admin ver su propio grupo
+    """
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        
+        user_role = getattr(request.user, 'role', None)
+        if user_role == 'root':
+            return True
+        
+        # group_admin puede ver su propio grupo
+        if user_role == 'group_admin' and request.user.user_group_id:
+            return True
+        
+        return False
+    
+    def has_object_permission(self, request, view, obj):
+        """
+        Verifica que el group_admin solo pueda ver su propio grupo
+        """
+        user_role = getattr(request.user, 'role', None)
+        if user_role == 'root':
+            return True
+        
+        if user_role == 'group_admin' and request.user.user_group_id:
+            # Verificar que el grupo es el del usuario
+            group_id = str(obj.get('_id', obj.get('id', '')))
+            user_group_id = str(request.user.user_group_id)
+            return group_id == user_group_id
+        
+        return False
+
+
 class CanAccessGroupResource(permissions.BasePermission):
     """
     Permiso que permite acceso a recursos (encuestas, respuestas) del grupo del usuario
