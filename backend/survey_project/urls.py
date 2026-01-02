@@ -76,3 +76,9 @@ urlpatterns = [
     # Capture the path to pass to the view
     re_path(r'^(?!api|admin|static)(?P<path>.*)$', serve_frontend, name='frontend'),
 ]
+
+# Configurar handlers de error personalizados
+handler400 = 'survey_project.error_handlers.handler400'
+handler403 = 'survey_project.error_handlers.handler403'
+handler404 = 'survey_project.error_handlers.handler404'
+handler500 = 'survey_project.error_handlers.handler500'
