@@ -2377,6 +2377,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   const [loading, setLoading] = useState(true);
   const [showUserForm, setShowUserForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [userGroups, setUserGroups] = useState([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
     first_name: '',
@@ -2385,6 +2387,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     password: '',
     password_confirm: '',
     role: 'encuestador',
+    user_group_id: '',
     is_active: true
   });
   const [formError, setFormError] = useState('');
@@ -2411,9 +2414,25 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     }
   };
 
+  const fetchUserGroups = async () => {
+    setLoadingGroups(true);
+    try {
+      const response = await authenticatedFetch('/api/user-groups/');
+      if (response.ok) {
+        const data = await response.json();
+        setUserGroups(data);
+      }
+    } catch (err) {
+      console.error('Error al cargar grupos:', err);
+    } finally {
+      setLoadingGroups(false);
+    }
+  };
+
   useEffect(() => {
     if (userRole === 'root') {
       fetchUsers();
+      fetchUserGroups();
     } else {
       alert('No tienes permisos para acceder a esta sección.');
       onBack();
@@ -2431,6 +2450,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 
     if (formData.password.length < 8) {
       setFormError('La contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+
+    if (formData.role === 'group_admin' && !formData.user_group_id) {
+      setFormError('Debes asignar un grupo al administrador de grupo.');
       return;
     }
 
@@ -2455,6 +2479,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         password: '',
         password_confirm: '',
         role: 'encuestador',
+        user_group_id: '',
         is_active: true
       });
       alert('Usuario creado exitosamente.');
@@ -2475,6 +2500,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 
     if (formData.password && formData.password.length < 8) {
       setFormError('La contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+
+    if (formData.role === 'group_admin' && !formData.user_group_id) {
+      setFormError('Debes asignar un grupo al administrador de grupo.');
       return;
     }
 
@@ -2506,6 +2536,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         password: '',
         password_confirm: '',
         role: 'encuestador',
+        user_group_id: '',
         is_active: true
       });
       alert('Usuario actualizado exitosamente.');
@@ -2548,6 +2579,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       password: '',
       password_confirm: '',
       role: user.role || 'encuestador',
+      user_group_id: user.user_group_id || '',
       is_active: user.is_active !== undefined ? user.is_active : true
     });
     setShowUserForm(true);
@@ -2564,6 +2596,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       password: '',
       password_confirm: '',
       role: 'encuestador',
+      user_group_id: '',
       is_active: true
     });
     setShowUserForm(true);
@@ -2776,6 +2809,38 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                   </p>
                 )}
               </div>
+
+              {formData.role === 'group_admin' && (
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    Grupo <span className="text-red-500">*</span>
+                  </label>
+                  {loadingGroups ? (
+                    <p className="text-sm text-gray-500">Cargando grupos...</p>
+                  ) : (
+                    <>
+                      <select
+                        value={formData.user_group_id}
+                        onChange={(e) => setFormData({...formData, user_group_id: e.target.value})}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        required
+                      >
+                        <option value="">Seleccionar grupo</option>
+                        {userGroups.filter(g => g.is_active !== false).map(group => (
+                          <option key={group.id} value={group.id}>
+                            {group.name} {group.description ? `- ${group.description}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {userGroups.filter(g => g.is_active !== false).length === 0 && (
+                        <p className="text-xs text-red-500 mt-1">
+                          No hay grupos activos disponibles. Crea un grupo primero en la sección "Grupos".
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center gap-3">
                 <input
