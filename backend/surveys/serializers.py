@@ -248,6 +248,10 @@ class UserUpdateSerializer(serializers.Serializer):
         password = validated_data.pop('password', None)
         validated_data.pop('password_confirm', None)
         
+        # Convertir user_group_id vacío a None
+        if 'user_group_id' in validated_data and validated_data['user_group_id'] == '':
+            validated_data['user_group_id'] = None
+        
         if password:
             validated_data['password'] = password
         
