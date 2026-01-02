@@ -128,7 +128,7 @@ WSGI_APPLICATION = 'survey_project.wsgi.application'
 # If /app/data exists (volume mounted), use it; otherwise use default location
 import os
 # #region agent log
-DEBUG_LOG_PATH = Path('/home/vps/Documentos/survey-app/.cursor/debug.log')
+DEBUG_LOG_PATH = Path('/app/debug.log')  # Use container path
 try:
     import json
     import time
@@ -146,7 +146,8 @@ try:
     }
     with open(DEBUG_LOG_PATH, 'a') as f:
         f.write(json.dumps(log_data) + '\n')
-except Exception:
+except Exception as e:
+    # Silently fail to avoid breaking Django startup
     pass
 # #endregion
 if os.path.exists('/app/data'):
@@ -155,7 +156,7 @@ if os.path.exists('/app/data'):
     try:
         log_data = {
             "timestamp": int(time.time() * 1000),
-            "location": "settings.py:132",
+            "location": "settings.py:154",
             "message": "Using persistent volume path",
             "data": {
                 "db_path": str(SQLITE_DB_PATH),
@@ -165,13 +166,12 @@ if os.path.exists('/app/data'):
             "sessionId": "debug-session",
             "runId": "run1"
         }
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(DEBUG_LOG_PATH, 'a') as f:
             f.write(json.dumps(log_data) + '\n')
-        import logging
-        logging.getLogger(__name__).info(f"DEBUG: Using persistent path: {SQLITE_DB_PATH}, exists: {SQLITE_DB_PATH.exists()}")
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Debug log write failed: {e}")
+    except Exception:
+        # Silently fail to avoid breaking Django startup
+        pass
     # #endregion
 else:
     SQLITE_DB_PATH = BASE_DIR / 'db.sqlite3'
@@ -179,7 +179,7 @@ else:
     try:
         log_data = {
             "timestamp": int(time.time() * 1000),
-            "location": "settings.py:145",
+            "location": "settings.py:178",
             "message": "Using default path (NOT PERSISTENT)",
             "data": {
                 "db_path": str(SQLITE_DB_PATH),
@@ -190,13 +190,12 @@ else:
             "sessionId": "debug-session",
             "runId": "run1"
         }
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(DEBUG_LOG_PATH, 'a') as f:
             f.write(json.dumps(log_data) + '\n')
-        import logging
-        logging.getLogger(__name__).warning(f"DEBUG: Using DEFAULT path (NOT PERSISTENT): {SQLITE_DB_PATH}, exists: {SQLITE_DB_PATH.exists()}")
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Debug log write failed: {e}")
+    except Exception:
+        # Silently fail to avoid breaking Django startup
+        pass
     # #endregion
 
 DATABASES = {

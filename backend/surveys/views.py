@@ -39,6 +39,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         has_password = 'password' in request_data
         logger.info(f"Token request received - username: {username}, has_password: {has_password}, data_keys: {list(request_data.keys())}")
             DEBUG_LOG_PATH = Path('/app/debug.log')
+            # Ensure directory exists
+            DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         try:
             from django.conf import settings
             from surveys.models import User
