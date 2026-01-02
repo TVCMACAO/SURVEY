@@ -798,6 +798,13 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 'questions': validated_data.get('questions', survey['questions']),
                 'is_public': validated_data.get('is_public', survey.get('is_public', False))
             }
+            
+            # Para group_admin, asegurar que user_group_id no cambie (siempre el suyo)
+            if user_role == 'group_admin':
+                user_group_id = getattr(request.user, 'user_group_id', None)
+                if user_group_id:
+                    update_fields['user_group_id'] = str(user_group_id)
+            
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
