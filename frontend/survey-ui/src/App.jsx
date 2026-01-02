@@ -2454,10 +2454,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       return;
     }
 
-    if (formData.role === 'group_admin' && !formData.user_group_id) {
-      setFormError('Debes asignar un grupo al administrador de grupo.');
-      return;
-    }
+    // Removida validación obligatoria de grupo para group_admin
+    // El grupo se puede asignar después de crear el usuario y el grupo
 
     try {
       const response = await authenticatedFetch('/api/users/', {
@@ -2504,10 +2502,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       return;
     }
 
-    if (formData.role === 'group_admin' && !formData.user_group_id) {
-      setFormError('Debes asignar un grupo al administrador de grupo.');
-      return;
-    }
+    // Removida validación obligatoria de grupo para group_admin
+    // El grupo se puede asignar después de crear el usuario y el grupo
 
     try {
       const updateData = { ...formData };
@@ -2852,7 +2848,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
               {formData.role === 'group_admin' && (
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Grupo <span className="text-red-500">*</span>
+                    Grupo <span className="text-gray-400 text-xs">(Opcional - puedes asignarlo después)</span>
                   </label>
                   {loadingGroups ? (
                     <p className="text-sm text-gray-500">Cargando grupos...</p>
@@ -2862,9 +2858,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                         value={formData.user_group_id}
                         onChange={(e) => setFormData({...formData, user_group_id: e.target.value})}
                         className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                        required
                       >
-                        <option value="">Seleccionar grupo</option>
+                        <option value="">Seleccionar grupo (opcional)</option>
                         {userGroups.filter(g => g.is_active !== false).map(group => (
                           <option key={group.id} value={group.id}>
                             {group.name} {group.description ? `- ${group.description}` : ''}
@@ -2872,8 +2867,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                         ))}
                       </select>
                       {userGroups.filter(g => g.is_active !== false).length === 0 && (
-                        <p className="text-xs text-red-500 mt-1">
-                          No hay grupos activos disponibles. Crea un grupo primero en la sección "Grupos".
+                        <p className="text-xs text-gray-500 mt-1">
+                          No hay grupos activos disponibles. Puedes crear el grupo después y asignarlo a este administrador.
                         </p>
                       )}
                     </>
