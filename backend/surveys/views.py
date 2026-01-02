@@ -741,10 +741,31 @@ class SurveyRetrieveUpdateDestroy(APIView):
 
     def put(self, request, pk):
         survey = self.get_object(pk)
+        
+        # Verificar permisos: group_admin solo puede editar encuestas de su grupo
+        user_role = getattr(request.user, 'role', None)
+        if user_role == 'group_admin':
+            user_group_id = getattr(request.user, 'user_group_id', None)
+            survey_group_id = survey.get('user_group_id')
+            if user_group_id and survey_group_id and str(user_group_id) != str(survey_group_id):
+                return Response(
+                    {"detail": "No tienes permisos para editar encuestas de otros grupos."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            # Forzar que el user_group_id sea el del usuario (no puede cambiarlo)
+            if 'user_group_id' in request.data:
+                request.data['user_group_id'] = user_group_id
+        
         serializer = SurveySerializer(survey, data=request.data, partial=True)
         if serializer.is_valid():
             surveys_collection = get_surveys_collection()
             validated_data = serializer.validated_data
+            
+            # Para group_admin, asegurar que user_group_id sea el suyo
+            if user_role == 'group_admin':
+                user_group_id = getattr(request.user, 'user_group_id', None)
+                if user_group_id:
+                    validated_data['user_group_id'] = str(user_group_id)
             
             # Si se intenta cambiar el grupo, validar que el nuevo grupo existe
             if 'group' in validated_data:
