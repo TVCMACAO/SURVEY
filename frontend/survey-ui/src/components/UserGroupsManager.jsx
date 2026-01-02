@@ -196,11 +196,15 @@ const UserGroupsManager = ({ onClose, onGroupSelect }) => {
                 required
               >
                 <option value="">Seleccionar administrador</option>
-                {adminUsers.map(user => (
-                  <option key={user.id} value={user.id}>
-                    {user.username} {user.email ? `(${user.email})` : ''} {user.user_group_id ? '(Ya tiene grupo)' : ''}
-                  </option>
-                ))}
+                {adminUsers.map(user => {
+                  const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+                  const displayName = fullName ? `${user.username} - ${fullName}` : user.username;
+                  return (
+                    <option key={user.id} value={user.id}>
+                      {displayName} {user.user_group_id ? '(Ya tiene grupo)' : ''}
+                    </option>
+                  );
+                })}
               </select>
               {adminUsers.length === 0 && (
                 <div className="text-sm text-gray-500 mt-1 space-y-1">
