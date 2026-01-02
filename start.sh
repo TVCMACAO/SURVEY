@@ -12,7 +12,7 @@ log() {
 # #endregion
 
 log "=========================================="
-log "Iniciando Survey App"
+log "Iniciando Survey App (Django/Gunicorn)"
 log "=========================================="
 
 # Verificar variables de entorno
@@ -63,6 +63,17 @@ if ! python -c "import django; print(django.get_version())" 2>&1 | tee -a "$LOG_
     exit 1
 fi
 
+# Verificar que el frontend existe
+log "Verificando que el frontend está disponible..."
+FRONTEND_PATH="/app/frontend/survey-ui/dist/index.html"
+if [ ! -f "$FRONTEND_PATH" ]; then
+    log "ADVERTENCIA: Frontend no encontrado en $FRONTEND_PATH"
+    log "Buscando en otras ubicaciones..."
+    find /app -name "index.html" -type f 2>/dev/null | head -5 | tee -a "$LOG_FILE"
+else
+    log "✓ Frontend encontrado en $FRONTEND_PATH"
+fi
+
 # Verificar conexión a MongoDB antes de iniciar Django
 log "Verificando conexión a MongoDB..."
 # #region agent log
@@ -83,102 +94,17 @@ except Exception as e:
     exit 1
 fi
 
-# Iniciar Django en background
-log "Iniciando Django/Gunicorn..."
+# Iniciar Django/Gunicorn
+log "Iniciando Django/Gunicorn en 0.0.0.0:8000..."
 # #region agent log
-log "HYPOTHESIS E: Iniciando Gunicorn en 127.0.0.1:8000..."
+log "HYPOTHESIS E: Iniciando Gunicorn en 0.0.0.0:8000 para EasyPanel..."
 # #endregion
-gunicorn survey_project.wsgi:application \
-    --bind 127.0.0.1:8000 \
-    --workers 2 \
+log "EasyPanel's Nginx se conectará a este puerto"
+exec gunicorn survey_project.wsgi:application \
+    --bind 0.0.0.0:8000 \
+    --workers 4 \
     --timeout 120 \
     --access-logfile - \
     --error-logfile - \
     --log-level info \
-    --capture-output \
-    2>&1 | tee -a "$LOG_FILE" &
-DJANGO_PID=$!
-log "Gunicorn iniciado con PID: $DJANGO_PID"
-
-# Esperar un momento para que Gunicorn inicie
-sleep 2
-
-# Verificar que el proceso está corriendo
-if ! kill -0 $DJANGO_PID 2>/dev/null; then
-    log "ERROR: Gunicorn no se inició correctamente (PID $DJANGO_PID no existe)"
-    log "Últimas líneas del log:"
-    tail -20 "$LOG_FILE"
-    exit 1
-fi
-log "Gunicorn está corriendo (PID: $DJANGO_PID)"
-
-# Verificar que el puerto está escuchando
-log "Verificando que el puerto 8000 está escuchando..."
-# #region agent log
-log "HYPOTHESIS F: Verificando que 127.0.0.1:8000 está escuchando..."
-# #endregion
-for i in {1..30}; do
-    if netstat -tuln 2>/dev/null | grep -q ":8000 " || ss -tuln 2>/dev/null | grep -q ":8000 "; then
-        log "✓ Puerto 8000 está escuchando"
-        break
-    fi
-    if [ $i -eq 30 ]; then
-        log "ERROR: Puerto 8000 no está escuchando después de 30 intentos"
-        log "Estado del proceso:"
-        ps aux | grep gunicorn | grep -v grep || log "Gunicorn no está corriendo"
-        log "Puertos en uso:"
-        netstat -tuln 2>/dev/null || ss -tuln 2>/dev/null || log "No se pudo verificar puertos"
-        exit 1
-    fi
-    sleep 1
-done
-
-# Esperar a que Django esté listo
-log "Esperando a que Django responda..."
-# #region agent log
-log "HYPOTHESIS G: Probando endpoint /api/surveys/..."
-# #endregion
-for i in {1..60}; do
-    if curl -f -s http://127.0.0.1:8000/api/surveys/ > /dev/null 2>&1; then
-        log "✓ Django está listo y respondiendo!"
-        break
-    fi
-    if [ $i -eq 60 ]; then
-        log "ERROR: Django no respondió después de 60 intentos"
-        log "Estado del proceso Gunicorn:"
-        ps aux | grep gunicorn | grep -v grep || log "Gunicorn no está corriendo"
-        log "Últimas líneas del log:"
-        tail -30 "$LOG_FILE"
-        log "Probando conexión directa:"
-        curl -v http://127.0.0.1:8000/api/surveys/ 2>&1 | head -20 | tee -a "$LOG_FILE"
-        exit 1
-    fi
-    if [ $((i % 5)) -eq 0 ]; then
-        log "Intento $i/60: Django aún no está listo, esperando..."
-    fi
-    sleep 1
-done
-
-# Verificar que Django sigue corriendo
-if ! kill -0 $DJANGO_PID 2>/dev/null; then
-    log "ERROR: Django/Gunicorn se detuvo inesperadamente"
-    log "Últimas líneas del log:"
-    tail -30 "$LOG_FILE"
-    exit 1
-fi
-
-# Verificar configuración de Nginx
-log "Verificando configuración de Nginx..."
-if ! nginx -t 2>&1 | tee -a "$LOG_FILE"; then
-    log "ERROR: Configuración de Nginx inválida"
-    exit 1
-fi
-
-# Iniciar Nginx en foreground
-log "Iniciando Nginx..."
-# #region agent log
-log "HYPOTHESIS H: Iniciando Nginx en foreground..."
-# #endregion
-log "✓ Todos los servicios están listos. Nginx iniciando..."
-exec nginx -g 'daemon off;'
-
+    --capture-output

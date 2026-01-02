@@ -13,12 +13,11 @@ WORKDIR /app
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Stage 3: Production - Nginx + Django en un contenedor
+# Stage 3: Production - Solo Django/Gunicorn (EasyPanel maneja Nginx)
 FROM python:3.10-slim-bullseye
 
-# Install nginx, curl, and network tools
+# Install curl and network tools for diagnostics
 RUN apt-get update && apt-get install -y \
-    nginx \
     curl \
     net-tools \
     iproute2 \
@@ -30,18 +29,15 @@ COPY --from=backend-builder /usr/local/lib/python3.10/site-packages /usr/local/l
 COPY --from=backend-builder /usr/local/bin /usr/local/bin
 COPY backend/ /app/
 
-# Copy frontend
-COPY --from=frontend-builder /app/dist /usr/share/nginx/html
-
-# Copy nginx configuration
-COPY nginx/nginx.conf /etc/nginx/nginx.conf
+# Copy frontend build to the location Django expects
+COPY --from=frontend-builder /app/dist /app/frontend/survey-ui/dist
 
 # Copy startup script
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
-# Expose port 80
-EXPOSE 80
+# Expose port 8000 (EasyPanel's Nginx will proxy to this)
+EXPOSE 8000
 
-# Start script (runs Django in background and Nginx in foreground)
+# Start script (runs Django/Gunicorn only)
 CMD ["/start.sh"]

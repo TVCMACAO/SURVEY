@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: survey-mongo
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME:-root}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-surveypass123}
+    volumes:
+      - mongo_data:/data/db
+      - mongo_backup:/data/backup
+    ports:
+      - "27017:27017"  # Exponer puerto para acceso externo (opcional)
+    restart: unless-stopped
+    networks:
+      - survey-network
+
+volumes:
+  mongo_data:
+    driver: local
+  mongo_backup:
+    driver: local
+
+networks:
+  survey-network:
+    driver: bridge
+
+
+

@@ -41,6 +41,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://easypanel.clinicamaicao.com", # EasyPanel production domain (HTTP fallback)
     "https://www.clinicamaicao.com", # Production domain
     "http://www.clinicamaicao.com", # Production domain (HTTP fallback)
+    "https://chat-survey-app.rhfh8t.easypanel.host", # EasyPanel subdomain
+    "http://chat-survey-app.rhfh8t.easypanel.host", # EasyPanel subdomain (HTTP fallback)
 ]
 
 # Allow CORS from environment variable (comma-separated)
@@ -69,6 +71,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # WhiteNoise for static files
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware', # Must be before CommonMiddleware
     'django.middleware.common.CommonMiddleware',
@@ -145,6 +148,14 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# WhiteNoise configuration for serving static files
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Frontend React build directory
+# In Docker container, frontend is copied to /app/frontend/survey-ui/dist
+FRONTEND_ROOT = Path('/app/frontend/survey-ui/dist')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
