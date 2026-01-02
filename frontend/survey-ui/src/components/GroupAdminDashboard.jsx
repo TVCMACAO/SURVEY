@@ -132,17 +132,24 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
 
     try {
       // Crear usuario con el grupo del administrador asignado automáticamente
+      // El serializer requiere password_confirm, así que NO lo eliminamos
       const userData = {
         ...userFormData,
         user_group_id: currentUser.user_group_id, // Asignar automáticamente al grupo del admin
-        password_confirm: userFormData.password
+        // password_confirm ya está en userFormData, no necesitamos eliminarlo
       };
-      delete userData.password_confirm;
+      // #region agent log
+      fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'GroupAdminDashboard.jsx:142',message:'User data before sending',data:{hasPassword:!!userData.password,hasPasswordConfirm:!!userData.password_confirm,userDataKeys:Object.keys(userData)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       const response = await authenticatedFetch('/api/users/', {
         method: 'POST',
         body: JSON.stringify(userData)
       });
+      
+      // #region agent log
+      fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'GroupAdminDashboard.jsx:150',message:'Response received',data:{status:response.status,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       if (!response.ok) {
         const errorData = await response.json();
