@@ -14,7 +14,19 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showUsersManager, setShowUsersManager] = useState(false);
+  const [showCreateUserForm, setShowCreateUserForm] = useState(false);
   const [activeView, setActiveView] = useState('dashboard'); // 'dashboard', 'surveys', 'responses'
+  const [userFormData, setUserFormData] = useState({
+    username: '',
+    first_name: '',
+    last_name: '',
+    email: '',
+    password: '',
+    password_confirm: '',
+    role: 'encuestador',
+    is_active: true
+  });
+  const [userFormError, setUserFormError] = useState('');
 
   useEffect(() => {
     if (currentUser && currentUser.user_group_id) {
@@ -104,6 +116,66 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
     }
   };
 
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    setUserFormError('');
+
+    if (userFormData.password !== userFormData.password_confirm) {
+      setUserFormError('Las contraseñas no coinciden.');
+      return;
+    }
+
+    if (userFormData.password.length < 8) {
+      setUserFormError('La contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+
+    try {
+      // Crear usuario con el grupo del administrador asignado automáticamente
+      const userData = {
+        ...userFormData,
+        user_group_id: currentUser.user_group_id, // Asignar automáticamente al grupo del admin
+        password_confirm: userFormData.password
+      };
+      delete userData.password_confirm;
+
+      const response = await authenticatedFetch('/api/users/', {
+        method: 'POST',
+        body: JSON.stringify(userData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || JSON.stringify(errorData));
+      }
+
+      // Recargar usuarios del grupo
+      if (showUsersManager) {
+        // Si está en el gestor de usuarios, recargar la lista
+        window.location.reload(); // O mejor, pasar un callback para recargar
+      } else {
+        // Recargar información del grupo para actualizar el contador
+        await loadGroupInfo();
+      }
+
+      setShowCreateUserForm(false);
+      setUserFormData({
+        username: '',
+        first_name: '',
+        last_name: '',
+        email: '',
+        password: '',
+        password_confirm: '',
+        role: 'encuestador',
+        is_active: true
+      });
+      alert('Usuario creado exitosamente y asignado al grupo.');
+    } catch (error) {
+      console.error("Error creating user:", error);
+      setUserFormError(error.message);
+    }
+  };
+
   if (loading) {
     return (
       <main className="flex-1 relative z-10">
@@ -183,6 +255,187 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
             groupId={currentUser.user_group_id}
             onClose={() => setShowUsersManager(false)}
           />
+        ) : showCreateUserForm ? (
+          <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-2xl font-black text-gray-800">Crear Nuevo Usuario</h2>
+                <p className="text-sm text-gray-500 mt-1">El usuario se asignará automáticamente a tu grupo: <strong>{groupInfo.name}</strong></p>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowCreateUserForm(false);
+                  setUserFormError('');
+                  setUserFormData({
+                    username: '',
+                    first_name: '',
+                    last_name: '',
+                    email: '',
+                    password: '',
+                    password_confirm: '',
+                    role: 'encuestador',
+                    is_active: true
+                  });
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <FontAwesomeIcon icon={faXmark} size="lg" className="text-gray-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUser} className="space-y-4">
+              {userFormError && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                  {userFormError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Usuario <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={userFormData.username}
+                  onChange={(e) => setUserFormData({...userFormData, username: e.target.value})}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  required
+                  autoComplete="username"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    Nombre
+                  </label>
+                  <input
+                    type="text"
+                    value={userFormData.first_name}
+                    onChange={(e) => setUserFormData({...userFormData, first_name: e.target.value})}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    autoComplete="given-name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    Apellido
+                  </label>
+                  <input
+                    type="text"
+                    value={userFormData.last_name}
+                    onChange={(e) => setUserFormData({...userFormData, last_name: e.target.value})}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    autoComplete="family-name"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={userFormData.email}
+                  onChange={(e) => setUserFormData({...userFormData, email: e.target.value})}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  autoComplete="email"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Contraseña <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  value={userFormData.password}
+                  onChange={(e) => setUserFormData({...userFormData, password: e.target.value})}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Confirmar Contraseña <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  value={userFormData.password_confirm}
+                  onChange={(e) => setUserFormData({...userFormData, password_confirm: e.target.value})}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Rol <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={userFormData.role}
+                  onChange={(e) => setUserFormData({...userFormData, role: e.target.value})}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  required
+                >
+                  <option value="encuestador">Encuestador</option>
+                  <option value="analista">Analista</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Los usuarios creados desde aquí se asignan automáticamente a tu grupo.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={userFormData.is_active}
+                  onChange={(e) => setUserFormData({...userFormData, is_active: e.target.checked})}
+                  className="w-5 h-5 text-indigo-600 focus:ring-indigo-500 rounded"
+                />
+                <label htmlFor="is_active" className="text-sm font-bold text-gray-700 cursor-pointer">
+                  Usuario activo
+                </label>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="submit"
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-xl hover:shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95"
+                >
+                  Crear Usuario
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateUserForm(false);
+                    setUserFormError('');
+                    setUserFormData({
+                      username: '',
+                      first_name: '',
+                      last_name: '',
+                      email: '',
+                      password: '',
+                      password_confirm: '',
+                      role: 'encuestador',
+                      is_active: true
+                    });
+                  }}
+                  className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold transition-colors"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
         ) : (
           <>
 
@@ -229,7 +482,19 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
             {/* Acciones Rápidas */}
             <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 shadow-lg mb-6">
               <h2 className="text-xl font-bold text-gray-800 mb-4">Acciones Rápidas</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <button
+                  onClick={() => setShowCreateUserForm(true)}
+                  className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-200 hover:shadow-lg transition-all flex items-center gap-3"
+                >
+                  <div className="p-3 bg-purple-100 rounded-lg">
+                    <FontAwesomeIcon icon={faUserPlus} className="text-purple-600 text-xl" />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-gray-800">Crear Usuario</p>
+                    <p className="text-xs text-gray-500">Crear nuevo usuario en el grupo</p>
+                  </div>
+                </button>
                 <button
                   onClick={() => setShowUsersManager(true)}
                   className="p-4 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 hover:shadow-lg transition-all flex items-center gap-3"
