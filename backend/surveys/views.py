@@ -1750,7 +1750,8 @@ class CurrentUserView(APIView):
 class UserListCreate(APIView):
     """
     Lista todos los usuarios o crea un nuevo usuario.
-    Solo disponible para usuarios 'root'.
+    - GET: Solo disponible para usuarios 'root'.
+    - POST: Disponible para 'root' y 'group_admin'. Los group_admin solo pueden crear usuarios en su grupo.
     """
     permission_classes = [permissions.IsAuthenticated]
 
