@@ -31,7 +31,10 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         # #region agent log
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"Token request received - has_username: {'username' in (request.data if hasattr(request, 'data') else {})}, has_password: {'password' in (request.data if hasattr(request, 'data') else {})}")
+        request_data = request.data if hasattr(request, 'data') else {}
+        username = request_data.get('username', '')
+        has_password = 'password' in request_data
+        logger.info(f"Token request received - username: {username}, has_password: {has_password}, data_keys: {list(request_data.keys())}")
         # #endregion
         
         try:
@@ -43,6 +46,9 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         except Exception as e:
             # #region agent log
             logger.error(f"Token request failed - type: {type(e).__name__}, message: {str(e)}, args: {e.args if hasattr(e, 'args') else None}", exc_info=True)
+            # Log the full traceback
+            import traceback
+            logger.error(f"Full traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
             # #endregion
             raise
 
