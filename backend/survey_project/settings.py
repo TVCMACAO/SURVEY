@@ -208,7 +208,7 @@ DATABASES = {
 try:
     log_data = {
         "timestamp": int(time.time() * 1000),
-        "location": "settings.py:157",
+        "location": "settings.py:208",
         "message": "Database configuration finalized",
         "data": {
             "database_name": str(DATABASES['default']['NAME']),
@@ -218,13 +218,12 @@ try:
         "sessionId": "debug-session",
         "runId": "run1"
     }
+    DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(DEBUG_LOG_PATH, 'a') as f:
         f.write(json.dumps(log_data) + '\n')
-    import logging
-    logging.getLogger(__name__).info(f"DEBUG: Database path: {DATABASES['default']['NAME']}, resolved: {Path(DATABASES['default']['NAME']).resolve()}")
-except Exception as e:
-    import logging
-    logging.getLogger(__name__).error(f"Debug log write failed: {e}")
+except Exception:
+    # Silently fail to avoid breaking Django startup
+    pass
 # #endregion
 
 
