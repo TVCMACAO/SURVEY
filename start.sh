@@ -6,8 +6,11 @@ touch "$LOG_FILE"
 chmod 644 "$LOG_FILE"
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
-    # Write to debug log in NDJSON format
-    echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh\",\"message\":\"$*\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"startup\",\"hypothesisId\":\"A\"}" >> /home/vps/Documentos/survey-app/.cursor/debug.log 2>/dev/null || true
+    # Write to debug log in NDJSON format (only if file exists, optional)
+    DEBUG_LOG="/home/vps/Documentos/survey-app/.cursor/debug.log"
+    if [ -f "$DEBUG_LOG" ] || [ -d "$(dirname "$DEBUG_LOG")" ]; then
+        echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh\",\"message\":\"$*\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"startup\",\"hypothesisId\":\"A\"}" >> "$DEBUG_LOG" 2>/dev/null || true
+    fi
 }
 # #endregion
 
