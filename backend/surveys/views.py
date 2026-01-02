@@ -636,9 +636,16 @@ class SurveyListCreate(APIView):
                             {"user_group_id": "ID de grupo de usuarios inválido"},
                             status=status.HTTP_400_BAD_REQUEST
                         )
-            # Admin de grupo y usuarios regulares: asignar automáticamente su grupo
-            elif user_role in ('group_admin', 'encuestador', 'analista') and request.user.user_group_id:
-                user_group_id = str(request.user.user_group_id)
+            # Admin de grupo y usuarios regulares: SIEMPRE asignar automáticamente su grupo (ignorar cualquier user_group_id del request)
+            elif user_role in ('group_admin', 'encuestador', 'analista'):
+                user_group_id = getattr(request.user, 'user_group_id', None)
+                if not user_group_id:
+                    return Response(
+                        {"detail": "Tu usuario no tiene un grupo asignado. Contacta al administrador."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                # Forzar el grupo del usuario (ignorar cualquier user_group_id que venga en el request)
+                user_group_id = str(user_group_id)
             
             # Construir documento de encuesta
             survey_doc = {
