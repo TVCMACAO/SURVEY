@@ -424,9 +424,8 @@ class UserGroupUsersRetrieveUpdateDestroy(APIView):
         except Exception:
             raise NotFound(detail="Grupo de usuarios no encontrado o ID inválido.")
         
-        try:
-            user = User.objects.get(id=user_id, user_group_id=str(group_id))
-        except User.DoesNotExist:
+        user = get_user_by_id(user_id)
+        if not user or user.get('user_group_id') != str(group_id):
             raise NotFound(detail="Usuario no encontrado en este grupo.")
         
         serializer = UserSerializer(user)
