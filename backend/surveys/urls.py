@@ -21,7 +21,7 @@ urlpatterns = [
     # Rutas de usuario
     path('me/', CurrentUserView.as_view(), name='current_user'),
     path('users/', UserListCreate.as_view(), name='user-list-create'),
-    path('users/<int:pk>/', UserRetrieveUpdateDestroy.as_view(), name='user-detail'),
+    path('users/<str:pk>/', UserRetrieveUpdateDestroy.as_view(), name='user-detail'),  # Cambiado a str para ObjectId de MongoDB
 
     # Rutas para Grupos de Encuestas
     path('groups/', SurveyGroupListCreate.as_view(), name='surveygroup-list-create'),
@@ -31,7 +31,7 @@ urlpatterns = [
     path('user-groups/', UserGroupListCreate.as_view(), name='usergroup-list-create'),
     path('user-groups/<str:pk>/', UserGroupRetrieveUpdateDestroy.as_view(), name='usergroup-detail'),
     path('user-groups/<str:group_id>/users/', UserGroupUsersListCreate.as_view(), name='usergroup-users-list-create'),
-    path('user-groups/<str:group_id>/users/<int:user_id>/', UserGroupUsersRetrieveUpdateDestroy.as_view(), name='usergroup-users-detail'),
+    path('user-groups/<str:group_id>/users/<str:user_id>/', UserGroupUsersRetrieveUpdateDestroy.as_view(), name='usergroup-users-detail'),  # Cambiado a str para ObjectId de MongoDB
 
     # Rutas para Encuestas
     path('surveys/', SurveyListCreate.as_view(), name='survey-list-create'),
