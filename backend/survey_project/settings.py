@@ -315,7 +315,13 @@ LOGGING = {
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-AUTH_USER_MODEL = 'surveys.User'
+AUTH_USER_MODEL = 'surveys.User'  # Mantener para compatibilidad, pero usar MongoDB backend
+
+# Backend de autenticación personalizado para MongoDB
+AUTHENTICATION_BACKENDS = [
+    'surveys.mongo_auth_backend.MongoAuthBackend',  # Backend de MongoDB primero
+    'django.contrib.auth.backends.ModelBackend',  # Fallback a SQLite si es necesario
+]
 
 # Django REST Framework settings
 REST_FRAMEWORK = {
@@ -361,14 +367,26 @@ SIMPLE_JWT = {
 }
 
 # MongoDB Connection String (for pymongo)
+# Default URI for EasyPanel MongoDB (works for both local and EasyPanel)
+DEFAULT_MONGO_URI = 'mongodb://root:1b20629a87ea780a63aa@easypanel.clinicamaicao.com:27017/?tls=false&authSource=admin'
+
 MONGO_USERNAME = os.environ.get('MONGO_USERNAME', 'root')
 MONGO_PASSWORD = os.environ.get('MONGO_PASSWORD', 'surveypass123')
 MONGO_HOST = os.environ.get('MONGO_HOST', 'mongo')
 MONGO_PORT = os.environ.get('MONGO_PORT', '27017')
-MONGO_URI = os.environ.get('MONGO_URI', f'mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/')
+
+# Use MONGO_URI from environment, or default to EasyPanel URI, or construct from components
+MONGO_URI = os.environ.get('MONGO_URI', DEFAULT_MONGO_URI)
+if not MONGO_URI or MONGO_URI == DEFAULT_MONGO_URI or MONGO_URI.startswith('mongodb://'):
+    # Use the provided URI as-is or use default
+    pass
+else:
+    # Fallback: construct from components if MONGO_URI is not a full URI
+    MONGO_URI = f'mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/'
+
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'survey_db') # Name of the database to use
 
-# Ensure MONGO_URI has authSource=admin if it doesn't already
+# Ensure MONGO_URI has authSource=admin if it doesn't already (and has query params)
 if MONGO_URI and 'authSource' not in MONGO_URI:
     # Add authSource=admin to the URI
     separator = '&' if '?' in MONGO_URI else '?'

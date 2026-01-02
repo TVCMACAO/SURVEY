@@ -3,8 +3,12 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from bson import ObjectId
 import json # Import the json module
+from .mongo_user_utils import (
+    create_user_in_mongo, get_user_by_username, get_user_by_id,
+    update_user_in_mongo, list_users_from_mongo, user_exists_in_mongo
+)
 
-User = get_user_model()
+User = get_user_model()  # Mantener para compatibilidad, pero usar funciones de MongoDB
 
 # Custom field for MongoDB ObjectId
 class ObjectIdField(serializers.Field):
@@ -31,55 +35,123 @@ class ObjectIdField(serializers.Field):
             return str(value)
         return str(value) if value else None
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ('id', 'username', 'first_name', 'last_name', 'email', 'role', 'is_active', 'date_joined')
-        read_only_fields = ('id', 'date_joined')
+class UserSerializer(serializers.Serializer):
+    """Serializer para usuarios de MongoDB"""
+    id = serializers.CharField(read_only=True)
+    username = serializers.CharField()
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    role = serializers.CharField()
+    user_group_id = serializers.CharField(required=False, allow_null=True)
+    user_group_name = serializers.SerializerMethodField()
+    is_active = serializers.BooleanField()
+    is_staff = serializers.BooleanField(read_only=True)
+    is_superuser = serializers.BooleanField(read_only=True)
+    date_joined = serializers.DateTimeField(read_only=True)
+    last_login = serializers.DateTimeField(read_only=True, allow_null=True)
+    
+    def get_user_group_name(self, obj):
+        """Obtiene el nombre del grupo de usuarios desde MongoDB"""
+        user_group_id = obj.get('user_group_id') if isinstance(obj, dict) else getattr(obj, 'user_group_id', None)
+        if user_group_id:
+            try:
+                from .mongo_utils import get_user_groups_collection
+                from bson import ObjectId
+                groups_collection = get_user_groups_collection()
+                group = groups_collection.find_one({'_id': ObjectId(user_group_id)})
+                return group.get('name') if group else None
+            except Exception:
+                return None
+        return None
+    
+    def to_representation(self, instance):
+        """Convierte el documento de MongoDB o MongoUser a dict"""
+        if isinstance(instance, dict):
+            data = instance.copy()
+            data['id'] = str(data.get('_id', data.get('id', '')))
+            if '_id' in data:
+                del data['_id']
+            if 'password_hash' in data:
+                del data['password_hash']
+            return data
+        elif hasattr(instance, '_user_doc'):
+            # Es un MongoUser
+            data = instance._user_doc.copy()
+            data['id'] = str(data.get('_id', instance.id))
+            if '_id' in data:
+                del data['_id']
+            if 'password_hash' in data:
+                del data['password_hash']
+            return data
+        else:
+            # Es un modelo Django tradicional (fallback)
+            return {
+                'id': str(instance.id),
+                'username': instance.username,
+                'first_name': instance.first_name,
+                'last_name': instance.last_name,
+                'email': instance.email,
+                'role': getattr(instance, 'role', 'encuestador'),
+                'user_group_id': getattr(instance, 'user_group_id', None),
+                'is_active': instance.is_active,
+                'is_staff': instance.is_staff,
+                'is_superuser': instance.is_superuser,
+                'date_joined': instance.date_joined,
+                'last_login': instance.last_login,
+            }
 
-class UserCreateSerializer(serializers.ModelSerializer):
+class UserCreateSerializer(serializers.Serializer):
+    """Serializer para crear usuarios en MongoDB"""
+    username = serializers.CharField(max_length=150)
     password = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'})
     password_confirm = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'})
-    
-    class Meta:
-        model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'password_confirm', 'role', 'is_active')
-        extra_kwargs = {
-            'password': {'write_only': True},
-            'password_confirm': {'write_only': True},
-        }
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    role = serializers.CharField(default='encuestador')
+    user_group_id = serializers.CharField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(default=True)
     
     def validate(self, attrs):
         if attrs['password'] != attrs['password_confirm']:
             raise serializers.ValidationError({"password_confirm": "Las contraseñas no coinciden."})
+        
+        # Verificar que el username no exista
+        if user_exists_in_mongo(attrs['username']):
+            raise serializers.ValidationError({"username": "Este nombre de usuario ya está en uso."})
+        
         return attrs
     
     def create(self, validated_data):
         validated_data.pop('password_confirm')
         password = validated_data.pop('password')
-        user = User.objects.create_user(
+        
+        user = create_user_in_mongo(
             username=validated_data['username'],
-            email=validated_data.get('email', ''),
             password=password,
+            email=validated_data.get('email', ''),
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
             role=validated_data.get('role', 'encuestador'),
+            user_group_id=validated_data.get('user_group_id'),
             is_active=validated_data.get('is_active', True),
+            is_staff=(validated_data.get('role') == 'root'),
+            is_superuser=(validated_data.get('role') == 'root')
         )
         return user
 
-class UserUpdateSerializer(serializers.ModelSerializer):
+class UserUpdateSerializer(serializers.Serializer):
+    """Serializer para actualizar usuarios en MongoDB"""
+    username = serializers.CharField(read_only=True)  # No permitir cambiar username
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, min_length=8, required=False, style={'input_type': 'password'})
     password_confirm = serializers.CharField(write_only=True, min_length=8, required=False, style={'input_type': 'password'})
-    
-    class Meta:
-        model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'password_confirm', 'role', 'is_active')
-        extra_kwargs = {
-            'username': {'read_only': True},  # No permitir cambiar username
-            'password': {'write_only': True, 'required': False},
-            'password_confirm': {'write_only': True, 'required': False},
-        }
+    role = serializers.CharField(required=False)
+    user_group_id = serializers.CharField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False)
     
     def validate(self, attrs):
         password = attrs.get('password')
@@ -92,16 +164,20 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         return attrs
     
     def update(self, instance, validated_data):
+        # instance puede ser un dict (documento MongoDB) o un MongoUser
+        user_id = instance.get('id') if isinstance(instance, dict) else instance.id
+        if not user_id:
+            user_id = str(instance.get('_id')) if isinstance(instance, dict) else str(instance._id)
+        
         password = validated_data.pop('password', None)
         validated_data.pop('password_confirm', None)
         
         if password:
-            instance.set_password(password)
+            validated_data['password'] = password
         
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        instance.save()
+        updated_user = update_user_in_mongo(user_id, **validated_data)
+        if updated_user:
+            return updated_user
         return instance
 
 class SurveyGroupSerializer(serializers.Serializer):
@@ -116,6 +192,78 @@ class SurveyGroupSerializer(serializers.Serializer):
     def update(self, instance, validated_data):
         # Esto será manejado en la vista
         pass
+
+class UserGroupSerializer(serializers.Serializer):
+    """Serializer para grupos de usuarios en MongoDB"""
+    id = ObjectIdField(read_only=True)
+    name = serializers.CharField(max_length=255)
+    description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    created_by = serializers.IntegerField(read_only=True)
+    admin_user_id = serializers.IntegerField()
+    created_at = serializers.DateTimeField(read_only=True)
+    is_active = serializers.BooleanField(default=True)
+    admin_username = serializers.SerializerMethodField()
+    user_count = serializers.SerializerMethodField()
+    
+    def get_admin_username(self, obj):
+        """Obtiene el username del administrador del grupo"""
+        admin_id = obj.get('admin_user_id')
+        if admin_id:
+            try:
+                from .mongo_user_utils import get_user_by_id
+                user = get_user_by_id(admin_id)
+                return user.get('username') if user else None
+            except Exception:
+                return None
+        return None
+    
+    def get_user_count(self, obj):
+        """Obtiene el número de usuarios en el grupo"""
+        group_id = str(obj.get('_id', obj.get('id', '')))
+        if group_id:
+            try:
+                from .mongo_user_utils import list_users_from_mongo
+                users = list_users_from_mongo({'user_group_id': group_id})
+                return len(users)
+            except Exception:
+                return 0
+        return 0
+
+class UserGroupCreateSerializer(serializers.Serializer):
+    """Serializer para crear grupos de usuarios"""
+    name = serializers.CharField(max_length=255)
+    description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    admin_user_id = serializers.IntegerField()
+    is_active = serializers.BooleanField(default=True)
+    
+    def validate_admin_user_id(self, value):
+        """Valida que el usuario administrador exista"""
+        from .mongo_user_utils import get_user_by_id
+        user = get_user_by_id(value)
+        if not user:
+            raise serializers.ValidationError("El usuario administrador no existe")
+        if user.get('role') != 'group_admin':
+            raise serializers.ValidationError("El usuario debe tener el rol 'group_admin'")
+        return value
+
+class UserGroupUpdateSerializer(serializers.Serializer):
+    """Serializer para actualizar grupos de usuarios"""
+    name = serializers.CharField(max_length=255, required=False)
+    description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    admin_user_id = serializers.IntegerField(required=False)
+    is_active = serializers.BooleanField(required=False)
+    
+    def validate_admin_user_id(self, value):
+        """Valida que el usuario administrador exista"""
+        if value is not None:
+            from .mongo_user_utils import get_user_by_id
+            user = get_user_by_id(value)
+            if not user:
+                raise serializers.ValidationError("El usuario administrador no existe")
+            if user.get('role') != 'group_admin':
+                raise serializers.ValidationError("El usuario debe tener el rol 'group_admin'")
+            return value
+        return value
 
 class QuestionSerializer(serializers.Serializer):
     # Support both formats: 'text'/'type' (from MongoDB) and 'question_text'/'question_type' (from API)
@@ -233,7 +381,7 @@ class ResponseSerializer(serializers.Serializer):
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
-        """Override validate to add logging"""
+        """Override validate to use MongoDB authentication"""
         # #region agent log
         import logging
         logger = logging.getLogger(__name__)
@@ -242,12 +390,32 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # #endregion
         
         try:
-            # Call parent validate
-            validated_data = super().validate(attrs)
+            # Autenticar usando MongoDB
+            from .mongo_user_utils import authenticate_user
+            from .mongo_user_model import MongoUser
+            
+            password = attrs.get('password', '')
+            user_doc = authenticate_user(username, password)
+            
+            if not user_doc:
+                from rest_framework_simplejwt.exceptions import AuthenticationFailed
+                raise AuthenticationFailed('No active account found with the given credentials')
+            
+            # Crear objeto MongoUser para compatibilidad con JWT
+            user = MongoUser(user_doc)
+            self.user = user
+            
+            # Generar token
+            refresh = self.get_token(user)
+            
             # #region agent log
-            logger.info(f"Token validation successful - user_id: {self.user.id if hasattr(self, 'user') and self.user else None}, username: {self.user.username if hasattr(self, 'user') and self.user else None}, is_active: {self.user.is_active if hasattr(self, 'user') and self.user else None}")
+            logger.info(f"Token validation successful - user_id: {user.id}, username: {user.username}, is_active: {user.is_active}")
             # #endregion
-            return validated_data
+            
+            return {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }
         except Exception as e:
             # #region agent log
             logger.error(f"Token validation failed - username: {username}, error_type: {type(e).__name__}, error_message: {str(e)}", exc_info=True)

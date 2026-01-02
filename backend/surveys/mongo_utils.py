@@ -34,6 +34,10 @@ def get_mongo_collection(collection_name):
 # Helper to define our collections based on the architecture
 def get_survey_groups_collection():
     return get_mongo_collection('groups') # User defined Group(name, created_by)
+def get_users_collection():
+    return get_mongo_collection('users') # User(_id, username, password_hash, email, first_name, last_name, role, user_group_id, is_active, is_staff, is_superuser, date_joined, last_login)
+def get_user_groups_collection():
+    return get_mongo_collection('user_groups') # User Group(_id, name, description, created_by, admin_user_id, created_at, is_active)
 def get_surveys_collection():
     return get_mongo_collection('surveys') # Survey(uuid PK, title, group, questions JSON[])
 def get_responses_collection():

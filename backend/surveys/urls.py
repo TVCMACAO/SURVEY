@@ -3,6 +3,8 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     CustomTokenObtainPairView,
     SurveyGroupListCreate, SurveyGroupRetrieveUpdateDestroy,
+    UserGroupListCreate, UserGroupRetrieveUpdateDestroy,
+    UserGroupUsersListCreate, UserGroupUsersRetrieveUpdateDestroy,
     SurveyListCreate, SurveyRetrieveUpdateDestroy,
     SurveyRestoreView, SurveyPermanentDeleteView,
     ResponseListCreate, ResponseRetrieve,
@@ -24,6 +26,12 @@ urlpatterns = [
     # Rutas para Grupos de Encuestas
     path('groups/', SurveyGroupListCreate.as_view(), name='surveygroup-list-create'),
     path('groups/<str:pk>/', SurveyGroupRetrieveUpdateDestroy.as_view(), name='surveygroup-detail'),
+
+    # Rutas para Grupos de Usuarios
+    path('user-groups/', UserGroupListCreate.as_view(), name='usergroup-list-create'),
+    path('user-groups/<str:pk>/', UserGroupRetrieveUpdateDestroy.as_view(), name='usergroup-detail'),
+    path('user-groups/<str:group_id>/users/', UserGroupUsersListCreate.as_view(), name='usergroup-users-list-create'),
+    path('user-groups/<str:group_id>/users/<int:user_id>/', UserGroupUsersRetrieveUpdateDestroy.as_view(), name='usergroup-users-detail'),
 
     # Rutas para Encuestas
     path('surveys/', SurveyListCreate.as_view(), name='survey-list-create'),

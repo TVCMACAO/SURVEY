@@ -8,6 +8,9 @@ import {
   faSignature, faEraser, faEnvelope
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
+import UserGroupsManager from './components/UserGroupsManager';
+import GroupUsersManager from './components/GroupUsersManager';
+import GroupAdminDashboard from './components/GroupAdminDashboard';
 import * as XLSX from 'xlsx';
 import {
   Chart as ChartJS,
@@ -1149,11 +1152,12 @@ const PublicSurveyView = ({ surveyId }) => {
   );
 };
 
-const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initialSurveyData
+const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGroups = [] }) => { // Added initialSurveyData, currentUser, userGroups
   const [activeQuestionId, setActiveQuestionId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [surveyData, setSurveyData] = useState(initialSurveyData || { title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Initialize with initialSurveyData or default
   const [showSectionManager, setShowSectionManager] = useState(false);
+  const [selectedUserGroupId, setSelectedUserGroupId] = useState(initialSurveyData?.user_group_id || currentUser?.user_group_id || '');
 
   // Auto-resize textarea when title changes
   React.useEffect(() => {
@@ -1219,8 +1223,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
       setSurveyData({
         ...initialSurveyData,
         questions: questionsWithSections,
-        sections: sections
+        sections: sections,
+        user_group_id: initialSurveyData.user_group_id || currentUser?.user_group_id || ''
       });
+      setSelectedUserGroupId(initialSurveyData.user_group_id || currentUser?.user_group_id || '');
     } else {
       setSurveyData({ title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [] }); // Reset if no initial data
     }
@@ -1315,7 +1321,13 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     setSurveyData(prev => ({ ...prev, questions: prev.questions.filter(q => q.id !== id) }));
   };
   
-  const handlePublish = () => onSave(surveyData);
+  const handlePublish = () => {
+    const dataToSave = {
+      ...surveyData,
+      user_group_id: selectedUserGroupId || null
+    };
+    onSave(dataToSave);
+  };
 
   return (
     <>
@@ -3175,7 +3187,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
   );
 };
 
-const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers }) => {
+const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onViewGroups, onViewGroupAdmin }) => {
   const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
   
   // Filtrar encuestas activas y eliminadas
@@ -3200,12 +3212,28 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                  <p className="text-sm text-gray-600 font-medium">Gestiona y crea tus formularios de manera eficiente.</p>
                </div>
                <div className="flex gap-3">
+                 {userRole === 'group_admin' && onViewGroupAdmin && (
+                   <button 
+                     onClick={onViewGroupAdmin} 
+                     className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
+                   >
+                     <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Mi Grupo
+                   </button>
+                 )}
                  {isRoot && onViewUsers && (
                    <button 
                      onClick={onViewUsers} 
                      className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
                    >
                      <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Usuarios
+                   </button>
+                 )}
+                 {isRoot && onViewGroups && (
+                   <button 
+                     onClick={onViewGroups} 
+                     className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
+                   >
+                     <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Grupos
                    </button>
                  )}
                  <button 
@@ -3368,7 +3396,8 @@ export default function App() {
   const publicSurveyMatch = pathname.match(/^\/public\/survey\/(.+)$/);
   const publicSurveyId = publicSurveyMatch ? publicSurveyMatch[1] : null;
   const initialView = publicSurveyId ? 'public' : 'dashboard';
-  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users'
+  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'groups' | 'group-admin' | 'group-users'
+  const [selectedGroupId, setSelectedGroupId] = useState(null); // ID del grupo seleccionado para gestionar usuarios
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingSurveyId, setEditingSurveyId] = useState(null); // State to hold the ID of the survey being edited
@@ -3380,10 +3409,12 @@ export default function App() {
   const [loginCredentials, setLoginCredentials] = useState({ username: '', password: '' });
   const [currentUser, setCurrentUser] = useState(null); // Usuario actual con su rol
   const [deletedSurveys, setDeletedSurveys] = useState([]); // Encuestas eliminadas
+  const [userGroups, setUserGroups] = useState([]); // Grupos de usuarios (para root)
 
   const fetchSurveys = async () => {
     setLoading(true);
     try {
+        // El backend ya filtra por grupo de usuario según el rol
         const response = await authenticatedFetch('/api/surveys/');
         if (!response.ok) throw new Error('Error al cargar los datos.');
         const data = await response.json();
@@ -3393,6 +3424,20 @@ export default function App() {
         alert('No se pudieron cargar las encuestas. ' + error.message);
     } finally {
         setLoading(false);
+    }
+  };
+  
+  const fetchUserGroups = async () => {
+    if (currentUser?.role === 'root') {
+      try {
+        const response = await authenticatedFetch('/api/user-groups/');
+        if (response.ok) {
+          const data = await response.json();
+          setUserGroups(data);
+        }
+      } catch (error) {
+        console.error("Error fetching user groups:", error);
+      }
     }
   };
 
@@ -3443,6 +3488,10 @@ export default function App() {
       if (response.ok) {
         const userData = await response.json();
         setCurrentUser(userData);
+        // Si es root, cargar grupos de usuarios
+        if (userData.role === 'root') {
+          await fetchUserGroups();
+        }
       }
     } catch (error) {
       console.error("Error fetching current user:", error);
@@ -3532,6 +3581,18 @@ export default function App() {
       })),
       is_public: surveyData.is_public || false
     };
+    
+    // Agregar user_group_id según el rol del usuario
+    if (currentUser) {
+      const userRole = currentUser.role;
+      // Root puede especificar user_group_id, group_admin y usuarios regulares se asigna automáticamente
+      if (userRole === 'root' && surveyData.user_group_id) {
+        surveyPayload.user_group_id = surveyData.user_group_id;
+      } else if (userRole !== 'root' && currentUser.user_group_id) {
+        // Para group_admin y usuarios regulares, asignar automáticamente su grupo
+        surveyPayload.user_group_id = currentUser.user_group_id;
+      }
+    }
 
     try {
         const response = await authenticatedFetch(url, { 
@@ -3782,6 +3843,8 @@ export default function App() {
               onUpdatePublicStatus={handleUpdatePublicStatus}
               userRole={currentUser?.role}
               onViewUsers={() => setView('users')}
+              onViewGroups={() => setView('groups')}
+              onViewGroupAdmin={() => setView('group-admin')}
           />
       ) : view === 'users' ? (
           <UserManagementView
@@ -3801,6 +3864,8 @@ export default function App() {
               onSave={handleSaveSurvey}
               onBack={handleBackToDashboard}
               initialSurveyData={surveyToEdit} // Pass the fetched survey data to the editor
+              currentUser={currentUser}
+              userGroups={userGroups}
           />
       )}
 

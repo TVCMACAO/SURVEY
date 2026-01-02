@@ -9,13 +9,20 @@ from datetime import datetime
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 
-from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection
+from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection, get_user_groups_collection
+from .mongo_user_utils import (
+    create_user_in_mongo, get_user_by_username, get_user_by_id,
+    update_user_in_mongo, list_users_from_mongo, user_exists_in_mongo, delete_user_from_mongo
+)
+from .mongo_user_model import MongoUser
 from .serializers import (
     SurveyGroupSerializer, SurveySerializer, ResponseSerializer,
     CustomTokenObtainPairSerializer, UserSerializer, UserCreateSerializer, UserUpdateSerializer,
     BatchResponseSerializer, BatchResponseItemSerializer,
-    SyncStatusRequestSerializer, SyncStatusResponseSerializer
+    SyncStatusRequestSerializer, SyncStatusResponseSerializer,
+    UserGroupSerializer, UserGroupCreateSerializer, UserGroupUpdateSerializer
 )
+from .permissions import IsRootUser, IsGroupAdmin, CanManageGroupUsers, CanAccessGroupResource
 
 User = get_user_model()
 
@@ -43,10 +50,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         try:
             from django.conf import settings
-            from surveys.models import User
-            db_path = str(settings.DATABASES['default']['NAME'])
-            user_exists = User.objects.filter(username=username).exists() if username else False
-            total_users = User.objects.count()
+            user_exists = user_exists_in_mongo(username) if username else False
+            total_users = len(list_users_from_mongo())
             log_data = {
                 "timestamp": int(time.time() * 1000),
                 "location": "views.py:30",
@@ -189,6 +194,292 @@ class SurveyGroupRetrieveUpdateDestroy(APIView):
         groups_collection.delete_one({"_id": ObjectId(pk)})
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+# Vistas para Grupos de Usuarios
+class UserGroupListCreate(APIView):
+    """
+    Gestiona la creación y listado de grupos de usuarios.
+    - POST: Crea un nuevo grupo de usuarios (solo root).
+    - GET: Lista todos los grupos de usuarios (solo root).
+    """
+    permission_classes = [IsRootUser]
+
+    def get(self, request):
+        groups_collection = get_user_groups_collection()
+        groups = list(groups_collection.find())
+        for group in groups:
+            group['id'] = str(group['_id'])
+        serializer = UserGroupSerializer(groups, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = UserGroupCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            groups_collection = get_user_groups_collection()
+            validated_data = serializer.validated_data
+            
+            # Verificar que el admin_user_id existe y tiene rol group_admin
+            admin_user_id = validated_data['admin_user_id']
+            admin_user = get_user_by_id(admin_user_id)
+            if not admin_user:
+                return Response(
+                    {"admin_user_id": "El usuario administrador no existe"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if admin_user.get('role') != 'group_admin':
+                return Response(
+                    {"admin_user_id": "El usuario debe tener el rol 'group_admin'"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Crear el grupo
+            new_group = {
+                'name': validated_data['name'],
+                'description': validated_data.get('description', ''),
+                'created_by': request.user.id,
+                'admin_user_id': admin_user_id,
+                'created_at': datetime.utcnow(),
+                'is_active': validated_data.get('is_active', True)
+            }
+            
+            result = groups_collection.insert_one(new_group)
+            new_group['_id'] = result.inserted_id
+            new_group['id'] = str(new_group['_id'])
+            
+            # Asignar el grupo al usuario administrador
+            update_user_in_mongo(admin_user_id, user_group_id=str(result.inserted_id))
+            
+            return Response(UserGroupSerializer(new_group).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UserGroupRetrieveUpdateDestroy(APIView):
+    """
+    Gestiona la recuperación, actualización y eliminación de un grupo de usuarios específico.
+    - GET: Recupera un grupo de usuarios por ID (solo root).
+    - PUT: Actualiza un grupo de usuarios por ID (solo root).
+    - DELETE: Elimina un grupo de usuarios por ID (solo root).
+    """
+    permission_classes = [IsRootUser]
+
+    def get_object(self, pk):
+        groups_collection = get_user_groups_collection()
+        try:
+            group = groups_collection.find_one({"_id": ObjectId(pk)})
+            if not group:
+                raise NotFound(detail="Grupo de usuarios no encontrado.")
+            group['id'] = str(group['_id'])
+            return group
+        except Exception:
+            raise NotFound(detail="Grupo de usuarios no encontrado o ID inválido.")
+
+    def get(self, request, pk):
+        group = self.get_object(pk)
+        serializer = UserGroupSerializer(group)
+        return Response(serializer.data)
+
+    def put(self, request, pk):
+        group = self.get_object(pk)
+        serializer = UserGroupUpdateSerializer(data=request.data, partial=True)
+        if serializer.is_valid():
+            groups_collection = get_user_groups_collection()
+            update_data = {}
+            
+            if 'name' in serializer.validated_data:
+                update_data['name'] = serializer.validated_data['name']
+            if 'description' in serializer.validated_data:
+                update_data['description'] = serializer.validated_data['description']
+            if 'is_active' in serializer.validated_data:
+                update_data['is_active'] = serializer.validated_data['is_active']
+            
+            # Si se cambia el admin_user_id
+            if 'admin_user_id' in serializer.validated_data:
+                new_admin_id = serializer.validated_data['admin_user_id']
+                old_admin_id = group.get('admin_user_id')
+                
+                # Verificar que el nuevo admin existe y tiene rol group_admin
+                new_admin = get_user_by_id(new_admin_id)
+                if not new_admin:
+                    return Response(
+                        {"admin_user_id": "El usuario administrador no existe"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                if new_admin.get('role') != 'group_admin':
+                    return Response(
+                        {"admin_user_id": "El usuario debe tener el rol 'group_admin'"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Actualizar user_group_id del nuevo admin
+                update_user_in_mongo(new_admin_id, user_group_id=str(pk))
+                
+                # Remover user_group_id del admin anterior si existe
+                if old_admin_id:
+                    old_admin = get_user_by_id(old_admin_id)
+                    if old_admin and old_admin.get('user_group_id') == str(pk):
+                        update_user_in_mongo(old_admin_id, user_group_id=None)
+                
+                update_data['admin_user_id'] = new_admin_id
+            
+            if update_data:
+                groups_collection.update_one(
+                    {"_id": ObjectId(pk)},
+                    {"$set": update_data}
+                )
+            
+            updated_group = self.get_object(pk)
+            return Response(UserGroupSerializer(updated_group).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        group = self.get_object(pk)
+        groups_collection = get_user_groups_collection()
+        
+        # Remover user_group_id de todos los usuarios del grupo
+        users_in_group = list_users_from_mongo({'user_group_id': str(pk)})
+        for user in users_in_group:
+            update_user_in_mongo(user['id'], user_group_id=None)
+        
+        groups_collection.delete_one({"_id": ObjectId(pk)})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class UserGroupUsersListCreate(APIView):
+    """
+    Gestiona la lista y creación de usuarios dentro de un grupo.
+    - GET: Lista usuarios del grupo (root o admin del grupo).
+    - POST: Agrega un usuario al grupo (root o admin del grupo).
+    """
+    permission_classes = [CanManageGroupUsers]
+
+    def get(self, request, group_id):
+        # Verificar que el grupo existe
+        groups_collection = get_user_groups_collection()
+        try:
+            group = groups_collection.find_one({"_id": ObjectId(group_id)})
+            if not group:
+                raise NotFound(detail="Grupo de usuarios no encontrado.")
+        except Exception:
+            raise NotFound(detail="Grupo de usuarios no encontrado o ID inválido.")
+        
+        # Obtener usuarios del grupo
+        users = list_users_from_mongo({'user_group_id': str(group_id)})
+        serializer = UserSerializer(users, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, group_id):
+        # Verificar que el grupo existe
+        groups_collection = get_user_groups_collection()
+        try:
+            group = groups_collection.find_one({"_id": ObjectId(group_id)})
+            if not group:
+                raise NotFound(detail="Grupo de usuarios no encontrado.")
+        except Exception:
+            raise NotFound(detail="Grupo de usuarios no encontrado o ID inválido.")
+        
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return Response(
+                {"user_id": "Este campo es requerido"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user = get_user_by_id(user_id)
+        if not user:
+            return Response(
+                {"user_id": "Usuario no encontrado"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Verificar que el usuario no pertenece a otro grupo
+        if user.get('user_group_id') and user.get('user_group_id') != str(group_id):
+            return Response(
+                {"user_id": "El usuario ya pertenece a otro grupo"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Asignar usuario al grupo
+        update_user_in_mongo(user_id, user_group_id=str(group_id))
+        user = get_user_by_id(user_id)  # Recargar usuario actualizado
+        
+        serializer = UserSerializer(user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class UserGroupUsersRetrieveUpdateDestroy(APIView):
+    """
+    Gestiona un usuario específico dentro de un grupo.
+    - GET: Obtiene información del usuario (root o admin del grupo).
+    - PUT: Actualiza el usuario (root o admin del grupo).
+    - DELETE: Remueve el usuario del grupo (root o admin del grupo).
+    """
+    permission_classes = [CanManageGroupUsers]
+
+    def get(self, request, group_id, user_id):
+        # Verificar que el grupo existe
+        groups_collection = get_user_groups_collection()
+        try:
+            group = groups_collection.find_one({"_id": ObjectId(group_id)})
+            if not group:
+                raise NotFound(detail="Grupo de usuarios no encontrado.")
+        except Exception:
+            raise NotFound(detail="Grupo de usuarios no encontrado o ID inválido.")
+        
+        try:
+            user = User.objects.get(id=user_id, user_group_id=str(group_id))
+        except User.DoesNotExist:
+            raise NotFound(detail="Usuario no encontrado en este grupo.")
+        
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
+
+    def put(self, request, group_id, user_id):
+        # Verificar que el grupo existe
+        groups_collection = get_user_groups_collection()
+        try:
+            group = groups_collection.find_one({"_id": ObjectId(group_id)})
+            if not group:
+                raise NotFound(detail="Grupo de usuarios no encontrado.")
+        except Exception:
+            raise NotFound(detail="Grupo de usuarios no encontrado o ID inválido.")
+        
+        try:
+            user = User.objects.get(id=user_id, user_group_id=str(group_id))
+        except User.DoesNotExist:
+            raise NotFound(detail="Usuario no encontrado en este grupo.")
+        
+        serializer = UserUpdateSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(UserSerializer(user).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, group_id, user_id):
+        # Verificar que el grupo existe
+        groups_collection = get_user_groups_collection()
+        try:
+            group = groups_collection.find_one({"_id": ObjectId(group_id)})
+            if not group:
+                raise NotFound(detail="Grupo de usuarios no encontrado.")
+        except Exception:
+            raise NotFound(detail="Grupo de usuarios no encontrado o ID inválido.")
+        
+        try:
+            user = User.objects.get(id=user_id, user_group_id=str(group_id))
+        except User.DoesNotExist:
+            raise NotFound(detail="Usuario no encontrado en este grupo.")
+        
+        # No permitir remover al administrador del grupo
+        if user.id == group.get('admin_user_id'):
+            return Response(
+                {"detail": "No se puede remover al administrador del grupo"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Remover usuario del grupo
+        update_user_in_mongo(user_id, user_group_id=None)
+        
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 # Vistas para Encuestas
 class SurveyListCreate(APIView):
     """
@@ -200,24 +491,45 @@ class SurveyListCreate(APIView):
 
     def get(self, request):
         surveys_collection = get_surveys_collection()
-        group_id = request.query_params.get('group_id')
+        group_id = request.query_params.get('group_id')  # Grupo de encuestas (legacy)
+        user_group_id = request.query_params.get('user_group_id')  # Grupo de usuarios
         show_deleted = request.query_params.get('show_deleted', 'false').lower() == 'true'
         
         query = {}
+        
+        # Filtro por grupo de encuestas (legacy)
         if group_id:
             try:
-                # Try ObjectId first, if it fails, use as string
                 query['group'] = ObjectId(group_id)
             except Exception:
                 query['group'] = group_id
 
-        # Solo usuarios root pueden ver eliminadas, y solo si lo solicitan explícitamente
+        # Filtro por grupo de usuarios según rol
         user_role = None
         if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
             try:
                 user_role = getattr(request.user, 'role', None)
             except (AttributeError, TypeError):
                 user_role = None
+        
+        # Root puede ver todas las encuestas o filtrar por user_group_id si se especifica
+        if user_role == 'root':
+            if user_group_id:
+                try:
+                    query['user_group_id'] = str(user_group_id)
+                except Exception:
+                    query['user_group_id'] = user_group_id
+        # Admin de grupo y usuarios regulares solo ven encuestas de su grupo
+        elif user_role in ('group_admin', 'encuestador', 'analista') and request.user.user_group_id:
+            query['user_group_id'] = str(request.user.user_group_id)
+        # Si se especifica user_group_id en query params, usarlo (solo para root)
+        elif user_group_id and user_role == 'root':
+            try:
+                query['user_group_id'] = str(user_group_id)
+            except Exception:
+                query['user_group_id'] = user_group_id
+
+        # Solo usuarios root pueden ver eliminadas, y solo si lo solicitan explícitamente
         if not show_deleted or user_role != 'root':
             # Excluir eliminadas: campo no existe o es False/None
             # Usar $and para combinar con otras condiciones si existen
@@ -276,7 +588,7 @@ class SurveyListCreate(APIView):
             surveys_collection = get_surveys_collection()
             validated_data = serializer.validated_data
             
-            # Validar que el group_id existe
+            # Validar que el group_id existe (grupo de encuestas legacy)
             groups_collection = get_survey_groups_collection()
             group_found = False
             # Try ObjectId first
@@ -292,14 +604,51 @@ class SurveyListCreate(APIView):
             if not group_found:
                 raise ValidationError(detail="El grupo de encuestas especificado no existe.")
 
-            result = surveys_collection.insert_one({
+            # Determinar user_group_id según el rol del usuario
+            user_role = getattr(request.user, 'role', None)
+            user_group_id = None
+            
+            # Root puede especificar user_group_id en el request, o se asigna None (todas las encuestas)
+            if user_role == 'root':
+                user_group_id = request.data.get('user_group_id')
+                if user_group_id:
+                    # Validar que el grupo de usuarios existe
+                    user_groups_collection = get_user_groups_collection()
+                    try:
+                        if not user_groups_collection.find_one({"_id": ObjectId(user_group_id)}):
+                            return Response(
+                                {"user_group_id": "El grupo de usuarios especificado no existe"},
+                                status=status.HTTP_400_BAD_REQUEST
+                            )
+                    except Exception:
+                        return Response(
+                            {"user_group_id": "ID de grupo de usuarios inválido"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+            # Admin de grupo y usuarios regulares: asignar automáticamente su grupo
+            elif user_role in ('group_admin', 'encuestador', 'analista') and request.user.user_group_id:
+                user_group_id = str(request.user.user_group_id)
+            
+            # Construir documento de encuesta
+            survey_doc = {
                 'title': validated_data['title'],
                 'description': validated_data.get('description', ''),
                 'group': validated_data['group'],
                 'questions': validated_data['questions'],
                 'is_public': validated_data.get('is_public', False),
-                'is_deleted': False  # Por defecto no está eliminada
-            })
+                'is_deleted': False,  # Por defecto no está eliminada
+                'created_by': request.user.id,  # ID del usuario que crea la encuesta
+            }
+            
+            # Agregar user_group_id si está definido
+            if user_group_id:
+                survey_doc['user_group_id'] = str(user_group_id)
+            
+            # Agregar sections si existen
+            if 'sections' in validated_data:
+                survey_doc['sections'] = validated_data['sections']
+            
+            result = surveys_collection.insert_one(survey_doc)
             new_survey = surveys_collection.find_one({'_id': result.inserted_id})
             new_survey['id'] = str(new_survey['_id'])
             return Response(SurveySerializer(new_survey).data, status=status.HTTP_201_CREATED)
@@ -702,13 +1051,68 @@ class ResponseListCreate(APIView):
 
     def get(self, request):
         responses_collection = get_responses_collection()
+        surveys_collection = get_surveys_collection()
         survey_id = request.query_params.get('survey_id')
+        user_group_id = request.query_params.get('user_group_id')
+        
         query = {}
         if survey_id:
             try:
                 query['survey'] = ObjectId(survey_id)
             except Exception:
                 raise ValidationError(detail="ID de encuesta inválido.")
+
+        # Filtro por grupo de usuarios según rol
+        user_role = getattr(request.user, 'role', None)
+        
+        # Root puede ver todas las respuestas o filtrar por user_group_id si se especifica
+        if user_role == 'root':
+            if user_group_id:
+                # Filtrar respuestas de encuestas que pertenecen al grupo especificado
+                try:
+                    survey_ids = [
+                        str(s['_id']) for s in surveys_collection.find(
+                            {'user_group_id': str(user_group_id)},
+                            {'_id': 1}
+                        )
+                    ]
+                    if survey_ids:
+                        query['survey'] = {'$in': [ObjectId(sid) for sid in survey_ids]}
+                    else:
+                        # No hay encuestas en este grupo, retornar vacío
+                        return Response([])
+                except Exception:
+                    return Response(
+                        {"detail": "ID de grupo de usuarios inválido"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+        # Admin de grupo y usuarios regulares solo ven respuestas de encuestas de su grupo
+        elif user_role in ('group_admin', 'encuestador', 'analista') and request.user.user_group_id:
+            # Obtener IDs de encuestas del grupo del usuario
+            try:
+                survey_ids = [
+                    str(s['_id']) for s in surveys_collection.find(
+                        {'user_group_id': str(request.user.user_group_id)},
+                        {'_id': 1}
+                    )
+                ]
+                if survey_ids:
+                    # Si ya hay un filtro por survey_id, verificar que pertenece al grupo
+                    if 'survey' in query:
+                        survey_obj_id = query['survey']
+                        if isinstance(survey_obj_id, ObjectId):
+                            survey_obj_id = str(survey_obj_id)
+                        if survey_obj_id not in survey_ids:
+                            # El usuario no tiene acceso a esta encuesta
+                            return Response([])
+                    else:
+                        # Filtrar por todas las encuestas del grupo
+                        query['survey'] = {'$in': [ObjectId(sid) for sid in survey_ids]}
+                else:
+                    # No hay encuestas en este grupo, retornar vacío
+                    return Response([])
+            except Exception:
+                return Response([])
 
         responses = list(responses_collection.find(query))
         for response in responses:
@@ -1209,7 +1613,7 @@ class UserListCreate(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        users = User.objects.all().order_by('-date_joined')
+        users = list_users_from_mongo(order_by='-date_joined')
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data)
 
@@ -1242,10 +1646,10 @@ class UserRetrieveUpdateDestroy(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self, pk):
-        try:
-            return User.objects.get(pk=pk)
-        except User.DoesNotExist:
+        user = get_user_by_id(pk)
+        if not user:
             raise NotFound(detail="Usuario no encontrado.")
+        return user
 
     def get(self, request, pk):
         # Verificar que el usuario es 'root'
@@ -1306,14 +1710,19 @@ class UserRetrieveUpdateDestroy(APIView):
         user = self.get_object(pk)
         
         # No permitir que un usuario se elimine a sí mismo
-        if user.id == request.user.id:
+        user_id = user.get('id') if isinstance(user, dict) else user.id
+        if user_id == str(request.user.id):
             return Response(
                 {"detail": "No puedes eliminar tu propio usuario."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        user.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        if delete_user_from_mongo(pk):
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {"detail": "Error al eliminar el usuario."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 class SyncStatusView(APIView):
     """
