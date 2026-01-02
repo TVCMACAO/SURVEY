@@ -44,8 +44,8 @@ const UserGroupsManager = ({ onClose, onGroupSelect }) => {
       const response = await authenticatedFetch('/api/users/');
       if (response.ok) {
         const data = await response.json();
-        // Filtrar solo usuarios con rol group_admin que no tengan grupo asignado
-        const admins = data.filter(user => user.role === 'group_admin' && !user.user_group_id);
+        // Filtrar solo usuarios con rol group_admin (pueden tener o no grupo asignado para permitir cambio)
+        const admins = data.filter(user => user.role === 'group_admin');
         setAdminUsers(admins);
       }
     } catch (err) {

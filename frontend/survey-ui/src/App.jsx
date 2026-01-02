@@ -2763,8 +2763,14 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                 >
                   <option value="encuestador">Encuestador</option>
                   <option value="analista">Analista</option>
+                  <option value="group_admin">Administrador de Grupo</option>
                   <option value="root">Root</option>
                 </select>
+                {formData.role === 'group_admin' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Los administradores de grupo pueden gestionar usuarios y encuestas de su grupo asignado.
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-3">
