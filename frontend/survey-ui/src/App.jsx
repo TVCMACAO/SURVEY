@@ -2650,15 +2650,17 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
             <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
               Gestión de Usuarios
             </h1>
-            <p className="text-sm text-gray-600 font-medium">Administra los usuarios del sistema.</p>
+            <p className="text-sm text-gray-600 font-medium">Administra usuarios y grupos del sistema.</p>
           </div>
           <div className="flex gap-3">
-            <button 
-              onClick={handleNewUser} 
-              className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
-            >
-              <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" /> Nuevo Usuario
-            </button>
+            {activeTab === 'users' && (
+              <button 
+                onClick={handleNewUser} 
+                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
+              >
+                <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" /> Nuevo Usuario
+              </button>
+            )}
             <button 
               onClick={onBack} 
               className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2"
@@ -2674,6 +2676,30 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
               </button>
             )}
           </div>
+        </div>
+        
+        {/* Pestañas */}
+        <div className="max-w-7xl mx-auto mt-4 flex gap-2 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`px-6 py-3 font-bold text-sm transition-all ${
+              activeTab === 'users'
+                ? 'text-indigo-600 border-b-2 border-indigo-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <FontAwesomeIcon icon={faUsers} size="sm" className="mr-2" /> Usuarios
+          </button>
+          <button
+            onClick={() => setActiveTab('groups')}
+            className={`px-6 py-3 font-bold text-sm transition-all ${
+              activeTab === 'groups'
+                ? 'text-indigo-600 border-b-2 border-indigo-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <FontAwesomeIcon icon={faUsers} size="sm" className="mr-2" /> Grupos
+          </button>
         </div>
       </header>
 
@@ -3270,7 +3296,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
   );
 };
 
-const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onViewGroups, onViewGroupAdmin }) => {
+const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onViewGroupAdmin }) => {
   const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
   
   // Filtrar encuestas activas y eliminadas
@@ -3309,14 +3335,6 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                      className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
                    >
                      <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Usuarios
-                   </button>
-                 )}
-                 {isRoot && onViewGroups && (
-                   <button 
-                     onClick={onViewGroups} 
-                     className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
-                   >
-                     <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Grupos
                    </button>
                  )}
                  <button 
@@ -3479,7 +3497,7 @@ export default function App() {
   const publicSurveyMatch = pathname.match(/^\/public\/survey\/(.+)$/);
   const publicSurveyId = publicSurveyMatch ? publicSurveyMatch[1] : null;
   const initialView = publicSurveyId ? 'public' : 'dashboard';
-  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'groups' | 'group-admin' | 'group-users'
+  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'group-admin' | 'group-users'
   const [selectedGroupId, setSelectedGroupId] = useState(null); // ID del grupo seleccionado para gestionar usuarios
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -3926,7 +3944,6 @@ export default function App() {
               onUpdatePublicStatus={handleUpdatePublicStatus}
               userRole={currentUser?.role}
               onViewUsers={() => setView('users')}
-              onViewGroups={() => setView('groups')}
               onViewGroupAdmin={() => setView('group-admin')}
           />
       ) : view === 'users' ? (
