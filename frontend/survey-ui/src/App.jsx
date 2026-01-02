@@ -2574,6 +2574,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     switch (role) {
       case 'root':
         return 'bg-red-100 text-red-700 border-red-300';
+      case 'group_admin':
+        return 'bg-purple-100 text-purple-700 border-purple-300';
       case 'analista':
         return 'bg-blue-100 text-blue-700 border-blue-300';
       case 'encuestador':
@@ -2587,6 +2589,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     switch (role) {
       case 'root':
         return 'Root';
+      case 'group_admin':
+        return 'Admin de Grupo';
       case 'analista':
         return 'Analista';
       case 'encuestador':

@@ -198,13 +198,19 @@ const UserGroupsManager = ({ onClose, onGroupSelect }) => {
                 <option value="">Seleccionar administrador</option>
                 {adminUsers.map(user => (
                   <option key={user.id} value={user.id}>
-                    {user.username} {user.email ? `(${user.email})` : ''}
+                    {user.username} {user.email ? `(${user.email})` : ''} {user.user_group_id ? '(Ya tiene grupo)' : ''}
                   </option>
                 ))}
               </select>
               {adminUsers.length === 0 && (
-                <p className="text-sm text-gray-500 mt-1">
-                  No hay usuarios con rol 'group_admin' disponibles. Crea un usuario con ese rol primero.
+                <div className="text-sm text-gray-500 mt-1 space-y-1">
+                  <p>No hay usuarios con rol 'Administrador de Grupo' disponibles.</p>
+                  <p className="text-xs">Ve a "Usuarios" y crea un usuario con rol "Administrador de Grupo" primero.</p>
+                </div>
+              )}
+              {adminUsers.length > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {adminUsers.filter(u => !u.user_group_id).length} administrador(es) sin grupo asignado
                 </p>
               )}
             </div>
