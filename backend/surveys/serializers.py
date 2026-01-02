@@ -232,6 +232,28 @@ class ResponseSerializer(serializers.Serializer):
         pass
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        """Override validate to add logging"""
+        # #region agent log
+        import logging
+        logger = logging.getLogger(__name__)
+        username = attrs.get(self.username_field, '')
+        logger.info(f"Token validation started - username: {username}")
+        # #endregion
+        
+        try:
+            # Call parent validate
+            validated_data = super().validate(attrs)
+            # #region agent log
+            logger.info(f"Token validation successful - user_id: {self.user.id if hasattr(self, 'user') and self.user else None}, username: {self.user.username if hasattr(self, 'user') and self.user else None}, is_active: {self.user.is_active if hasattr(self, 'user') and self.user else None}")
+            # #endregion
+            return validated_data
+        except Exception as e:
+            # #region agent log
+            logger.error(f"Token validation failed - username: {username}, error_type: {type(e).__name__}, error_message: {str(e)}", exc_info=True)
+            # #endregion
+            raise
+    
     @classmethod
     def get_token(cls, user):
         # #region agent log
