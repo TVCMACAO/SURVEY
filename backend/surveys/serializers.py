@@ -226,7 +226,7 @@ class UserUpdateSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, min_length=8, required=False, style={'input_type': 'password'})
     password_confirm = serializers.CharField(write_only=True, min_length=8, required=False, style={'input_type': 'password'})
     role = serializers.CharField(required=False)
-    user_group_id = serializers.CharField(required=False, allow_null=True)
+    user_group_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     is_active = serializers.BooleanField(required=False)
     
     def validate(self, attrs):

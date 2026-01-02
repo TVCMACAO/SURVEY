@@ -2515,6 +2515,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         delete updateData.password;
         delete updateData.password_confirm;
       }
+      
+      // Convertir user_group_id vacío a null
+      if (updateData.user_group_id === '') {
+        updateData.user_group_id = null;
+      }
 
       const response = await authenticatedFetch(`/api/users/${editingUser.id}/`, {
         method: 'PUT',
