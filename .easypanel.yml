@@ -47,6 +47,10 @@ ports:
 volumes:
   - name: static_volume
     type: local
+  - name: django_data
+    type: local
+    description: "Volumen persistente para base de datos SQLite (usuarios de Django)"
+    mount_path: "/app/data"
 
 # Redes
 networks:
@@ -77,6 +81,10 @@ notes: |
   1. MongoDB configurado y accesible
   2. Variables de entorno configuradas correctamente
   3. El frontend se construye automáticamente durante el build de nginx
+  4. Volumen persistente 'django_data' montado en /app/data para persistir usuarios
+  
+  IMPORTANTE: Agregar volumen persistente 'django_data' en /app/data para que los usuarios
+  no se pierdan en cada redeploy. Ver EASYPANEL_VOLUME_SETUP.md para más detalles.
   
   Para más información, consulta EASYPANEL_DEPLOY.md
 
