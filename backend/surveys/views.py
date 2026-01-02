@@ -235,8 +235,8 @@ class UserGroupListCreate(APIView):
             new_group = {
                 'name': validated_data['name'],
                 'description': validated_data.get('description', ''),
-                'created_by': request.user.id,
-                'admin_user_id': admin_user_id,
+                'created_by': str(request.user.id),  # Convertir a string para ObjectId
+                'admin_user_id': str(admin_user_id),  # Asegurar que sea string
                 'created_at': datetime.utcnow(),
                 'is_active': validated_data.get('is_active', True)
             }

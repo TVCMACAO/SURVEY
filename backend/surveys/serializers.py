@@ -274,8 +274,8 @@ class UserGroupSerializer(serializers.Serializer):
     id = ObjectIdField(read_only=True)
     name = serializers.CharField(max_length=255)
     description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
-    created_by = serializers.IntegerField(read_only=True)
-    admin_user_id = serializers.IntegerField()
+    created_by = serializers.CharField(read_only=True)  # Cambiado a CharField para ObjectId
+    admin_user_id = serializers.CharField()  # Cambiado a CharField para ObjectId de MongoDB
     created_at = serializers.DateTimeField(read_only=True)
     is_active = serializers.BooleanField(default=True)
     admin_username = serializers.SerializerMethodField()
@@ -309,7 +309,7 @@ class UserGroupCreateSerializer(serializers.Serializer):
     """Serializer para crear grupos de usuarios"""
     name = serializers.CharField(max_length=255)
     description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
-    admin_user_id = serializers.IntegerField()
+    admin_user_id = serializers.CharField()  # Cambiado a CharField para ObjectId de MongoDB
     is_active = serializers.BooleanField(default=True)
     
     def validate_admin_user_id(self, value):
@@ -326,12 +326,12 @@ class UserGroupUpdateSerializer(serializers.Serializer):
     """Serializer para actualizar grupos de usuarios"""
     name = serializers.CharField(max_length=255, required=False)
     description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
-    admin_user_id = serializers.IntegerField(required=False)
+    admin_user_id = serializers.CharField(required=False)  # Cambiado a CharField para ObjectId de MongoDB
     is_active = serializers.BooleanField(required=False)
     
     def validate_admin_user_id(self, value):
         """Valida que el usuario administrador exista"""
-        if value is not None:
+        if value is not None and value != '':
             from .mongo_user_utils import get_user_by_id
             user = get_user_by_id(value)
             if not user:
