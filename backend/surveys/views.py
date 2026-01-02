@@ -1826,6 +1826,8 @@ class UserListCreate(APIView):
                     "has_password": 'password' in request_data,
                     "has_password_confirm": 'password_confirm' in request_data,
                     "request_data_keys": list(request_data.keys()) if isinstance(request_data, dict) else [],
+                    "password_value": "***" if 'password' in request_data else None,
+                    "password_confirm_value": "***" if 'password_confirm' in request_data else None,
                     "hypothesisId": "A"
                 },
                 "sessionId": "debug-session",
@@ -1834,21 +1836,23 @@ class UserListCreate(APIView):
             log_file_path.parent.mkdir(parents=True, exist_ok=True)
             with open(log_file_path, 'a') as f:
                 f.write(json.dumps(log_data) + '\n')
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error writing debug log: {e}")
         # #endregion
         
         serializer = UserCreateSerializer(data=request_data)
         
         # #region agent log
         try:
+            is_valid = serializer.is_valid()
             log_data = {
                 "timestamp": int(time.time() * 1000),
                 "location": "views.py:UserListCreate.post:serializer_validation",
                 "message": "Serializer validation result",
                 "data": {
-                    "is_valid": serializer.is_valid(),
-                    "errors": serializer.errors if not serializer.is_valid() else {},
+                    "is_valid": is_valid,
+                    "errors": serializer.errors if not is_valid else {},
                     "hypothesisId": "A"
                 },
                 "sessionId": "debug-session",
@@ -1856,8 +1860,9 @@ class UserListCreate(APIView):
             }
             with open(log_file_path, 'a') as f:
                 f.write(json.dumps(log_data) + '\n')
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error writing debug log: {e}")
         # #endregion
         
         if serializer.is_valid():
