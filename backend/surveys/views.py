@@ -520,8 +520,13 @@ class SurveyListCreate(APIView):
                 except Exception:
                     query['user_group_id'] = user_group_id
         # Admin de grupo y usuarios regulares solo ven encuestas de su grupo
-        elif user_role in ('group_admin', 'encuestador', 'analista') and request.user.user_group_id:
-            query['user_group_id'] = str(request.user.user_group_id)
+        elif user_role in ('group_admin', 'encuestador', 'analista'):
+            try:
+                user_group_id = getattr(request.user, 'user_group_id', None)
+                if user_group_id:
+                    query['user_group_id'] = str(user_group_id)
+            except (AttributeError, TypeError):
+                pass
         # Si se especifica user_group_id en query params, usarlo (solo para root)
         elif user_group_id and user_role == 'root':
             try:
@@ -545,42 +550,50 @@ class SurveyListCreate(APIView):
             else:
                 query = deleted_condition
 
-        surveys = list(surveys_collection.find(query))
+            surveys = list(surveys_collection.find(query))
+            
+            # #region agent log
+            import json
+            log_file_path = '/app/debug.log'
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:231",
+                        "message": "Surveys found in database",
+                        "data": {
+                            "count": len(surveys),
+                            "query": str(query),
+                            "survey_ids": [str(s.get('_id', s.get('id', ''))) for s in surveys[:5]]
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
         
-        # #region agent log
-        import json
-        log_file_path = '/app/debug.log'
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "B",
-                    "location": "views.py:231",
-                    "message": "Surveys found in database",
-                    "data": {
-                        "count": len(surveys),
-                        "query": str(query),
-                        "survey_ids": [str(s.get('_id', s.get('id', ''))) for s in surveys[:5]]
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
-        for survey in surveys:
-            # Handle both ObjectId and string _id formats
-            if '_id' in survey:
-                if isinstance(survey['_id'], ObjectId):
-                    survey['id'] = str(survey['_id'])
-                else:
-                    survey['id'] = str(survey['_id'])
-            elif 'id' not in survey:
-                # If no _id, use id field if it exists
-                survey['id'] = survey.get('id', '')
-        serializer = SurveySerializer(surveys, many=True)
-        return Response(serializer.data)
+            for survey in surveys:
+                # Handle both ObjectId and string _id formats
+                if '_id' in survey:
+                    if isinstance(survey['_id'], ObjectId):
+                        survey['id'] = str(survey['_id'])
+                    else:
+                        survey['id'] = str(survey['_id'])
+                elif 'id' not in survey:
+                    # If no _id, use id field if it exists
+                    survey['id'] = survey.get('id', '')
+            serializer = SurveySerializer(surveys, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in SurveyListCreate.get: {type(e).__name__}: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": f"Error al cargar las encuestas: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     def post(self, request):
         serializer = SurveySerializer(data=request.data)
@@ -1588,8 +1601,17 @@ class CurrentUserView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data)
+        try:
+            serializer = UserSerializer(request.user)
+            return Response(serializer.data)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in CurrentUserView: {type(e).__name__}: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": f"Error al obtener información del usuario: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class UserListCreate(APIView):
     """

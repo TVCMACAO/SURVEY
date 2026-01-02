@@ -67,38 +67,69 @@ class UserSerializer(serializers.Serializer):
     
     def to_representation(self, instance):
         """Convierte el documento de MongoDB o MongoUser a dict"""
-        if isinstance(instance, dict):
-            data = instance.copy()
-            data['id'] = str(data.get('_id', data.get('id', '')))
-            if '_id' in data:
-                del data['_id']
-            if 'password_hash' in data:
-                del data['password_hash']
-            return data
-        elif hasattr(instance, '_user_doc'):
-            # Es un MongoUser
-            data = instance._user_doc.copy()
-            data['id'] = str(data.get('_id', instance.id))
-            if '_id' in data:
-                del data['_id']
-            if 'password_hash' in data:
-                del data['password_hash']
-            return data
-        else:
-            # Es un modelo Django tradicional (fallback)
+        try:
+            if isinstance(instance, dict):
+                data = instance.copy()
+                data['id'] = str(data.get('_id', data.get('id', '')))
+                if '_id' in data:
+                    del data['_id']
+                if 'password_hash' in data:
+                    del data['password_hash']
+                return data
+            elif hasattr(instance, '_user_doc'):
+                # Es un MongoUser
+                data = instance._user_doc.copy() if hasattr(instance, '_user_doc') and instance._user_doc else {}
+                data['id'] = str(instance.id) if hasattr(instance, 'id') else str(data.get('_id', ''))
+                data['username'] = getattr(instance, 'username', data.get('username', ''))
+                data['email'] = getattr(instance, 'email', data.get('email', ''))
+                data['first_name'] = getattr(instance, 'first_name', data.get('first_name', ''))
+                data['last_name'] = getattr(instance, 'last_name', data.get('last_name', ''))
+                data['role'] = getattr(instance, 'role', data.get('role', 'encuestador'))
+                data['user_group_id'] = getattr(instance, 'user_group_id', data.get('user_group_id'))
+                data['is_active'] = getattr(instance, 'is_active', data.get('is_active', True))
+                data['is_staff'] = getattr(instance, 'is_staff', data.get('is_staff', False))
+                data['is_superuser'] = getattr(instance, 'is_superuser', data.get('is_superuser', False))
+                data['date_joined'] = getattr(instance, 'date_joined', data.get('date_joined'))
+                data['last_login'] = getattr(instance, 'last_login', data.get('last_login'))
+                if '_id' in data:
+                    del data['_id']
+                if 'password_hash' in data:
+                    del data['password_hash']
+                return data
+            else:
+                # Es un modelo Django tradicional (fallback)
+                return {
+                    'id': str(instance.id),
+                    'username': instance.username,
+                    'first_name': instance.first_name,
+                    'last_name': instance.last_name,
+                    'email': instance.email,
+                    'role': getattr(instance, 'role', 'encuestador'),
+                    'user_group_id': getattr(instance, 'user_group_id', None),
+                    'is_active': instance.is_active,
+                    'is_staff': instance.is_staff,
+                    'is_superuser': instance.is_superuser,
+                    'date_joined': instance.date_joined,
+                    'last_login': instance.last_login,
+                }
+        except Exception as e:
+            # Fallback seguro en caso de error
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error serializing user: {type(e).__name__}: {str(e)}")
             return {
-                'id': str(instance.id),
-                'username': instance.username,
-                'first_name': instance.first_name,
-                'last_name': instance.last_name,
-                'email': instance.email,
+                'id': str(getattr(instance, 'id', '')),
+                'username': getattr(instance, 'username', ''),
+                'first_name': getattr(instance, 'first_name', ''),
+                'last_name': getattr(instance, 'last_name', ''),
+                'email': getattr(instance, 'email', ''),
                 'role': getattr(instance, 'role', 'encuestador'),
                 'user_group_id': getattr(instance, 'user_group_id', None),
-                'is_active': instance.is_active,
-                'is_staff': instance.is_staff,
-                'is_superuser': instance.is_superuser,
-                'date_joined': instance.date_joined,
-                'last_login': instance.last_login,
+                'is_active': getattr(instance, 'is_active', True),
+                'is_staff': getattr(instance, 'is_staff', False),
+                'is_superuser': getattr(instance, 'is_superuser', False),
+                'date_joined': getattr(instance, 'date_joined', None),
+                'last_login': getattr(instance, 'last_login', None),
             }
 
 class UserCreateSerializer(serializers.Serializer):
