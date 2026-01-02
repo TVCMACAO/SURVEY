@@ -3946,6 +3946,23 @@ export default function App() {
               onViewUsers={() => setView('users')}
               onViewGroupAdmin={() => setView('group-admin')}
           />
+      ) : view === 'group-admin' ? (
+          <GroupAdminDashboard
+              currentUser={currentUser}
+              onBack={handleBackToDashboard}
+              onNewSurvey={handleNewSurvey}
+              onEditSurvey={(survey) => {
+                const surveyId = survey.id || survey._id;
+                if (!surveyId) {
+                  alert('Error: La encuesta no tiene un ID válido');
+                  return;
+                }
+                setEditingSurveyId(surveyId);
+              }}
+              onDeleteSurvey={handleDeleteSurvey}
+              onViewResponses={handleViewResponses}
+              onLogout={handleLogout}
+          />
       ) : view === 'users' ? (
           <UserManagementView
               onBack={handleBackToDashboard}
