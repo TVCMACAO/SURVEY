@@ -16,10 +16,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Stage 3: Production - Nginx + Django en un contenedor
 FROM python:3.10-slim-bullseye
 
-# Install nginx and curl
+# Install nginx, curl, and network tools
 RUN apt-get update && apt-get install -y \
     nginx \
     curl \
+    net-tools \
+    iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy backend
