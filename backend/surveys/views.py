@@ -1789,7 +1789,31 @@ class UserListCreate(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        serializer = UserCreateSerializer(data=request.data)
+        # Para group_admin, forzar que el usuario se asigne a su grupo
+        user_role = getattr(request.user, 'role', None)
+        user_group_id = getattr(request.user, 'user_group_id', None)
+        
+        if user_role == 'group_admin':
+            # Forzar asignación al grupo del administrador
+            if not user_group_id:
+                return Response(
+                    {"detail": "No tienes un grupo asignado. No puedes crear usuarios."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            # Asegurar que el user_group_id se asigne automáticamente
+            request_data = request.data.copy()
+            request_data['user_group_id'] = str(user_group_id)
+            
+            # Prevenir que group_admin cree usuarios con roles privilegiados
+            if request_data.get('role') in ('root', 'group_admin'):
+                return Response(
+                    {"role": "No tienes permisos para crear usuarios con este rol."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        else:
+            request_data = request.data
+
+        serializer = UserCreateSerializer(data=request_data)
         if serializer.is_valid():
             user = serializer.save()
             return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
