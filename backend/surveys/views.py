@@ -30,11 +30,39 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         # #region agent log
         import logging
+        import json
+        import time
+        from pathlib import Path
         logger = logging.getLogger(__name__)
         request_data = request.data if hasattr(request, 'data') else {}
         username = request_data.get('username', '')
         has_password = 'password' in request_data
         logger.info(f"Token request received - username: {username}, has_password: {has_password}, data_keys: {list(request_data.keys())}")
+            DEBUG_LOG_PATH = Path('/app/debug.log')
+        try:
+            from django.conf import settings
+            from surveys.models import User
+            db_path = str(settings.DATABASES['default']['NAME'])
+            user_exists = User.objects.filter(username=username).exists() if username else False
+            total_users = User.objects.count()
+            log_data = {
+                "timestamp": int(time.time() * 1000),
+                "location": "views.py:30",
+                "message": "Authentication attempt - checking user existence",
+                "data": {
+                    "username": username,
+                    "db_path": db_path,
+                    "user_exists": user_exists,
+                    "total_users": total_users,
+                    "hypothesisId": "E"
+                },
+                "sessionId": "debug-session",
+                "runId": "run1"
+            }
+            with open(DEBUG_LOG_PATH, 'a') as f:
+                f.write(json.dumps(log_data) + '\n')
+        except Exception as e:
+            pass
         # #endregion
         
         try:
@@ -49,6 +77,24 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             # Log the full traceback
             import traceback
             logger.error(f"Full traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
+            try:
+                log_data = {
+                    "timestamp": int(time.time() * 1000),
+                    "location": "views.py:53",
+                    "message": "Authentication failed",
+                    "data": {
+                        "username": username,
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                        "hypothesisId": "E"
+                    },
+                    "sessionId": "debug-session",
+                    "runId": "run1"
+                }
+                with open(DEBUG_LOG_PATH, 'a') as f:
+                    f.write(json.dumps(log_data) + '\n')
+            except Exception:
+                pass
             # #endregion
             raise
 

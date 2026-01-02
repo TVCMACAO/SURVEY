@@ -7,7 +7,7 @@ chmod 644 "$LOG_FILE"
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
     # Write to debug log in NDJSON format (only if file exists, optional)
-    DEBUG_LOG="/home/vps/Documentos/survey-app/.cursor/debug.log"
+    DEBUG_LOG="/app/debug.log"
     if [ -f "$DEBUG_LOG" ] || [ -d "$(dirname "$DEBUG_LOG")" ]; then
         echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh\",\"message\":\"$*\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"startup\",\"hypothesisId\":\"A\"}" >> "$DEBUG_LOG" 2>/dev/null || true
     fi
@@ -48,20 +48,42 @@ chmod 755 /app/staticfiles
 
 # Crear directorio para datos persistentes (SQLite) si no existe
 log "Creando directorio para datos persistentes..."
+# #region agent log
+DEBUG_LOG="/app/debug.log"
+if [ -f "$DEBUG_LOG" ] || [ -d "$(dirname "$DEBUG_LOG")" ]; then
+    echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh:49\",\"message\":\"Checking /app/data before creation\",\"data\":{\"/app/data exists\":$([ -d /app/data ] && echo true || echo false),\"hypothesisId\":\"C\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}" >> "$DEBUG_LOG" 2>/dev/null || true
+fi
+# #endregion
 mkdir -p /app/data
 chmod 755 /app/data
+# #region agent log
+if [ -f "$DEBUG_LOG" ] || [ -d "$(dirname "$DEBUG_LOG")" ]; then
+    echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh:54\",\"message\":\"Directory /app/data created/verified\",\"data\":{\"/app/data exists\":$([ -d /app/data ] && echo true || echo false),\"permissions\":\"$(stat -c '%a' /app/data 2>/dev/null || echo 'unknown')\",\"hypothesisId\":\"C\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}" >> "$DEBUG_LOG" 2>/dev/null || true
+fi
+# #endregion
 
 # Ejecutar migraciones de Django
 log "Ejecutando migraciones de Django..."
 cd /app
 # #region agent log
-log "HYPOTHESIS B: Ejecutando migraciones de Django..."
+log "HYPOTHESIS D: Ejecutando migraciones de Django..."
+if [ -f "$DEBUG_LOG" ] || [ -d "$(dirname "$DEBUG_LOG")" ]; then
+    DB_PATH=$(python3 -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings'); django.setup(); from django.conf import settings; print(settings.DATABASES['default']['NAME'])" 2>/dev/null || echo "unknown")
+    echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh:67\",\"message\":\"Before migrations - checking DB path\",\"data\":{\"db_path\":\"$DB_PATH\",\"db_exists\":$([ -f "$DB_PATH" ] && echo true || echo false),\"hypothesisId\":\"D\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}" >> "$DEBUG_LOG" 2>/dev/null || true
+fi
 # #endregion
 if ! python manage.py migrate --noinput 2>&1 | tee -a "$LOG_FILE"; then
     log "ERROR: Las migraciones fallaron"
     exit 1
 fi
 log "✅ Migraciones completadas exitosamente!"
+# #region agent log
+if [ -f "$DEBUG_LOG" ] || [ -d "$(dirname "$DEBUG_LOG")" ]; then
+    DB_PATH=$(python3 -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings'); django.setup(); from django.conf import settings; print(settings.DATABASES['default']['NAME'])" 2>/dev/null || echo "unknown")
+    USER_COUNT=$(python3 -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings'); django.setup(); from surveys.models import User; print(User.objects.count())" 2>/dev/null || echo "unknown")
+    echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh:75\",\"message\":\"After migrations - checking users\",\"data\":{\"db_path\":\"$DB_PATH\",\"db_exists\":$([ -f "$DB_PATH" ] && echo true || echo false),\"user_count\":\"$USER_COUNT\",\"hypothesisId\":\"D\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}" >> "$DEBUG_LOG" 2>/dev/null || true
+fi
+# #endregion
 
 # Recolectar archivos estáticos
 log "Recolectando archivos estáticos..."

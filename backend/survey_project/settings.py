@@ -127,10 +127,77 @@ WSGI_APPLICATION = 'survey_project.wsgi.application'
 # For EasyPanel: Use persistent volume at /app/data/db.sqlite3
 # If /app/data exists (volume mounted), use it; otherwise use default location
 import os
+# #region agent log
+DEBUG_LOG_PATH = Path('/home/vps/Documentos/survey-app/.cursor/debug.log')
+try:
+    import json
+    import time
+    log_data = {
+        "timestamp": int(time.time() * 1000),
+        "location": "settings.py:129",
+        "message": "Checking /app/data directory existence",
+        "data": {
+            "/app/data exists": os.path.exists('/app/data'),
+            "BASE_DIR": str(BASE_DIR),
+            "hypothesisId": "A"
+        },
+        "sessionId": "debug-session",
+        "runId": "run1"
+    }
+    with open(DEBUG_LOG_PATH, 'a') as f:
+        f.write(json.dumps(log_data) + '\n')
+except Exception:
+    pass
+# #endregion
 if os.path.exists('/app/data'):
     SQLITE_DB_PATH = Path('/app/data/db.sqlite3')
+    # #region agent log
+    try:
+        log_data = {
+            "timestamp": int(time.time() * 1000),
+            "location": "settings.py:132",
+            "message": "Using persistent volume path",
+            "data": {
+                "db_path": str(SQLITE_DB_PATH),
+                "db_exists": SQLITE_DB_PATH.exists(),
+                "hypothesisId": "A"
+            },
+            "sessionId": "debug-session",
+            "runId": "run1"
+        }
+        with open(DEBUG_LOG_PATH, 'a') as f:
+            f.write(json.dumps(log_data) + '\n')
+        import logging
+        logging.getLogger(__name__).info(f"DEBUG: Using persistent path: {SQLITE_DB_PATH}, exists: {SQLITE_DB_PATH.exists()}")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Debug log write failed: {e}")
+    # #endregion
 else:
     SQLITE_DB_PATH = BASE_DIR / 'db.sqlite3'
+    # #region agent log
+    try:
+        log_data = {
+            "timestamp": int(time.time() * 1000),
+            "location": "settings.py:145",
+            "message": "Using default path (NOT PERSISTENT)",
+            "data": {
+                "db_path": str(SQLITE_DB_PATH),
+                "db_exists": SQLITE_DB_PATH.exists(),
+                "warning": "This path will be lost on redeploy!",
+                "hypothesisId": "A"
+            },
+            "sessionId": "debug-session",
+            "runId": "run1"
+        }
+        with open(DEBUG_LOG_PATH, 'a') as f:
+            f.write(json.dumps(log_data) + '\n')
+        import logging
+        logging.getLogger(__name__).warning(f"DEBUG: Using DEFAULT path (NOT PERSISTENT): {SQLITE_DB_PATH}, exists: {SQLITE_DB_PATH.exists()}")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Debug log write failed: {e}")
+    # #endregion
 
 DATABASES = {
     'default': {
@@ -138,6 +205,28 @@ DATABASES = {
         'NAME': SQLITE_DB_PATH,
     }
 }
+# #region agent log
+try:
+    log_data = {
+        "timestamp": int(time.time() * 1000),
+        "location": "settings.py:157",
+        "message": "Database configuration finalized",
+        "data": {
+            "database_name": str(DATABASES['default']['NAME']),
+            "database_path_resolved": str(Path(DATABASES['default']['NAME']).resolve()),
+            "hypothesisId": "A"
+        },
+        "sessionId": "debug-session",
+        "runId": "run1"
+    }
+    with open(DEBUG_LOG_PATH, 'a') as f:
+        f.write(json.dumps(log_data) + '\n')
+    import logging
+    logging.getLogger(__name__).info(f"DEBUG: Database path: {DATABASES['default']['NAME']}, resolved: {Path(DATABASES['default']['NAME']).resolve()}")
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).error(f"Debug log write failed: {e}")
+# #endregion
 
 
 # Password validation
