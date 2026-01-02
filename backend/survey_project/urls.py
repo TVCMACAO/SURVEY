@@ -23,10 +23,19 @@ from pathlib import Path
 
 def serve_frontend(request, path=''):
     """Serve the React frontend index.html for all non-API routes"""
+    # #region agent log
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Serving frontend - Host: {request.get_host()}, Path: {request.path}, ALLOWED_HOSTS: {settings.ALLOWED_HOSTS}")
+    # #endregion
+    
     frontend_path = Path(settings.FRONTEND_ROOT) / 'index.html'
     if frontend_path.exists():
         return FileResponse(open(frontend_path, 'rb'), content_type='text/html')
     from django.http import HttpResponse
+    # #region agent log
+    logger.error(f"Frontend not found at: {frontend_path}")
+    # #endregion
     return HttpResponse('Frontend not found', status=404)
 
 urlpatterns = [

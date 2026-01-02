@@ -31,6 +31,23 @@ DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', '192.168.0.248,localhost,127.0.0.1')
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(',') if host.strip()]
 
+# Always add EasyPanel domain to ALLOWED_HOSTS
+EASYPANEL_DOMAINS = [
+    'chat-survey-app.rhfh8t.easypanel.host',
+    'easypanel.clinicamaicao.com',
+    'www.clinicamaicao.com',
+    '.easypanel.host',  # Wildcard for all EasyPanel subdomains
+    '.clinicamaicao.com',  # Wildcard for clinicamaicao.com subdomains
+]
+for domain in EASYPANEL_DOMAINS:
+    if domain not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(domain)
+
+# Log ALLOWED_HOSTS for debugging
+import logging
+logger = logging.getLogger(__name__)
+logger.info(f"ALLOWED_HOSTS configured: {ALLOWED_HOSTS}")
+
 # CORS_ALLOWED_ORIGINS for Flutter and EasyPanel
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000", # For local development
@@ -72,6 +89,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # WhiteNoise for static files
+    'survey_project.middleware.HostHeaderLoggingMiddleware',  # Custom logging middleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware', # Must be before CommonMiddleware
     'django.middleware.common.CommonMiddleware',
@@ -156,6 +174,40 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # Frontend React build directory
 # In Docker container, frontend is copied to /app/frontend/survey-ui/dist
 FRONTEND_ROOT = Path('/app/frontend/survey-ui/dist')
+
+# Logging configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'survey_project': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
