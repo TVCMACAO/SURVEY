@@ -123,10 +123,19 @@ WSGI_APPLICATION = 'survey_project.wsgi.application'
 # Database
 # Using default SQLite for Django's auth and admin
 # Application data (Surveys, Responses, Groups) will use MongoDB via pymongo directly
+# 
+# For EasyPanel: Use persistent volume at /app/data/db.sqlite3
+# If /app/data exists (volume mounted), use it; otherwise use default location
+import os
+if os.path.exists('/app/data'):
+    SQLITE_DB_PATH = Path('/app/data/db.sqlite3')
+else:
+    SQLITE_DB_PATH = BASE_DIR / 'db.sqlite3'
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': SQLITE_DB_PATH,
     }
 }
 

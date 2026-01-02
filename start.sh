@@ -46,6 +46,11 @@ log "Creando directorio de staticfiles..."
 mkdir -p /app/staticfiles
 chmod 755 /app/staticfiles
 
+# Crear directorio para datos persistentes (SQLite) si no existe
+log "Creando directorio para datos persistentes..."
+mkdir -p /app/data
+chmod 755 /app/data
+
 # Ejecutar migraciones de Django
 log "Ejecutando migraciones de Django..."
 cd /app
