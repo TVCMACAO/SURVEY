@@ -22,7 +22,7 @@ from .serializers import (
     SyncStatusRequestSerializer, SyncStatusResponseSerializer,
     UserGroupSerializer, UserGroupCreateSerializer, UserGroupUpdateSerializer
 )
-from .permissions import IsRootUser, IsGroupAdmin, CanManageGroupUsers, CanAccessGroupResource
+from .permissions import IsRootUser, IsGroupAdmin, CanManageGroupUsers, CanAccessGroupResource, CanViewUserGroup
 
 User = get_user_model()
 
@@ -274,6 +274,18 @@ class UserGroupRetrieveUpdateDestroy(APIView):
 
     def get(self, request, pk):
         group = self.get_object(pk)
+        
+        # Verificar permisos: group_admin solo puede ver su propio grupo
+        user_role = getattr(request.user, 'role', None)
+        if user_role == 'group_admin':
+            user_group_id = getattr(request.user, 'user_group_id', None)
+            group_id = str(group.get('_id', group.get('id', '')))
+            if user_group_id and group_id != str(user_group_id):
+                return Response(
+                    {"detail": "No tienes permisos para ver este grupo."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
         serializer = UserGroupSerializer(group)
         return Response(serializer.data)
 
