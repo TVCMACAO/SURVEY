@@ -29,66 +29,20 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     
     def post(self, request, *args, **kwargs):
         # #region agent log
-        import json
-        import os
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "D",
-                    "location": "views.py:23",
-                    "message": "Token request received",
-                    "data": {
-                        "has_username": 'username' in (request.data if hasattr(request, 'data') else {}),
-                        "has_password": 'password' in (request.data if hasattr(request, 'data') else {})
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Token request received - has_username: {'username' in (request.data if hasattr(request, 'data') else {})}, has_password: {'password' in (request.data if hasattr(request, 'data') else {})}")
         # #endregion
         
         try:
             response = super().post(request, *args, **kwargs)
             # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "D",
-                        "location": "views.py:23",
-                        "message": "Token request successful",
-                        "data": {
-                            "status_code": response.status_code if response else None
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
+            logger.info(f"Token request successful - status_code: {response.status_code if response else None}")
             # #endregion
             return response
         except Exception as e:
             # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "D",
-                        "location": "views.py:23",
-                        "message": "Token request failed",
-                        "data": {
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "error_args": str(e.args) if hasattr(e, 'args') else None
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
+            logger.error(f"Token request failed - type: {type(e).__name__}, message: {str(e)}, args: {e.args if hasattr(e, 'args') else None}", exc_info=True)
             # #endregion
             raise
 

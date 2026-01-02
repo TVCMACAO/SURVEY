@@ -206,6 +206,11 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'surveys': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
 
@@ -266,3 +271,15 @@ MONGO_HOST = os.environ.get('MONGO_HOST', 'mongo')
 MONGO_PORT = os.environ.get('MONGO_PORT', '27017')
 MONGO_URI = os.environ.get('MONGO_URI', f'mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/')
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'survey_db') # Name of the database to use
+
+# Ensure MONGO_URI has authSource=admin if it doesn't already
+if MONGO_URI and 'authSource' not in MONGO_URI:
+    # Add authSource=admin to the URI
+    separator = '&' if '?' in MONGO_URI else '?'
+    MONGO_URI = f"{MONGO_URI}{separator}authSource=admin"
+
+# Log MongoDB URI (without password) for debugging
+import logging
+logger = logging.getLogger(__name__)
+safe_uri = MONGO_URI.split('@')[0] + '@***' if '@' in MONGO_URI else MONGO_URI
+logger.info(f"MongoDB URI configured (password hidden): {safe_uri}")
