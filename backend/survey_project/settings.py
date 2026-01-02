@@ -329,6 +329,7 @@ REST_FRAMEWORK = {
         'surveys.mongo_jwt_auth.MongoJWTAuthentication',  # JWT con MongoDB
         'rest_framework_simplejwt.authentication.JWTAuthentication',  # Fallback
     ),
+    'EXCEPTION_HANDLER': 'survey_project.exception_handler.custom_exception_handler',
     # 'DEFAULT_PERMISSION_CLASSES': (
     #     'rest_framework.permissions.IsAuthenticated', # Default to require authentication
     # ),
