@@ -87,7 +87,7 @@ if [ -f "$DEBUG_LOG" ] || [ -d "$(dirname "$DEBUG_LOG")" ]; then
     echo "{\"timestamp\":$(date +%s000),\"location\":\"start.sh:75\",\"message\":\"Before ensuring users\",\"data\":{\"db_path\":\"$DB_PATH\",\"db_exists\":$([ -f "$DB_PATH" ] && echo true || echo false),\"user_count_before\":\"$USER_COUNT_BEFORE\",\"hypothesisId\":\"E\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}" >> "$DEBUG_LOG" 2>/dev/null || true
 fi
 # #endregion
-if python manage.py shell -c "from backend.ensure_users import ensure_users; ensure_users()" 2>&1 | tee -a "$LOG_FILE"; then
+if python ensure_users.py 2>&1 | tee -a "$LOG_FILE"; then
     log "✅ Usuarios verificados/creados"
 else
     log "⚠️  Advertencia: Error al verificar usuarios, continuando..."
