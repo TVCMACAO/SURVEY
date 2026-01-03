@@ -426,6 +426,21 @@ class SurveySerializer(serializers.Serializer):
     sections = SectionSerializer(many=True, required=False) # Optional sections array
     is_public = serializers.BooleanField(required=False, default=False) # Indica si la encuesta es pública
     is_deleted = serializers.BooleanField(required=False, default=False) # Indica si la encuesta está eliminada (soft delete)
+    created_by = serializers.CharField(read_only=True, allow_null=True)
+    created_by_username = serializers.SerializerMethodField()
+    
+    def get_created_by_username(self, obj):
+        """Obtiene el username del usuario que creó esta encuesta"""
+        created_by = obj.get('created_by') if isinstance(obj, dict) else getattr(obj, 'created_by', None)
+        if created_by:
+            try:
+                from .mongo_user_utils import get_user_by_id
+                creator = get_user_by_id(created_by)
+                if creator:
+                    return creator.get('username', '')
+            except Exception:
+                pass
+        return None
 
     def to_representation(self, instance):
         # Get base representation
