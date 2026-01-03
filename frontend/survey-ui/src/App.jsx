@@ -484,6 +484,11 @@ const SurveyPreview = ({ surveyData, onBack }) => {
           >
             <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
           </button>
+          <img 
+            src={logoImage} 
+            alt="Survey App Logo" 
+            className="h-40 w-auto object-contain hidden md:block"
+          />
           <div>
             <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Vista Previa</h1>
             <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">Modo Previsualización</span>
@@ -1566,6 +1571,11 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
             <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
               <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
             </button>
+            <img 
+              src={logoImage} 
+              alt="Survey App Logo" 
+              className="h-40 w-auto object-contain hidden md:block"
+            />
             <div>
               <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Respuestas</h1>
               <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">Cargando...</span>
@@ -1931,6 +1941,11 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
             <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={() => { setSelectedResponse(null); }} title="Volver">
               <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
             </button>
+            <img 
+              src={logoImage} 
+              alt="Survey App Logo" 
+              className="h-40 w-auto object-contain hidden md:block"
+            />
             <div>
               <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Respuesta Individual</h1>
             </div>
@@ -1981,6 +1996,11 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
           <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
             <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
           </button>
+          <img 
+            src={logoImage} 
+            alt="Survey App Logo" 
+            className="h-40 w-auto object-contain hidden md:block"
+          />
           <div>
             <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">{survey.title || 'Respuestas'}</h1>
             <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">
@@ -2677,7 +2697,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
             <img 
               src={logoImage} 
               alt="Survey App Logo" 
-              className="h-12 w-auto object-contain hidden md:block"
+              className="h-40 w-auto object-contain hidden md:block"
             />
             <div>
               <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
@@ -3373,7 +3393,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                  <img 
                    src={logoImage} 
                    alt="Survey App Logo" 
-                   className="h-24 w-auto object-contain hidden md:block"
+                   className="h-40 w-auto object-contain hidden md:block"
                  />
                  <div>
                    <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
