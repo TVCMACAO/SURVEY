@@ -12,6 +12,7 @@ import UserGroupsManager from './components/UserGroupsManager';
 import GroupUsersManager from './components/GroupUsersManager';
 import GroupAdminDashboard from './components/GroupAdminDashboard';
 import * as XLSX from 'xlsx';
+import logoImage from './assets/logo-survey-app.jpeg';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -2672,11 +2673,18 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     <main className="flex-1 relative z-10">
       <header className="sticky top-0 z-40 px-4 py-5 md:px-12 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
-              Gestión de Usuarios
-            </h1>
-            <p className="text-sm text-gray-600 font-medium">Administra usuarios y grupos del sistema.</p>
+          <div className="flex items-center gap-4">
+            <img 
+              src={logoImage} 
+              alt="Survey App Logo" 
+              className="h-12 w-auto object-contain hidden md:block"
+            />
+            <div>
+              <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
+                Gestión de Usuarios
+              </h1>
+              <p className="text-sm text-gray-600 font-medium">Administra usuarios y grupos del sistema.</p>
+            </div>
           </div>
           <div className="flex gap-3">
             {activeTab === 'users' && (
@@ -3361,11 +3369,18 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
     <main className="flex-1 relative z-10">
         <header className="sticky top-0 z-40 px-4 py-5 md:px-12 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-               <div>
-                 <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
-                   Mis Encuestas
-                 </h1>
-                 <p className="text-sm text-gray-600 font-medium">Gestiona y crea tus formularios de manera eficiente.</p>
+               <div className="flex items-center gap-4">
+                 <img 
+                   src={logoImage} 
+                   alt="Survey App Logo" 
+                   className="h-12 w-auto object-contain hidden md:block"
+                 />
+                 <div>
+                   <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
+                     Mis Encuestas
+                   </h1>
+                   <p className="text-sm text-gray-600 font-medium">Gestiona y crea tus formularios de manera eficiente.</p>
+                 </div>
                </div>
                <div className="flex gap-3">
                  {userRole === 'group_admin' && onViewGroupAdmin && (
@@ -3922,8 +3937,15 @@ export default function App() {
           <div className="absolute bottom-[-10%] left-[20%] w-[60%] h-[40%] bg-pink-200/30 rounded-full mix-blend-multiply filter blur-[120px] animate-blob animation-delay-4000" />
         </div>
         <div className="relative z-10 bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl p-8 w-full max-w-md">
-          <h1 className="text-3xl font-black text-gray-800 mb-2">Survey App</h1>
-          <p className="text-gray-500 mb-6">Inicia sesión para continuar</p>
+          <div className="flex flex-col items-center mb-6">
+            <img 
+              src={logoImage} 
+              alt="Survey App Logo" 
+              className="h-20 w-auto mb-4 object-contain"
+            />
+            <h1 className="text-3xl font-black text-gray-800 mb-2">Survey App</h1>
+            <p className="text-gray-500">Inicia sesión para continuar</p>
+          </div>
           <form onSubmit={handleLogin}>
             <div className="mb-4">
               <label className="block text-sm font-bold text-gray-700 mb-2">Usuario</label>

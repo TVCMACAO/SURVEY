@@ -7,6 +7,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch } from '../auth';
 import GroupUsersManager from './GroupUsersManager';
+import logoImage from '../assets/logo-survey-app.jpeg';
 
 const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, onDeleteSurvey, onViewResponses, onLogout }) => {
   const [groupInfo, setGroupInfo] = useState(null);
@@ -210,13 +211,20 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
     <main className="flex-1 relative z-10">
       <header className="sticky top-0 z-40 px-4 py-5 md:px-12 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
-              {groupInfo.name}
-            </h1>
-            <p className="text-sm text-gray-600 font-medium">
-              {groupInfo.description || 'Panel de administración del grupo'}
-            </p>
+          <div className="flex items-center gap-4">
+            <img 
+              src={logoImage} 
+              alt="Survey App Logo" 
+              className="h-12 w-auto object-contain hidden md:block"
+            />
+            <div>
+              <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
+                {groupInfo.name}
+              </h1>
+              <p className="text-sm text-gray-600 font-medium">
+                {groupInfo.description || 'Panel de administración del grupo'}
+              </p>
+            </div>
           </div>
           <div className="flex gap-3">
             {!showUsersManager && activeView === 'dashboard' && (
