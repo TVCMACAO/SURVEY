@@ -5,7 +5,7 @@ import {
   faShareNodes, faTrash, faXmark, faBars, faEllipsisVertical, faChevronLeft, 
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
   faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus,
-  faSignature, faEraser, faEnvelope
+  faSignature, faEraser, faEnvelope, faUser
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
 import UserGroupsManager from './components/UserGroupsManager';

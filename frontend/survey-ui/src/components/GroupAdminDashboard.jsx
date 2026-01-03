@@ -3,7 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faUsers, faFileLines, faChartBar, faUserPlus, faEdit, faTrash, 
   faEye, faPlus, faChevronLeft, faXmark, faShareNodes, faTable,
-  faDownload, faFileExcel, faArrowLeft
+  faDownload, faFileExcel, faArrowLeft, faUser
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch } from '../auth';
 import GroupUsersManager from './GroupUsersManager';
