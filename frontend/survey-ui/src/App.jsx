@@ -3373,7 +3373,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                  <img 
                    src={logoImage} 
                    alt="Survey App Logo" 
-                   className="h-12 w-auto object-contain hidden md:block"
+                   className="h-24 w-auto object-contain hidden md:block"
                  />
                  <div>
                    <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
@@ -3941,7 +3941,7 @@ export default function App() {
             <img 
               src={logoImage} 
               alt="Survey App Logo" 
-              className="h-20 w-auto mb-4 object-contain"
+              className="h-40 w-auto mb-4 object-contain"
             />
             <h1 className="text-3xl font-black text-gray-800 mb-2">Survey App</h1>
             <p className="text-gray-500">Inicia sesión para continuar</p>
