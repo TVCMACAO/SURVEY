@@ -12,7 +12,7 @@ import UserGroupsManager from './components/UserGroupsManager';
 import GroupUsersManager from './components/GroupUsersManager';
 import GroupAdminDashboard from './components/GroupAdminDashboard';
 import * as XLSX from 'xlsx';
-import logoImage from './assets/logo-survey-app.jpeg';
+import logoImage from './assets/logo-survey-app.png';
 import {
   Chart as ChartJS,
   CategoryScale,

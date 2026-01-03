@@ -7,7 +7,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch } from '../auth';
 import GroupUsersManager from './GroupUsersManager';
-import logoImage from '../assets/logo-survey-app.jpeg';
+import logoImage from '../assets/logo-survey-app.png';
 
 const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, onDeleteSurvey, onViewResponses, onLogout }) => {
   const [groupInfo, setGroupInfo] = useState(null);
@@ -215,7 +215,7 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
             <img 
               src={logoImage} 
               alt="Survey App Logo" 
-              className="h-24 w-auto object-contain hidden md:block"
+              className="h-40 w-auto object-contain hidden md:block"
             />
             <div>
               <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
