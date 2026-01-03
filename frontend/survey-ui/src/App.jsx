@@ -487,7 +487,7 @@ const SurveyPreview = ({ surveyData, onBack }) => {
           <img 
             src={logoImage} 
             alt="Survey App Logo" 
-            className="h-40 w-auto object-contain hidden md:block"
+            className="h-24 w-auto object-contain hidden md:block"
           />
           <div>
             <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Vista Previa</h1>
@@ -1574,7 +1574,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
             <img 
               src={logoImage} 
               alt="Survey App Logo" 
-              className="h-40 w-auto object-contain hidden md:block"
+              className="h-24 w-auto object-contain hidden md:block"
             />
             <div>
               <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Respuestas</h1>
@@ -1944,7 +1944,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
             <img 
               src={logoImage} 
               alt="Survey App Logo" 
-              className="h-40 w-auto object-contain hidden md:block"
+              className="h-24 w-auto object-contain hidden md:block"
             />
             <div>
               <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Respuesta Individual</h1>
@@ -1999,7 +1999,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
           <img 
             src={logoImage} 
             alt="Survey App Logo" 
-            className="h-40 w-auto object-contain hidden md:block"
+            className="h-24 w-auto object-contain hidden md:block"
           />
           <div>
             <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">{survey.title || 'Respuestas'}</h1>
@@ -2697,7 +2697,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
             <img 
               src={logoImage} 
               alt="Survey App Logo" 
-              className="h-40 w-auto object-contain hidden md:block"
+              className="h-24 w-auto object-contain hidden md:block"
             />
             <div>
               <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
@@ -3393,7 +3393,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                  <img 
                    src={logoImage} 
                    alt="Survey App Logo" 
-                   className="h-40 w-auto object-contain hidden md:block"
+                   className="h-24 w-auto object-contain hidden md:block"
                  />
                  <div>
                    <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
@@ -3961,7 +3961,7 @@ export default function App() {
             <img 
               src={logoImage} 
               alt="Survey App Logo" 
-              className="h-40 w-auto mb-4 object-contain"
+              className="h-24 w-auto mb-4 object-contain"
             />
             <h1 className="text-3xl font-black text-gray-800 mb-2">Survey App</h1>
             <p className="text-gray-500">Inicia sesión para continuar</p>
