@@ -2955,35 +2955,36 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
               <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 shadow-lg overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b-2 border-indigo-200">
+                    <thead className="bg-gradient-to-r from-indigo-50/80 to-purple-50/80 backdrop-blur-sm border-b-2 border-indigo-200/60">
                       <tr>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">ID</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Usuario</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Nombre</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Email</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Rol</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Estado</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Fecha de Registro</th>
-                        <th className="px-6 py-4 text-center text-xs font-black text-gray-700 uppercase tracking-wider">Acciones</th>
+                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">ID</th>
+                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Usuario</th>
+                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Nombre</th>
+                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider hidden md:table-cell">Email</th>
+                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Rol</th>
+                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Estado</th>
+                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider hidden lg:table-cell">Fecha de Registro</th>
+                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider hidden md:table-cell">Creado por</th>
+                        <th className="px-4 md:px-6 py-4 text-center text-xs font-black text-gray-700 uppercase tracking-wider">Acciones</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-gray-200/60 bg-white/50">
                       {users.map((user) => (
-                        <tr key={user.id} className="hover:bg-indigo-50/50 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.id}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.username}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        <tr key={user.id} className="hover:bg-indigo-50/30 transition-all duration-200">
+                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.id.substring(0, 8)}...</td>
+                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.username}</td>
+                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                             {user.first_name || user.last_name 
                               ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || '-'
                               : '-'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{user.email || '-'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-600 hidden md:table-cell">{user.email || '-'}</td>
+                          <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${getRoleBadgeColor(user.role)}`}>
                               {getRoleLabel(user.role)}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                             {user.is_active ? (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-300">
                                 Activo
@@ -2994,21 +2995,30 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                               </span>
                             )}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-600 hidden lg:table-cell">
                             {user.date_joined ? new Date(user.date_joined).toLocaleDateString('es-ES') : '-'}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-600 hidden md:table-cell">
+                            {user.created_by_username ? (
+                              <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                {user.created_by_username}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 italic">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-center">
                             <div className="flex items-center justify-center gap-2">
                               <button
                                 onClick={() => handleEditUser(user)}
-                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
                                 title="Editar usuario"
                               >
                                 <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
                               </button>
                               <button
                                 onClick={() => handleDeleteUser(user.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
                                 title="Eliminar usuario"
                               >
                                 <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
@@ -3277,7 +3287,13 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
                 {survey.created_by_username && (
                   <span className="flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg font-semibold">
                     <FontAwesomeIcon icon={faUser} size="sm" className="fa-icon-force-current" />
-                    Creado por: {survey.created_by_username}
+                    {survey.created_by_username}
+                  </span>
+                )}
+                {survey.user_group_name && (
+                  <span className="flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-lg font-semibold">
+                    <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-current" />
+                    {survey.user_group_name}
                   </span>
                 )}
                 {survey.created_at && (

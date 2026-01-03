@@ -428,6 +428,8 @@ class SurveySerializer(serializers.Serializer):
     is_deleted = serializers.BooleanField(required=False, default=False) # Indica si la encuesta está eliminada (soft delete)
     created_by = serializers.CharField(read_only=True, allow_null=True)
     created_by_username = serializers.SerializerMethodField()
+    user_group_id = serializers.CharField(required=False, allow_null=True)
+    user_group_name = serializers.SerializerMethodField()
     
     def get_created_by_username(self, obj):
         """Obtiene el username del usuario que creó esta encuesta"""
@@ -440,6 +442,20 @@ class SurveySerializer(serializers.Serializer):
                     return creator.get('username', '')
             except Exception:
                 pass
+        return None
+    
+    def get_user_group_name(self, obj):
+        """Obtiene el nombre del grupo de usuarios desde MongoDB"""
+        user_group_id = obj.get('user_group_id') if isinstance(obj, dict) else getattr(obj, 'user_group_id', None)
+        if user_group_id:
+            try:
+                from .mongo_utils import get_user_groups_collection
+                from bson import ObjectId
+                groups_collection = get_user_groups_collection()
+                group = groups_collection.find_one({'_id': ObjectId(user_group_id)})
+                return group.get('name') if group else None
+            except Exception:
+                return None
         return None
 
     def to_representation(self, instance):
