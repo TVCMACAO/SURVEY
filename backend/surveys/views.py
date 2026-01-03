@@ -457,7 +457,28 @@ class UserGroupUsersRetrieveUpdateDestroy(APIView):
         if not user or user.get('user_group_id') != str(group_id):
             raise NotFound(detail="Usuario no encontrado en este grupo.")
         
-        serializer = UserUpdateSerializer(user, data=request.data, partial=True)
+        # Para group_admin, prevenir cambios no permitidos
+        user_role = getattr(request.user, 'role', None)
+        if user_role == 'group_admin':
+            # Prevenir que group_admin cambie roles privilegiados
+            if 'role' in request.data and request.data['role'] in ('root', 'group_admin'):
+                return Response(
+                    {"role": "No tienes permisos para asignar este rol."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            # Prevenir que group_admin cambie el grupo del usuario
+            if 'user_group_id' in request.data and request.data['user_group_id'] != str(group_id):
+                return Response(
+                    {"user_group_id": "No tienes permisos para cambiar el grupo del usuario."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            # Forzar que el user_group_id se mantenga en el grupo del admin
+            request_data = request.data.copy()
+            request_data['user_group_id'] = str(group_id)
+        else:
+            request_data = request.data
+        
+        serializer = UserUpdateSerializer(user, data=request_data, partial=True)
         if serializer.is_valid():
             updated_user = serializer.save()
             return Response(UserSerializer(updated_user).data)
