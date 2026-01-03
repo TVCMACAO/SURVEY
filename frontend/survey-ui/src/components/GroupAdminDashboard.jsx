@@ -138,24 +138,10 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
         user_group_id: currentUser.user_group_id, // Asignar automáticamente al grupo del admin
         // password_confirm ya está en userFormData, no necesitamos eliminarlo
       };
-      // #region agent log
-      console.log('User data before sending:', {
-        hasPassword: !!userData.password,
-        hasPasswordConfirm: !!userData.password_confirm,
-        userDataKeys: Object.keys(userData),
-        passwordLength: userData.password?.length,
-        passwordConfirmLength: userData.password_confirm?.length
-      });
-      // #endregion
-
       const response = await authenticatedFetch('/api/users/', {
         method: 'POST',
         body: JSON.stringify(userData)
       });
-      
-      // #region agent log
-      console.log('Response received:', { status: response.status, ok: response.ok });
-      // #endregion
 
       if (!response.ok) {
         const errorData = await response.json();
