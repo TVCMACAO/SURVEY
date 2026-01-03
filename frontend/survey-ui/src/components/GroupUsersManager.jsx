@@ -409,6 +409,11 @@ const GroupUsersManager = ({ groupId, onClose }) => {
                   <div className="text-sm text-gray-500">
                     {user.email && <span>{user.email} • </span>}
                     <span className="capitalize">{user.role}</span>
+                    {user.created_by_username && (
+                      <span className="text-xs text-gray-400 ml-2">
+                        • Creado por: {user.created_by_username}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

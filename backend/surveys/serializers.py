@@ -50,6 +50,21 @@ class UserSerializer(serializers.Serializer):
     is_superuser = serializers.BooleanField(read_only=True)
     date_joined = serializers.DateTimeField(read_only=True)
     last_login = serializers.DateTimeField(read_only=True, allow_null=True)
+    created_by = serializers.CharField(read_only=True, allow_null=True)
+    created_by_username = serializers.SerializerMethodField()
+    
+    def get_created_by_username(self, obj):
+        """Obtiene el username del usuario que creó este usuario"""
+        created_by = obj.get('created_by') if isinstance(obj, dict) else getattr(obj, 'created_by', None)
+        if created_by:
+            try:
+                from .mongo_user_utils import get_user_by_id
+                creator = get_user_by_id(created_by)
+                if creator:
+                    return creator.get('username', '')
+            except Exception:
+                pass
+        return None
     
     def get_user_group_name(self, obj):
         """Obtiene el nombre del grupo de usuarios desde MongoDB"""

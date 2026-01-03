@@ -1836,7 +1836,24 @@ class UserListCreate(APIView):
         serializer = UserCreateSerializer(data=request_data)
         
         if serializer.is_valid():
-            user = serializer.save()
+            validated_data = serializer.validated_data.copy()
+            password = validated_data.pop('password')
+            validated_data.pop('password_confirm', None)
+            
+            # Crear usuario con created_by
+            user = create_user_in_mongo(
+                username=validated_data['username'],
+                password=password,
+                email=validated_data.get('email', ''),
+                first_name=validated_data.get('first_name', ''),
+                last_name=validated_data.get('last_name', ''),
+                role=validated_data.get('role', 'encuestador'),
+                user_group_id=validated_data.get('user_group_id'),
+                is_active=validated_data.get('is_active', True),
+                is_staff=(validated_data.get('role') == 'root'),
+                is_superuser=(validated_data.get('role') == 'root'),
+                created_by=str(request.user.id)
+            )
             return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

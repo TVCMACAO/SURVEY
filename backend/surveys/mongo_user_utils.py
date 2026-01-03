@@ -8,7 +8,7 @@ from .mongo_utils import get_users_collection
 
 
 def create_user_in_mongo(username, password, email='', first_name='', last_name='', role='encuestador', 
-                        user_group_id=None, is_active=True, is_staff=False, is_superuser=False):
+                        user_group_id=None, is_active=True, is_staff=False, is_superuser=False, created_by=None):
     """
     Crea un nuevo usuario en MongoDB
     """
@@ -30,7 +30,8 @@ def create_user_in_mongo(username, password, email='', first_name='', last_name=
         'is_staff': is_staff,
         'is_superuser': is_superuser,
         'date_joined': datetime.utcnow(),
-        'last_login': None
+        'last_login': None,
+        'created_by': created_by  # ID del usuario que creó este usuario
     }
     
     result = users_collection.insert_one(user_doc)

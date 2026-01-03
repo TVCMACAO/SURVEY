@@ -52,14 +52,13 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
 
   const loadSurveys = async () => {
     try {
+      // El backend ya filtra automáticamente por user_group_id según el rol
+      // No necesitamos filtrar en el frontend, el backend ya lo hace
       const response = await authenticatedFetch('/api/surveys/');
       if (response.ok) {
         const data = await response.json();
-        // Filtrar solo encuestas del grupo del usuario
-        const groupSurveys = data.filter(survey => 
-          survey.user_group_id === currentUser.user_group_id
-        );
-        setSurveys(groupSurveys);
+        // El backend ya devuelve solo las encuestas del grupo del usuario para group_admin
+        setSurveys(data);
       }
     } catch (err) {
       console.error('Error al cargar encuestas:', err);
@@ -571,11 +570,17 @@ const GroupAdminDashboard = ({ currentUser, onBack, onNewSurvey, onEditSurvey, o
                           {survey.description && (
                             <p className="text-sm text-gray-500 line-clamp-2 mb-2">{survey.description}</p>
                           )}
-                          <div className="flex items-center gap-3 text-xs text-gray-400">
+                          <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
                             <span className="flex items-center gap-1">
                               <FontAwesomeIcon icon={faListUl} size="sm" />
                               {survey.questions?.length || 0} preguntas
                             </span>
+                            {survey.created_by_username && (
+                              <span className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-bold">
+                                <FontAwesomeIcon icon={faUser} size="xs" />
+                                {survey.created_by_username}
+                              </span>
+                            )}
                             {survey.is_public && (
                               <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full font-bold">
                                 Pública

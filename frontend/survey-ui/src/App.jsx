@@ -3269,11 +3269,17 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
           <div className="flex flex-col gap-4 pt-4 border-t border-gray-200/60">
             {/* Información de la encuesta */}
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-3 text-xs text-gray-500">
+              <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
                 <span className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-lg font-semibold">
                   <FontAwesomeIcon icon={faListUl} size="sm" className="text-indigo-500 fa-icon-force-current" />
                   {survey.questions.length} {survey.questions.length === 1 ? 'Pregunta' : 'Preguntas'}
                 </span>
+                {survey.created_by_username && (
+                  <span className="flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg font-semibold">
+                    <FontAwesomeIcon icon={faUser} size="sm" className="fa-icon-force-current" />
+                    Creado por: {survey.created_by_username}
+                  </span>
+                )}
                 {survey.created_at && (
                   <span className="flex items-center gap-1 text-gray-400">
                     <FontAwesomeIcon icon={faCalendarDays} size="sm" className="fa-icon-force-current" />
