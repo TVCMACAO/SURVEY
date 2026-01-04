@@ -12,7 +12,7 @@ import {
   validateArea
 } from '../utils/checklistValidations';
 
-const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout }) => {
+const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout, userRole, onCreateChecklist, onEditChecklist }) => {
   const [checklists, setChecklists] = useState([]);
   const [selectedChecklist, setSelectedChecklist] = useState(null);
   const [selectedArea, setSelectedArea] = useState('');
@@ -46,7 +46,15 @@ const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout
       if (response.ok) {
         const data = await response.json();
         // Filtrar solo checklists
-        const checklistSurveys = data.filter(s => s.survey_type === 'checklist');
+        // Si es root o group_admin, mostrar todas las checklists (incluyendo las no asignadas)
+        // Si no, mostrar solo las asignadas al grupo del usuario
+        const checklistSurveys = data.filter(s => {
+          if (s.survey_type !== 'checklist') return false;
+          // Si es root o group_admin, mostrar todas
+          if (userRole === 'root' || userRole === 'group_admin') return true;
+          // Si no, solo las asignadas (ya filtradas por el backend según user_group_id)
+          return true;
+        });
         setChecklists(checklistSurveys);
         
         if (checklistSurveys.length > 0) {
@@ -180,17 +188,33 @@ const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout
   }
 
   if (checklists.length === 0) {
+    const canManage = userRole === 'root' || userRole === 'group_admin';
+    
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
           <h2 className="text-2xl font-bold text-gray-800 mb-4">No hay checklists asignadas</h2>
-          <p className="text-gray-600 mb-6">No tienes checklists operativas asignadas a tu grupo.</p>
-          <button
-            onClick={onBack}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
-          >
-            Volver
-          </button>
+          <p className="text-gray-600 mb-6">
+            {canManage 
+              ? 'No hay checklists operativas creadas. Puedes crear una nueva checklist desde aquí.'
+              : 'No tienes checklists operativas asignadas a tu grupo.'}
+          </p>
+          <div className="flex flex-col space-y-3">
+            {canManage && onCreateChecklist && (
+              <button
+                onClick={onCreateChecklist}
+                className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
+              >
+                Crear Nueva Checklist
+              </button>
+            )}
+            <button
+              onClick={onBack}
+              className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+            >
+              Volver
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -225,7 +249,16 @@ const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout
               </span>)
             </p>
           </div>
-          <div className="flex space-x-2">
+          <div className="flex space-x-2 flex-wrap gap-2">
+            {(userRole === 'root' || userRole === 'group_admin') && onCreateChecklist && (
+              <button
+                onClick={onCreateChecklist}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
+                title="Crear nueva checklist"
+              >
+                + Nueva Checklist
+              </button>
+            )}
             {onBack && (
               <button
                 onClick={onBack}
@@ -281,6 +314,29 @@ const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout
 
         {/* Controles */}
         <div className="flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0 md:space-x-4">
+          {/* Selector de Checklist (solo para root/group_admin si hay múltiples) */}
+          {checklists.length > 1 && (userRole === 'root' || userRole === 'group_admin') && (
+            <select
+              value={selectedChecklist?.id || selectedChecklist?._id || ''}
+              onChange={(e) => {
+                const checklist = checklists.find(c => (c.id || c._id) === e.target.value);
+                if (checklist) {
+                  setSelectedChecklist(checklist);
+                  const newAreas = extractAreasFromChecklist(checklist);
+                  if (newAreas.length > 0) {
+                    setSelectedArea(newAreas[0]);
+                  }
+                }
+              }}
+              className="w-full md:w-auto p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500"
+            >
+              {checklists.map(checklist => (
+                <option key={checklist.id || checklist._id} value={checklist.id || checklist._id}>
+                  {checklist.title || 'Checklist sin título'}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={selectedArea}
             onChange={(e) => setSelectedArea(e.target.value)}
@@ -290,6 +346,15 @@ const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout
               <option key={area} value={area}>{area}</option>
             ))}
           </select>
+          {(userRole === 'root' || userRole === 'group_admin') && onEditChecklist && selectedChecklist && (
+            <button
+              onClick={() => onEditChecklist(selectedChecklist)}
+              className="w-full md:w-auto px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold"
+              title="Editar checklist"
+            >
+              Editar Checklist
+            </button>
+          )}
           <button
             onClick={fetchChecklists}
             className="w-full md:w-auto bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-4 rounded-lg transition"

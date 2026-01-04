@@ -4762,6 +4762,35 @@ export default function App() {
               }}
               hasChecklists={hasChecklists}
               onLogout={handleLogout}
+              userRole={currentUser?.role}
+              onCreateChecklist={() => {
+                // Crear nueva checklist - abrir editor con tipo checklist pre-seleccionado
+                setEditingSurveyId(null);
+                setSurveyToEdit({
+                  title: "Nueva Checklist Operativa",
+                  description: "Checklist de gestión ambiental",
+                  questions: [],
+                  sections: [],
+                  survey_type: 'checklist',
+                  checklist_config: { max_checks_per_day: 2 }
+                });
+                setView('editor');
+              }}
+              onEditChecklist={(checklist) => {
+                // Editar checklist existente
+                const checklistId = checklist.id || checklist._id;
+                if (checklistId) {
+                  setEditingSurveyId(checklistId);
+                } else {
+                  // Si no tiene ID, usar los datos directamente
+                  setSurveyToEdit({
+                    ...checklist,
+                    survey_type: 'checklist'
+                  });
+                  setEditingSurveyId(null);
+                }
+                setView('editor');
+              }}
           />
       ) : view === 'checklist-summary-view' ? (
           <ChecklistMonthlySummaryView
