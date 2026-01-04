@@ -426,6 +426,8 @@ class SurveySerializer(serializers.Serializer):
     sections = SectionSerializer(many=True, required=False) # Optional sections array
     is_public = serializers.BooleanField(required=False, default=False) # Indica si la encuesta es pública
     is_deleted = serializers.BooleanField(required=False, default=False) # Indica si la encuesta está eliminada (soft delete)
+    survey_type = serializers.CharField(max_length=20, required=False, default='survey') # 'survey' o 'checklist'
+    checklist_config = serializers.JSONField(required=False, allow_null=True) # Configuraciones específicas de checklist
     created_by = serializers.CharField(read_only=True, allow_null=True)
     created_by_username = serializers.SerializerMethodField()
     user_group_id = serializers.CharField(required=False, allow_null=True)
@@ -497,6 +499,9 @@ class ResponseSerializer(serializers.Serializer):
     device_id = serializers.CharField(max_length=255, required=False)
     answers = serializers.JSONField() # Almacena las respuestas como un campo JSON flexible
     synced = serializers.BooleanField(default=False)
+    check_number = serializers.IntegerField(required=False, allow_null=True) # Número del chequeo (1, 2, etc.) para checklists
+    check_date = serializers.CharField(max_length=10, required=False, allow_null=True) # Fecha del chequeo (YYYY-MM-DD) para checklists
+    is_locked = serializers.BooleanField(default=False) # Indica si el chequeo está bloqueado (no se puede modificar)
     created_at = serializers.DateTimeField(read_only=True, required=False) # Fecha de creación
 
     def create(self, validated_data):

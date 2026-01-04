@@ -689,7 +689,12 @@ class SurveyListCreate(APIView):
                 'is_public': validated_data.get('is_public', False),
                 'is_deleted': False,  # Por defecto no está eliminada
                 'created_by': request.user.id,  # ID del usuario que crea la encuesta
+                'survey_type': validated_data.get('survey_type', 'survey'),  # 'survey' o 'checklist'
             }
+            
+            # Agregar checklist_config si existe
+            if 'checklist_config' in validated_data and validated_data['checklist_config']:
+                survey_doc['checklist_config'] = validated_data['checklist_config']
             
             # Agregar user_group_id si está definido
             if user_group_id:
@@ -824,13 +829,24 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 if not group_found:
                     raise ValidationError(detail="El nuevo grupo de encuestas especificado no existe.")
 
-            update_fields = {
-                'title': validated_data.get('title', survey['title']),
-                'description': validated_data.get('description', survey.get('description', '')),
-                'group': validated_data.get('group', survey['group']),
-                'questions': validated_data.get('questions', survey['questions']),
-                'is_public': validated_data.get('is_public', survey.get('is_public', False))
-            }
+                   update_fields = {
+                       'title': validated_data.get('title', survey['title']),
+                       'description': validated_data.get('description', survey.get('description', '')),
+                       'group': validated_data.get('group', survey['group']),
+                       'questions': validated_data.get('questions', survey['questions']),
+                       'is_public': validated_data.get('is_public', survey.get('is_public', False))
+                   }
+                   
+                   # Actualizar survey_type si está presente
+                   if 'survey_type' in validated_data:
+                       update_fields['survey_type'] = validated_data['survey_type']
+                   elif 'survey_type' not in survey:
+                       # Si no existe, usar 'survey' por defecto
+                       update_fields['survey_type'] = 'survey'
+                   
+                   # Actualizar checklist_config si está presente
+                   if 'checklist_config' in validated_data:
+                       update_fields['checklist_config'] = validated_data['checklist_config']
             
             # Para group_admin, asegurar que user_group_id no cambie (siempre el suyo)
             if user_role == 'group_admin':
@@ -1207,8 +1223,65 @@ class ResponseListCreate(APIView):
             
             # Validar que el survey_id existe
             surveys_collection = get_surveys_collection()
-            if not surveys_collection.find_one({"_id": validated_data['survey']}):
+            survey = None
+            try:
+                survey = surveys_collection.find_one({"_id": ObjectId(validated_data['survey'])})
+            except Exception:
+                survey = surveys_collection.find_one({"_id": validated_data['survey']})
+            
+            if not survey:
                 raise ValidationError(detail="La encuesta especificada no existe.")
+            
+            # Verificar si es una actualización de respuesta existente (tiene id)
+            response_id = request.data.get('id')
+            if response_id:
+                # Es una actualización, verificar que no esté bloqueada
+                existing_response = None
+                try:
+                    existing_response = responses_collection.find_one({"_id": ObjectId(response_id)})
+                except Exception:
+                    existing_response = responses_collection.find_one({"_id": response_id})
+                
+                if existing_response and existing_response.get('is_locked', False):
+                    return Response(
+                        {"detail": "No se puede modificar un chequeo bloqueado."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            
+            # Validaciones para checklists
+            survey_type = survey.get('survey_type', 'survey')
+            if survey_type == 'checklist':
+                # Para checklists, check_number y check_date son requeridos
+                check_number = validated_data.get('check_number')
+                check_date = validated_data.get('check_date')
+                
+                if check_number is None or check_date is None:
+                    return Response(
+                        {"detail": "Para checklists, check_number y check_date son requeridos."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Validar formato de fecha (YYYY-MM-DD)
+                import re
+                if not re.match(r'^\d{4}-\d{2}-\d{2}$', check_date):
+                    return Response(
+                        {"detail": "check_date debe tener formato YYYY-MM-DD."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Verificar que no exista ya un chequeo con el mismo número y fecha bloqueado
+                existing_check = responses_collection.find_one({
+                    'survey': validated_data['survey'],
+                    'check_number': check_number,
+                    'check_date': check_date,
+                    'is_locked': True
+                })
+                
+                if existing_check and (not response_id or str(existing_check.get('_id')) != str(response_id)):
+                    return Response(
+                        {"detail": f"Ya existe un chequeo #{check_number} bloqueado para la fecha {check_date}."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             
             # Asegurarse de que el usuario autenticado es el surveyor (si está autenticado)
             if request.user and request.user.is_authenticated:
@@ -1216,17 +1289,40 @@ class ResponseListCreate(APIView):
             elif 'surveyor_id' not in validated_data:
                 validated_data['surveyor_id'] = None
 
-            result = responses_collection.insert_one({
+            # Construir documento de respuesta
+            response_doc = {
                 'survey': validated_data['survey'],
                 'surveyor_id': validated_data['surveyor_id'],
                 'device_id': validated_data.get('device_id'),
                 'answers': validated_data['answers'],
-                'synced': validated_data.get('synced', True),  # All responses are synced by default since they're saved directly to server
-                'created_at': datetime.utcnow()  # Agregar fecha de creación
-            })
-            new_response = responses_collection.find_one({'_id': result.inserted_id})
-            new_response['id'] = str(new_response['_id'])
-            return Response(ResponseSerializer(new_response).data, status=status.HTTP_201_CREATED)
+                'synced': validated_data.get('synced', True),
+                'created_at': datetime.utcnow()
+            }
+            
+            # Agregar campos de checklist si existen
+            if 'check_number' in validated_data and validated_data['check_number'] is not None:
+                response_doc['check_number'] = validated_data['check_number']
+            if 'check_date' in validated_data and validated_data['check_date']:
+                response_doc['check_date'] = validated_data['check_date']
+            if 'is_locked' in validated_data:
+                response_doc['is_locked'] = validated_data['is_locked']
+            
+            # Si es actualización, usar update_one; si no, insert_one
+            if response_id:
+                try:
+                    query = {"_id": ObjectId(response_id)}
+                except Exception:
+                    query = {"_id": response_id}
+                
+                responses_collection.update_one(query, {"$set": response_doc})
+                updated_response = responses_collection.find_one(query)
+                updated_response['id'] = str(updated_response['_id'])
+                return Response(ResponseSerializer(updated_response).data, status=status.HTTP_200_OK)
+            else:
+                result = responses_collection.insert_one(response_doc)
+                new_response = responses_collection.find_one({'_id': result.inserted_id})
+                new_response['id'] = str(new_response['_id'])
+                return Response(ResponseSerializer(new_response).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class ResponseSyncView(APIView):
@@ -2007,3 +2103,223 @@ class SyncStatusView(APIView):
                     })
         
         return Response({'results': results}, status=status.HTTP_200_OK)
+
+class ChecklistMonthlySummaryView(APIView):
+    """
+    Vista para obtener el resumen mensual de cumplimiento de un checklist.
+    GET: /api/checklists/{survey_id}/monthly-summary/?year=2025&month=12
+    Retorna tabla con áreas, preguntas, días del mes, y promedios.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, survey_id):
+        from calendar import monthrange
+        from collections import defaultdict
+        
+        # Obtener parámetros de año y mes
+        year = int(request.query_params.get('year', datetime.now().year))
+        month = int(request.query_params.get('month', datetime.now().month))
+        
+        # Validar que el survey existe y es un checklist
+        surveys_collection = get_surveys_collection()
+        survey = None
+        try:
+            survey = surveys_collection.find_one({"_id": ObjectId(survey_id)})
+        except Exception:
+            survey = surveys_collection.find_one({"_id": survey_id})
+        
+        if not survey:
+            raise NotFound(detail="Checklist no encontrado.")
+        
+        if survey.get('survey_type') != 'checklist':
+            return Response(
+                {"detail": "Esta encuesta no es un checklist."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Verificar permisos: solo usuarios del grupo pueden ver el resumen
+        user_role = getattr(request.user, 'role', None)
+        survey_user_group_id = survey.get('user_group_id')
+        
+        if user_role in ('group_admin', 'encuestador', 'analista'):
+            user_group_id = getattr(request.user, 'user_group_id', None)
+            if not user_group_id or str(user_group_id) != str(survey_user_group_id):
+                return Response(
+                    {"detail": "No tienes permisos para ver este resumen."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        
+        # Obtener todas las respuestas del checklist para el mes especificado
+        responses_collection = get_responses_collection()
+        
+        # Construir rango de fechas para el mes
+        first_day = f"{year}-{month:02d}-01"
+        last_day_num = monthrange(year, month)[1]
+        last_day = f"{year}-{month:02d}-{last_day_num:02d}"
+        
+        # Buscar respuestas del checklist en el rango de fechas
+        query = {
+            'survey': ObjectId(survey_id) if isinstance(survey_id, str) else survey_id,
+            'check_date': {
+                '$gte': first_day,
+                '$lte': last_day
+            }
+        }
+        
+        responses = list(responses_collection.find(query))
+        
+        # Obtener el título del checklist como "área"
+        area_name = survey.get('title', 'Sin título')
+        questions = survey.get('questions', [])
+        
+        # Estructura de datos: {question_id: {day: {check_number: status}}}
+        question_data = defaultdict(lambda: defaultdict(dict))
+        
+        # Procesar respuestas
+        for response in responses:
+            check_date = response.get('check_date', '')
+            check_number = response.get('check_number')
+            answers = response.get('answers', {})
+            is_locked = response.get('is_locked', False)
+            
+            # Solo procesar respuestas bloqueadas (completadas)
+            if not is_locked:
+                continue
+            
+            # Extraer día del mes
+            try:
+                day = int(check_date.split('-')[2])
+            except (IndexError, ValueError):
+                continue
+            
+            # Procesar cada pregunta
+            for question in questions:
+                question_id = question.get('id', '')
+                if not question_id:
+                    continue
+                
+                answer = answers.get(question_id, answers.get(str(question_id)))
+                
+                # Determinar status: "C" (Cumple) o "NC" (No Cumple)
+                # Para checklists, las respuestas son binarias
+                if isinstance(answer, list):
+                    answer = answer[0] if answer else None
+                
+                if answer == "Cumple" or answer == "C":
+                    status = "C"
+                elif answer == "No cumple" or answer == "NC":
+                    status = "NC"
+                else:
+                    status = None
+                
+                if status:
+                    # Guardar status por check_number
+                    if check_number not in question_data[question_id][day]:
+                        question_data[question_id][day][check_number] = status
+                    else:
+                        # Si hay múltiples chequeos, combinar: "C/C", "C/NC", "NC/NC"
+                        existing_status = question_data[question_id][day][check_number]
+                        if existing_status != status:
+                            question_data[question_id][day][check_number] = f"{existing_status}/{status}"
+                        else:
+                            question_data[question_id][day][check_number] = f"{status}/{status}"
+        
+        # Construir respuesta estructurada
+        result = {
+            'survey_id': str(survey_id),
+            'survey_title': area_name,
+            'year': year,
+            'month': month,
+            'month_name': datetime(year, month, 1).strftime('%B'),
+            'areas': []
+        }
+        
+        # Agrupar por área (en este caso, solo una área por checklist)
+        area_data = {
+            'name': area_name,
+            'questions': [],
+            'average': 0.0
+        }
+        
+        total_compliance = 0
+        total_checks = 0
+        
+        for question in questions:
+            question_id = question.get('id', '')
+            question_text = question.get('text', question.get('question_text', ''))
+            
+            question_data_days = question_data.get(question_id, {})
+            
+            # Construir array de días
+            days_data = []
+            question_compliance = 0
+            question_checks = 0
+            
+            for day in range(1, last_day_num + 1):
+                day_data = {
+                    'day': day,
+                    'status': '-',
+                    'check_numbers': []
+                }
+                
+                if day in question_data_days:
+                    # Hay datos para este día
+                    check_statuses = question_data_days[day]
+                    
+                    # Combinar todos los chequeos del día
+                    statuses = []
+                    for check_num, status in sorted(check_statuses.items()):
+                        statuses.append(status)
+                        day_data['check_numbers'].append({
+                            'check_number': check_num,
+                            'status': status
+                        })
+                    
+                    # Determinar status combinado
+                    if len(statuses) == 1:
+                        day_data['status'] = statuses[0]
+                    elif len(statuses) == 2:
+                        # Combinar: "C/C", "C/NC", "NC/NC"
+                        if statuses[0] == statuses[1]:
+                            day_data['status'] = f"{statuses[0]}/{statuses[1]}"
+                        else:
+                            day_data['status'] = f"{statuses[0]}/{statuses[1]}"
+                    else:
+                        # Múltiples chequeos, usar el más común o combinar
+                        c_count = statuses.count('C')
+                        nc_count = statuses.count('NC')
+                        if c_count > nc_count:
+                            day_data['status'] = 'C'
+                        elif nc_count > c_count:
+                            day_data['status'] = 'NC'
+                        else:
+                            day_data['status'] = 'C/NC'
+                    
+                    # Calcular cumplimiento para este día
+                    if day_data['status'] == 'C' or day_data['status'] == 'C/C':
+                        question_compliance += 1
+                    elif day_data['status'] == 'C/NC':
+                        question_compliance += 0.5
+                    question_checks += 1
+                
+                days_data.append(day_data)
+            
+            # Calcular promedio de la pregunta
+            question_average = (question_compliance / question_checks * 100) if question_checks > 0 else 0.0
+            
+            area_data['questions'].append({
+                'text': question_text,
+                'days': days_data,
+                'average': round(question_average, 1)
+            })
+            
+            total_compliance += question_compliance
+            total_checks += question_checks
+        
+        # Calcular promedio del área
+        area_average = (total_compliance / total_checks * 100) if total_checks > 0 else 0.0
+        area_data['average'] = round(area_average, 1)
+        
+        result['areas'].append(area_data)
+        
+        return Response(result, status=status.HTTP_200_OK)

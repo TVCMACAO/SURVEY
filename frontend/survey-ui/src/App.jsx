@@ -170,8 +170,9 @@ const ToolButton = ({ icon, label, onClick, color }) => (
 
 // --- VISTA: EDITOR DE ENCUESTAS ---
 
-const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection }) => {
+const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection, surveyType = 'survey' }) => {
   const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(data.type);
+  const isChecklist = surveyType === 'checklist';
 
   return (
     <div 
@@ -220,11 +221,68 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                          {data.type === 'Casillas' && <div className="w-4 h-4 sm:w-5 sm:h-5 rounded border-2 border-indigo-200 flex-shrink-0" />}
                          {data.type === 'Desplegable' && <span className="text-gray-400 text-xs sm:text-sm flex-shrink-0">{idx + 1}.</span>}
 
-                         <input value={opt} onChange={(e) => { const newOpts = [...data.options]; newOpts[idx] = e.target.value; onUpdate({...data, options: newOpts}); }} className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" />
-                         <button onClick={() => { const newOpts = data.options.filter((_, i) => i !== idx); onUpdate({...data, options: newOpts}); }} className="flex-shrink-0 p-1"><FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" /></button>
+                         <input 
+                           value={opt} 
+                           onChange={(e) => { 
+                             if (isChecklist && data.type === 'Opción Única') {
+                               // Validar que solo sean "Cumple" o "No cumple"
+                               const newValue = e.target.value;
+                               if (newValue !== 'Cumple' && newValue !== 'No cumple' && newValue !== '') {
+                                 alert('Las listas de chequeo solo permiten opciones "Cumple" y "No cumple".');
+                                 return;
+                               }
+                             }
+                             const newOpts = [...data.options]; 
+                             newOpts[idx] = e.target.value; 
+                             onUpdate({...data, options: newOpts}); 
+                           }} 
+                           className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" 
+                         />
+                         {!(isChecklist && data.type === 'Opción Única' && data.options?.length === 2) && (
+                           <button onClick={() => { 
+                             if (isChecklist && data.type === 'Opción Única' && data.options?.length <= 2) {
+                               alert('Las listas de chequeo deben tener exactamente 2 opciones: "Cumple" y "No cumple".');
+                               return;
+                             }
+                             const newOpts = data.options.filter((_, i) => i !== idx); 
+                             onUpdate({...data, options: newOpts}); 
+                           }} className="flex-shrink-0 p-1">
+                             <FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" />
+                           </button>
+                         )}
                        </div>
                      ))}
-                     <button onClick={() => onUpdate({...data, options: [...(data.options || []), `Opción ${data.options?.length + 1}`]})} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 mt-2 sm:mt-3 pl-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-indigo-50 rounded-lg w-fit transition-colors"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /></button>
+                     {!(isChecklist && data.type === 'Opción Única' && data.options?.length >= 2) && (
+                       <button 
+                         onClick={() => {
+                           if (isChecklist && data.type === 'Opción Única') {
+                             if (data.options?.length >= 2) {
+                               alert('Las listas de chequeo solo permiten 2 opciones: "Cumple" y "No cumple".');
+                               return;
+                             }
+                             // Agregar la opción faltante
+                             const hasCumple = data.options?.includes('Cumple');
+                             const hasNoCumple = data.options?.includes('No cumple');
+                             if (!hasCumple) {
+                               onUpdate({...data, options: [...(data.options || []), 'Cumple']});
+                             } else if (!hasNoCumple) {
+                               onUpdate({...data, options: [...(data.options || []), 'No cumple']});
+                             }
+                           } else {
+                             onUpdate({...data, options: [...(data.options || []), `Opción ${data.options?.length + 1}`]});
+                           }
+                         }} 
+                         className="text-xs font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 mt-2 sm:mt-3 pl-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-indigo-50 rounded-lg w-fit transition-colors"
+                       >
+                         <FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" />
+                         {isChecklist && data.type === 'Opción Única' ? 'Agregar opción faltante' : `Agregar opción`}
+                       </button>
+                     )}
+                     {isChecklist && data.type === 'Opción Única' && (
+                       <p className="text-xs text-gray-500 italic mt-2">
+                         Las listas de chequeo requieren exactamente 2 opciones: "Cumple" y "No cumple"
+                       </p>
+                     )}
                   </div>
                 )}
                 {data.type === 'Puntuación' && <div className="flex gap-4 justify-center py-6 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">{[1,2,3,4,5].map(i => <FontAwesomeIcon key={i} icon={faStar} size="lg" className="text-gray-300 fa-icon-force-current" />)}</div>}
@@ -1161,8 +1219,9 @@ const PublicSurveyView = ({ surveyId }) => {
 const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGroups = [] }) => { // Added initialSurveyData, currentUser, userGroups
   const [activeQuestionId, setActiveQuestionId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [surveyData, setSurveyData] = useState(initialSurveyData || { title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Initialize with initialSurveyData or default
+  const [surveyData, setSurveyData] = useState(initialSurveyData || { title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [], survey_type: 'survey' }); // Initialize with initialSurveyData or default
   const [showSectionManager, setShowSectionManager] = useState(false);
+  const [surveyType, setSurveyType] = useState(initialSurveyData?.survey_type || 'survey'); // 'survey' or 'checklist'
   // Para group_admin, siempre usar su grupo asignado (no puede elegir)
   const initialGroupId = currentUser?.role === 'group_admin' 
     ? (currentUser?.user_group_id || '')
@@ -1239,9 +1298,11 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
         ...initialSurveyData,
         questions: questionsWithSections,
         sections: sections,
-        user_group_id: finalUserGroupId
+        user_group_id: finalUserGroupId,
+        survey_type: initialSurveyData.survey_type || 'survey'
       });
       setSelectedUserGroupId(finalUserGroupId);
+      setSurveyType(initialSurveyData.survey_type || 'survey');
     } else {
       // Para group_admin, siempre inicializar con su grupo
       const defaultGroupId = currentUser?.role === 'group_admin' 
@@ -1251,9 +1312,11 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
         title: "Mi Nueva Encuesta", 
         description: "Descripción breve de la encuesta", 
         questions: [],
-        user_group_id: defaultGroupId
+        user_group_id: defaultGroupId,
+        survey_type: 'survey'
       });
       setSelectedUserGroupId(defaultGroupId);
+      setSurveyType('survey');
     }
   }, [initialSurveyData, currentUser]);
 
@@ -1271,13 +1334,21 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
   ];
 
   const addQuestion = (type) => {
+    // Para checklists, solo permitir "Opción Única"
+    if (surveyType === 'checklist' && type !== 'Opción Única') {
+      alert('Las listas de chequeo solo permiten preguntas tipo "Opción Única" con opciones "Cumple" y "No cumple".');
+      return;
+    }
+    
     const newQ = { 
       id: generateId(), 
       type, 
       text: '', 
       description: '', 
       required: false, 
-      options: ['Opción Única', 'Casillas', 'Desplegable'].includes(type) ? ['Opción 1'] : [],
+      options: ['Opción Única', 'Casillas', 'Desplegable'].includes(type) 
+        ? (surveyType === 'checklist' ? ['Cumple', 'No cumple'] : ['Opción 1'])
+        : [],
       section_id: null, // Will be assigned to a section if sections exist
       conditional_logic: null
     };
@@ -1347,6 +1418,21 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
   };
   
   const handlePublish = () => {
+    // Validar checklist: todas las preguntas deben ser "Opción Única" con exactamente 2 opciones: "Cumple" y "No cumple"
+    if (surveyType === 'checklist') {
+      const invalidQuestions = surveyData.questions.filter(q => {
+        if (q.type !== 'Opción Única') return true;
+        if (!q.options || q.options.length !== 2) return true;
+        const options = q.options.map(opt => opt.trim());
+        return !(options.includes('Cumple') && options.includes('No cumple'));
+      });
+      
+      if (invalidQuestions.length > 0) {
+        alert('Las listas de chequeo solo pueden tener preguntas tipo "Opción Única" con exactamente 2 opciones: "Cumple" y "No cumple".');
+        return;
+      }
+    }
+    
     // Para group_admin, siempre usar su grupo asignado
     let finalUserGroupId = selectedUserGroupId || null;
     if (currentUser?.role === 'group_admin' && currentUser?.user_group_id) {
@@ -1355,7 +1441,8 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
     
     const dataToSave = {
       ...surveyData,
-      user_group_id: finalUserGroupId
+      user_group_id: finalUserGroupId,
+      survey_type: surveyType
     };
     onSave(dataToSave);
   };
@@ -1368,7 +1455,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
           
           {/* Contenedor scrollable para las herramientas */}
           <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide md:flex md:flex-col md:gap-2 md:px-2">
-            {questionTools.map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
+            {(surveyType === 'checklist' 
+              ? questionTools.filter(tool => tool.type === 'Opción Única')
+              : questionTools
+            ).map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
           </div>
           
           {/* Footer del sidebar en desktop */}
@@ -1381,7 +1471,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
         
         {/* Vista móvil - sidebar horizontal */}
         <div className="flex md:hidden flex-row items-center gap-1.5 sm:gap-2 flex-shrink-0 min-w-0">
-          {questionTools.map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
+          {(surveyType === 'checklist' 
+            ? questionTools.filter(tool => tool.type === 'Opción Única')
+            : questionTools
+          ).map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
         </div>
         
       </nav>
@@ -1401,10 +1494,35 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
              </button>
              <div className="min-w-0 flex-1">
                <h1 className="text-lg md:text-xl lg:text-2xl font-black text-gray-800 tracking-tight leading-tight break-words">{surveyData.title}</h1>
-               <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">Modo Edición</span>
+               <div className="flex items-center gap-2 mt-1">
+                 <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block">Modo Edición</span>
+                 {surveyType === 'checklist' && (
+                   <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full">Lista de Chequeo</span>
+                 )}
+               </div>
              </div>
            </div>
            <div className="flex gap-2 flex-shrink-0 w-full md:w-auto">
+             {/* Selector de tipo de encuesta - solo mostrar si no hay preguntas o es nueva encuesta */}
+             {(!initialSurveyData || surveyData.questions.length === 0) && (
+               <select
+                 value={surveyType}
+                 onChange={(e) => {
+                   const newType = e.target.value;
+                   if (newType === 'checklist' && surveyData.questions.length > 0) {
+                     if (!window.confirm('Cambiar a Lista de Chequeo eliminará todas las preguntas actuales. ¿Continuar?')) {
+                       return;
+                     }
+                     setSurveyData({ ...surveyData, questions: [] });
+                   }
+                   setSurveyType(newType);
+                 }}
+                 className="flex-1 md:flex-none px-3 md:px-4 py-2 md:py-2.5 bg-white border-2 border-gray-300 rounded-xl font-bold text-xs md:text-sm shadow-lg hover:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+               >
+                 <option value="survey">Encuesta</option>
+                 <option value="checklist">Lista de Chequeo</option>
+               </select>
+             )}
              <button 
                onClick={() => setShowSectionManager(!showSectionManager)} 
                className="flex-1 md:flex-none px-4 md:px-5 py-2 md:py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-xs md:text-sm shadow-xl flex items-center justify-center gap-2 transition-transform active:scale-95"
@@ -1533,6 +1651,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
                    onUpdate={(newData) => updateQuestion(q.id, newData)}
                    sections={surveyData.sections || []}
                    onAssignSection={(sectionId) => assignQuestionToSection(q.id, sectionId)}
+                   surveyType={surveyType}
                  />
                ))
              )}
@@ -1555,6 +1674,253 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
   );
 };
 
+
+// --- VISTA: RESUMEN MENSUAL DE CHECKLIST ---
+
+const ChecklistMonthlySummary = ({ survey, onBack }) => {
+  const [summaryData, setSummaryData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
+  const fetchSummary = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await authenticatedFetch(
+        `/api/checklists/${survey.id || survey._id}/monthly-summary/?year=${selectedYear}&month=${selectedMonth}`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setSummaryData(data);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || 'Error al cargar el resumen');
+      }
+    } catch (err) {
+      setError('Error al cargar el resumen: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (survey) {
+      fetchSummary();
+    }
+  }, [survey, selectedYear, selectedMonth]);
+
+  const exportToExcel = () => {
+    if (!summaryData || !summaryData.areas || summaryData.areas.length === 0) return;
+
+    const wsData = [];
+    
+    // Header row
+    const headerRow = ['SERVICIO', 'PREGUNTA'];
+    for (let day = 1; day <= 31; day++) {
+      headerRow.push(`Día ${day}`);
+    }
+    headerRow.push('PROMEDIO POR ÁREAS');
+    wsData.push(headerRow);
+
+    // Data rows
+    summaryData.areas.forEach(area => {
+      area.questions.forEach((question, qIdx) => {
+        const row = [];
+        if (qIdx === 0) {
+          row.push(area.name);
+        } else {
+          row.push('');
+        }
+        row.push(question.text);
+        
+        question.days.forEach(dayData => {
+          row.push(dayData.status);
+        });
+        
+        if (qIdx === 0) {
+          row.push(`${area.average}%`);
+        } else {
+          row.push('');
+        }
+        
+        wsData.push(row);
+      });
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    XLSX.utils.book_append_sheet(wb, ws, 'Resumen Mensual');
+    XLSX.writeFile(wb, `Resumen_Mensual_${selectedYear}_${selectedMonth}.xlsx`);
+  };
+
+  const getStatusColor = (status) => {
+    if (status === 'C' || status === 'C/C') return 'bg-green-100 text-green-700';
+    if (status === 'C/NC') return 'bg-yellow-100 text-yellow-700';
+    if (status === 'NC' || status === 'NC/NC') return 'bg-red-100 text-red-700';
+    return 'bg-gray-100 text-gray-500';
+  };
+
+  if (loading && !summaryData) {
+    return (
+      <main className="flex-1 relative z-10">
+        <header className="sticky top-0 z-40 px-4 py-4 md:px-12 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
+          <div className="flex items-center gap-3">
+            <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
+              <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
+            </button>
+            <img 
+              src={logoImage} 
+              alt="Survey App Logo" 
+              className="h-24 w-auto object-contain hidden md:block"
+            />
+            <div>
+              <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Resumen Mensual</h1>
+              <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">Cargando...</span>
+            </div>
+          </div>
+        </header>
+        <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
+          <div className="text-center py-20">
+            <p className="text-gray-500">Cargando resumen mensual...</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex-1 relative z-10">
+      <header className="sticky top-0 z-40 px-4 py-4 md:px-12 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
+        <div className="flex items-center gap-3">
+          <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
+            <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
+          </button>
+          <img 
+            src={logoImage} 
+            alt="Survey App Logo" 
+            className="h-24 w-auto object-contain hidden md:block"
+          />
+          <div>
+            <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Resumen Mensual de Cumplimiento</h1>
+            <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">{survey.title}</span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={fetchSummary}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-bold text-sm flex items-center gap-2"
+          >
+            <FontAwesomeIcon icon={faSearch} size="sm" /> Refrescar
+          </button>
+          <button
+            onClick={exportToExcel}
+            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-sm flex items-center gap-2"
+            disabled={!summaryData}
+          >
+            <FontAwesomeIcon icon={faFileExcel} size="sm" /> Exportar
+          </button>
+        </div>
+      </header>
+
+      <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
+            {error}
+          </div>
+        )}
+
+        <div className="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+          <label className="text-sm font-bold text-gray-700">Seleccionar Mes:</label>
+          <div className="flex gap-2">
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            >
+              {months.map((month, idx) => (
+                <option key={idx} value={idx + 1}>{month}</option>
+              ))}
+            </select>
+            <input
+              type="number"
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 w-32"
+              min="2020"
+              max="2100"
+            />
+          </div>
+        </div>
+
+        {summaryData && summaryData.areas && summaryData.areas.length > 0 ? (
+          <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 shadow-lg overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-indigo-50">
+                  <th className="border border-gray-300 px-4 py-3 text-left font-bold text-gray-700 sticky left-0 bg-indigo-50 z-10">SERVICIO</th>
+                  <th className="border border-gray-300 px-4 py-3 text-left font-bold text-gray-700">PREGUNTA</th>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                    <th key={day} className="border border-gray-300 px-2 py-3 text-center font-bold text-gray-700 text-xs min-w-[60px]">
+                      {day}
+                    </th>
+                  ))}
+                  <th className="border border-gray-300 px-4 py-3 text-center font-bold text-gray-700 bg-green-50">PROMEDIO POR ÁREAS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summaryData.areas.map((area, areaIdx) => (
+                  area.questions.map((question, qIdx) => (
+                    <tr key={`${areaIdx}-${qIdx}`} className="hover:bg-gray-50">
+                      {qIdx === 0 && (
+                        <td 
+                          rowSpan={area.questions.length} 
+                          className="border border-gray-300 px-4 py-3 font-bold text-gray-800 sticky left-0 bg-white z-10"
+                        >
+                          {area.name}
+                        </td>
+                      )}
+                      <td className="border border-gray-300 px-4 py-3 text-gray-700">
+                        {question.text}
+                      </td>
+                      {question.days.map((dayData, dayIdx) => (
+                        <td 
+                          key={dayIdx} 
+                          className={`border border-gray-300 px-2 py-2 text-center text-xs font-bold ${getStatusColor(dayData.status)}`}
+                        >
+                          {dayData.status}
+                        </td>
+                      ))}
+                      {qIdx === 0 && (
+                        <td 
+                          rowSpan={area.questions.length}
+                          className="border border-gray-300 px-4 py-3 text-center font-bold text-gray-800 bg-green-50"
+                        >
+                          {area.average}%
+                        </td>
+                      )}
+                    </tr>
+                  ))
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="text-center py-24 border-2 border-dashed border-gray-300/60 rounded-3xl bg-white/40 backdrop-blur-sm">
+            <p className="text-2xl font-black text-gray-700 mb-2">No hay datos disponibles</p>
+            <p className="text-gray-500">No se encontraron chequeos para el mes seleccionado.</p>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+};
 
 // --- VISTA: RESPUESTAS DE ENCUESTAS ---
 
@@ -3245,7 +3611,7 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
 );
 };
 
-const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus }) => {
+const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus, onViewMonthlySummary }) => {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const titleRef = React.useRef(null);
@@ -3291,11 +3657,18 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
           {/* Header con título y badge - SIN FLEX, igual que eliminadas */}
           <div className="mb-4">
             <h3 className="text-xl font-black text-gray-800">{survey.title || 'Sin título'}</h3>
-            {survey.is_public && (
-              <span className="inline-block mt-2 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                Pública
-              </span>
-            )}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              {survey.is_public && (
+                <span className="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                  Pública
+                </span>
+              )}
+              {survey.survey_type === 'checklist' && (
+                <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
+                  Lista de Chequeo
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Descripción mejorada */}
@@ -3335,6 +3708,15 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
 
             {/* Botones de acción mejorados */}
             <div className="flex items-center justify-end gap-1">
+              {survey.survey_type === 'checklist' && onViewMonthlySummary && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onViewMonthlySummary(survey); }} 
+                  className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-blue-50 hover:to-cyan-50 text-gray-500 hover:text-blue-600 transition-all duration-200 hover:scale-110 active:scale-95" 
+                  title="Ver Resumen Mensual"
+                >
+                  <FontAwesomeIcon icon={faTable} size="sm" className="fa-icon-force-current" />
+                </button>
+              )}
               <button 
                 onClick={handleShare} 
                 className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-green-50 hover:to-emerald-50 text-gray-500 hover:text-green-600 transition-all duration-200 hover:scale-110 active:scale-95" 
@@ -3371,7 +3753,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
   );
 };
 
-const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onViewGroupAdmin, userGroups = [] }) => {
+const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onViewGroupAdmin, userGroups = [], onViewMonthlySummary }) => {
   const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
   
   // Estados para búsqueda y filtros
@@ -3739,14 +4121,20 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
 
                   {/* Grid de encuestas */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {activeSurveys.map(s => <SurveyCard 
-                        key={s.id || s._id} 
-                        survey={s} 
-                        onEdit={() => onEditSurvey(s)} 
-                        onDelete={() => onDeleteSurvey(s.id || s._id)} 
-                        onViewResponses={() => onViewResponses(s)} 
-                        onUpdatePublicStatus={onUpdatePublicStatus}
-                      />)}
+                      {activeSurveys.map(s => (
+                        <SurveyCard
+                          key={s.id || s._id}
+                          survey={s}
+                          onEdit={() => onEditSurvey(s)}
+                          onDelete={() => onDeleteSurvey(s.id || s._id)}
+                          onViewResponses={() => onViewResponses(s)}
+                          onShare={(survey) => {
+                            // Share logic
+                          }}
+                          onUpdatePublicStatus={(surveyId, isPublic) => onUpdatePublicStatus(surveyId, isPublic)}
+                          onViewMonthlySummary={onViewMonthlySummary}
+                        />
+                      ))}
                   </div>
                 </>
               )
@@ -3764,13 +4152,14 @@ export default function App() {
   const publicSurveyMatch = pathname.match(/^\/public\/survey\/(.+)$/);
   const publicSurveyId = publicSurveyMatch ? publicSurveyMatch[1] : null;
   const initialView = publicSurveyId ? 'public' : 'dashboard';
-  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'group-admin' | 'group-users'
+  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'group-admin' | 'group-users' | 'checklist-summary'
   const [selectedGroupId, setSelectedGroupId] = useState(null); // ID del grupo seleccionado para gestionar usuarios
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingSurveyId, setEditingSurveyId] = useState(null); // State to hold the ID of the survey being edited
   const [surveyToEdit, setSurveyToEdit] = useState(null); // State to hold the fetched survey data
   const [surveyForResponses, setSurveyForResponses] = useState(null); // Survey to view responses for
+  const [surveyForSummary, setSurveyForSummary] = useState(null); // Survey to view monthly summary for
   const [responses, setResponses] = useState([]); // Responses for the selected survey
   const [responsesLoading, setResponsesLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
@@ -4109,6 +4498,11 @@ export default function App() {
     await fetchResponses(surveyId);
   };
 
+  const handleViewMonthlySummary = (survey) => {
+    setSurveyForSummary(survey);
+    setView('checklist-summary');
+  };
+
   const handleUpdatePublicStatus = async (surveyId, isPublic) => {
     // Update the survey in the local state
     setSurveys(prevSurveys => 
@@ -4246,6 +4640,11 @@ export default function App() {
               onBack={handleBackToDashboard}
               onLogout={handleLogout}
               userRole={currentUser?.role}
+          />
+      ) : view === 'checklist-summary' ? (
+          <ChecklistMonthlySummary
+              survey={surveyForSummary}
+              onBack={handleBackToDashboard}
           />
       ) : view === 'responses' ? (
           <SurveyResponsesView

@@ -10,7 +10,8 @@ from .views import (
     ResponseListCreate, ResponseRetrieve,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
     PublicSurveyView, PublicResponseCreate,
-    ResponseSyncView, SyncStatusView
+    ResponseSyncView, SyncStatusView,
+    ChecklistMonthlySummaryView
 )
 
 urlpatterns = [
@@ -38,6 +39,9 @@ urlpatterns = [
     path('surveys/<str:pk>/', SurveyRetrieveUpdateDestroy.as_view(), name='survey-detail'),
     path('surveys/<str:pk>/restore/', SurveyRestoreView.as_view(), name='survey-restore'),
     path('surveys/<str:pk>/permanent-delete/', SurveyPermanentDeleteView.as_view(), name='survey-permanent-delete'),
+    
+    # Rutas para Checklists
+    path('checklists/<str:survey_id>/monthly-summary/', ChecklistMonthlySummaryView.as_view(), name='checklist-monthly-summary'),
 
     # Rutas para Respuestas
     path('responses/', ResponseListCreate.as_view(), name='response-list-create'),
