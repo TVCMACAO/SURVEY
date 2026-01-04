@@ -11,7 +11,8 @@ from .views import (
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
     PublicSurveyView, PublicResponseCreate,
     ResponseSyncView, SyncStatusView,
-    ChecklistMonthlySummaryView
+    ChecklistMonthlySummaryView,
+    UserChecklistsView
 )
 
 urlpatterns = [
@@ -21,6 +22,7 @@ urlpatterns = [
     
     # Rutas de usuario
     path('me/', CurrentUserView.as_view(), name='current_user'),
+    path('me/checklists/', UserChecklistsView.as_view(), name='user-checklists'),
     path('users/', UserListCreate.as_view(), name='user-list-create'),
     path('users/<str:pk>/', UserRetrieveUpdateDestroy.as_view(), name='user-detail'),  # Cambiado a str para ObjectId de MongoDB
 

@@ -11,6 +11,8 @@ import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
 import UserGroupsManager from './components/UserGroupsManager';
 import GroupUsersManager from './components/GroupUsersManager';
 import GroupAdminDashboard from './components/GroupAdminDashboard';
+import ChecklistOperativoView from './components/ChecklistOperativoView';
+import ChecklistMonthlySummaryView from './components/ChecklistMonthlySummaryView';
 import * as XLSX from 'xlsx';
 import logoImage from './assets/logo-survey-app.png';
 import {
@@ -4144,6 +4146,58 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
 );
 };
 
+// --- COMPONENTE: PANTALLA DE SELECCIÓN INICIAL ---
+
+const ChecklistSelectionView = ({ onSelectEncuestas, onSelectChequeos, onLogout }) => {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 md:p-12 max-w-2xl w-full">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-4">
+            Bienvenido
+          </h1>
+          <p className="text-lg text-gray-600">
+            Selecciona el tipo de trabajo que deseas realizar
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <button
+            onClick={onSelectEncuestas}
+            className="group relative bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white p-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+          >
+            <div className="flex flex-col items-center">
+              <FontAwesomeIcon icon={faFileLines} size="3x" className="mb-4" />
+              <h2 className="text-2xl font-bold mb-2">Encuestas</h2>
+              <p className="text-sm opacity-90">Crear y gestionar encuestas</p>
+            </div>
+          </button>
+
+          <button
+            onClick={onSelectChequeos}
+            className="group relative bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white p-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+          >
+            <div className="flex flex-col items-center">
+              <FontAwesomeIcon icon={faSquareCheck} size="3x" className="mb-4" />
+              <h2 className="text-2xl font-bold mb-2">Chequeos Operativos</h2>
+              <p className="text-sm opacity-90">Checklist de gestión ambiental</p>
+            </div>
+          </button>
+        </div>
+
+        <div className="text-center">
+          <button
+            onClick={onLogout}
+            className="text-gray-500 hover:text-gray-700 text-sm underline"
+          >
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- COMPONENTE PRINCIPAL (GESTOR DE VISTAS) ---
 
 export default function App() {
@@ -4152,7 +4206,7 @@ export default function App() {
   const publicSurveyMatch = pathname.match(/^\/public\/survey\/(.+)$/);
   const publicSurveyId = publicSurveyMatch ? publicSurveyMatch[1] : null;
   const initialView = publicSurveyId ? 'public' : 'dashboard';
-  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'group-admin' | 'group-users' | 'checklist-summary'
+  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'group-admin' | 'group-users' | 'checklist-summary' | 'checklist-selection' | 'checklist-operativo' | 'checklist-summary-view'
   const [selectedGroupId, setSelectedGroupId] = useState(null); // ID del grupo seleccionado para gestionar usuarios
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -4255,14 +4309,35 @@ export default function App() {
     }
   };
 
+  const hasChecklistsAssigned = async () => {
+    try {
+      const response = await authenticatedFetch('/api/me/checklists/');
+      if (response.ok) {
+        const data = await response.json();
+        return data.has_checklists || false;
+      }
+      return false;
+    } catch (error) {
+      console.error("Error checking checklists:", error);
+      return false;
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
     try {
       await login(loginCredentials.username, loginCredentials.password);
       await fetchCurrentUser(); // Obtener datos del usuario después del login
-      setView('dashboard');
-      fetchSurveys();
+      
+      // Verificar si el usuario tiene checklists asignadas
+      const hasChecklists = await hasChecklistsAssigned();
+      if (hasChecklists) {
+        setView('checklist-selection');
+      } else {
+        setView('dashboard');
+        fetchSurveys();
+      }
     } catch (error) {
       setLoginError(error.message || 'Error al iniciar sesión');
     }
@@ -4640,6 +4715,28 @@ export default function App() {
               onBack={handleBackToDashboard}
               onLogout={handleLogout}
               userRole={currentUser?.role}
+          />
+      ) : view === 'checklist-selection' ? (
+          <ChecklistSelectionView
+              onSelectEncuestas={() => {
+                setView('dashboard');
+                fetchSurveys();
+              }}
+              onSelectChequeos={() => setView('checklist-operativo')}
+              onLogout={handleLogout}
+          />
+      ) : view === 'checklist-operativo' ? (
+          <ChecklistOperativoView
+              onBack={() => setView('checklist-selection')}
+              onViewSummary={(checklist) => {
+                setSurveyForSummary(checklist);
+                setView('checklist-summary-view');
+              }}
+          />
+      ) : view === 'checklist-summary-view' ? (
+          <ChecklistMonthlySummaryView
+              checklist={surveyForSummary}
+              onBack={() => setView('checklist-operativo')}
           />
       ) : view === 'checklist-summary' ? (
           <ChecklistMonthlySummary

@@ -2323,3 +2323,62 @@ class ChecklistMonthlySummaryView(APIView):
         result['areas'].append(area_data)
         
         return Response(result, status=status.HTTP_200_OK)
+
+
+class UserChecklistsView(APIView):
+    """
+    Vista para verificar si el usuario tiene checklists asignadas.
+    Retorna un booleano indicando si el usuario tiene checklists asignadas.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        try:
+            surveys_collection = get_surveys_collection()
+            user_role = getattr(request.user, 'role', None)
+            
+            query = {'survey_type': 'checklist'}
+            
+            # Filtrar por grupo de usuarios según rol
+            if user_role == 'root':
+                # Root puede ver todas las checklists, pero para este endpoint
+                # verificamos si tiene alguna asignada a su grupo si tiene user_group_id
+                user_group_id = getattr(request.user, 'user_group_id', None)
+                if user_group_id:
+                    query['user_group_id'] = str(user_group_id)
+            elif user_role in ('group_admin', 'encuestador', 'analista'):
+                # Usuarios regulares solo ven checklists de su grupo
+                user_group_id = getattr(request.user, 'user_group_id', None)
+                if user_group_id:
+                    query['user_group_id'] = str(user_group_id)
+                else:
+                    # Si no tiene grupo asignado, no tiene checklists
+                    return Response({'has_checklists': False}, status=status.HTTP_200_OK)
+            
+            # Excluir eliminadas
+            deleted_condition = {
+                '$or': [
+                    {'is_deleted': {'$ne': True}},
+                    {'is_deleted': {'$exists': False}}
+                ]
+            }
+            if query:
+                final_query = {'$and': [query, deleted_condition]}
+            else:
+                final_query = deleted_condition
+            
+            count = surveys_collection.count_documents(final_query)
+            has_checklists = count > 0
+            
+            return Response({
+                'has_checklists': has_checklists,
+                'count': count
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in UserChecklistsView.get: {type(e).__name__}: {str(e)}", exc_info=True)
+            return Response(
+                {"detail": f"Error al verificar checklists: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
