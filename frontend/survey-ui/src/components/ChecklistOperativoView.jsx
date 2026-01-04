@@ -193,12 +193,26 @@ const ChecklistOperativoView = ({ onBack, onViewSummary }) => {
               </span>)
             </p>
           </div>
-          <button
-            onClick={onBack}
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition"
-          >
-            Volver
-          </button>
+          <div className="flex space-x-2">
+            {hasChecklists && (
+              <button
+                onClick={() => {
+                  if (onBack) onBack();
+                }}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+              >
+                Ir a Encuestas
+              </button>
+            )}
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition"
+              >
+                Cerrar Sesión
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}

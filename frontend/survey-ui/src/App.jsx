@@ -3874,15 +3874,25 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                      <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Mi Grupo
                    </button>
                  )}
+                 {hasChecklists && onViewChecklists && (
+                    <button
+                     onClick={onViewChecklists}
+                     className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm transition-all duration-200 flex items-center gap-2"
+                     title="Chequeos Operativos"
+                    >
+                      <FontAwesomeIcon icon={faSquareCheck} size="sm" className="fa-icon-force-white" />
+                      Chequeos Operativos
+                    </button>
+                 )}
                  {isRoot && onViewUsers && (
-                   <button 
-                     onClick={onViewUsers} 
+                    <button 
+                     onClick={onViewUsers}
                      className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
                    >
                      <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Usuarios
                    </button>
                  )}
-                 <button 
+                 <button
                    onClick={onNewSurvey} 
                    className="px-6 py-3 bg-gradient-to-r from-gray-900 to-gray-800 hover:from-black hover:to-gray-900 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
                  >
@@ -4303,9 +4313,24 @@ export default function App() {
         if (userData.role === 'root') {
           await fetchUserGroups();
         }
+        // Verificar si tiene checklists asignadas
+        await checkUserChecklists();
       }
     } catch (error) {
       console.error("Error fetching current user:", error);
+    }
+  };
+
+  const checkUserChecklists = async () => {
+    try {
+      const response = await authenticatedFetch('/api/me/checklists/');
+      if (response.ok) {
+        const data = await response.json();
+        setHasChecklists(data.has_checklists || false);
+      }
+    } catch (error) {
+      console.error("Error checking checklists:", error);
+      setHasChecklists(false);
     }
   };
 
@@ -4331,10 +4356,13 @@ export default function App() {
       await fetchCurrentUser(); // Obtener datos del usuario después del login
       
       // Verificar si el usuario tiene checklists asignadas
-      const hasChecklists = await hasChecklistsAssigned();
-      if (hasChecklists) {
-        setView('checklist-selection');
+      const userHasChecklists = await hasChecklistsAssigned();
+      if (userHasChecklists) {
+        // Si tiene checklists, ir directamente a la vista de checklist operativo
+        // (sistema independiente de encuestas)
+        setView('checklist-operativo');
       } else {
+        // Si no tiene checklists, ir al dashboard de encuestas
         setView('dashboard');
         fetchSurveys();
       }
@@ -4727,11 +4755,20 @@ export default function App() {
           />
       ) : view === 'checklist-operativo' ? (
           <ChecklistOperativoView
-              onBack={() => setView('checklist-selection')}
+              onBack={() => {
+                // Si el usuario también tiene acceso a encuestas, ir al dashboard
+                // Si no, mantener en checklist
+                if (surveys.length > 0 || currentUser?.role === 'root' || currentUser?.role === 'group_admin') {
+                  setView('dashboard');
+                  fetchSurveys();
+                }
+              }}
               onViewSummary={(checklist) => {
                 setSurveyForSummary(checklist);
                 setView('checklist-summary-view');
               }}
+              hasChecklists={hasChecklists}
+              onLogout={handleLogout}
           />
       ) : view === 'checklist-summary-view' ? (
           <ChecklistMonthlySummaryView
