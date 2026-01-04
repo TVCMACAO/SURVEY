@@ -4231,6 +4231,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null); // Usuario actual con su rol
   const [deletedSurveys, setDeletedSurveys] = useState([]); // Encuestas eliminadas
   const [userGroups, setUserGroups] = useState([]); // Grupos de usuarios (para root)
+  const [hasChecklists, setHasChecklists] = useState(false); // Si el usuario tiene checklists asignadas
 
   const fetchSurveys = async () => {
     setLoading(true);
@@ -4239,7 +4240,10 @@ export default function App() {
         const response = await authenticatedFetch('/api/surveys/');
         if (!response.ok) throw new Error('Error al cargar los datos.');
         const data = await response.json();
-        setSurveys(data);
+        // Filtrar checklists - las checklists son un sistema independiente
+        // Solo mostrar encuestas normales en el dashboard
+        const surveysOnly = data.filter(s => s.survey_type !== 'checklist');
+        setSurveys(surveysOnly);
     } catch (error) {
         console.error("Error fetching surveys:", error);
         alert('No se pudieron cargar las encuestas. ' + error.message);

@@ -4,7 +4,7 @@ import { faSync, faCheckCircle, faExclamationTriangle } from '@fortawesome/free-
 import { authenticatedFetch } from '../auth';
 import { useChecklistData } from '../hooks/useChecklistData';
 
-const ChecklistOperativoView = ({ onBack, onViewSummary }) => {
+const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout }) => {
   const [checklists, setChecklists] = useState([]);
   const [selectedChecklist, setSelectedChecklist] = useState(null);
   const [selectedArea, setSelectedArea] = useState('');
@@ -194,11 +194,9 @@ const ChecklistOperativoView = ({ onBack, onViewSummary }) => {
             </p>
           </div>
           <div className="flex space-x-2">
-            {hasChecklists && (
+            {onBack && (
               <button
-                onClick={() => {
-                  if (onBack) onBack();
-                }}
+                onClick={onBack}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
               >
                 Ir a Encuestas
