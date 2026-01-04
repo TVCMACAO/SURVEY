@@ -38,3 +38,4 @@ class MongoJWTAuthentication(JWTAuthentication):
                 raise
             raise AuthenticationFailed(f'Error getting user: {str(e)}')
 
+

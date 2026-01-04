@@ -66,3 +66,4 @@ Actualmente, el proyecto usa:
 Para EasyPanel, la **Solución 1 (volumen persistente)** es la más rápida de implementar.
 La **Solución 2 (MongoDB)** es mejor a largo plazo pero requiere más trabajo.
 
+

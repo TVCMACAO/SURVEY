@@ -829,24 +829,24 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 if not group_found:
                     raise ValidationError(detail="El nuevo grupo de encuestas especificado no existe.")
 
-                   update_fields = {
-                       'title': validated_data.get('title', survey['title']),
-                       'description': validated_data.get('description', survey.get('description', '')),
-                       'group': validated_data.get('group', survey['group']),
-                       'questions': validated_data.get('questions', survey['questions']),
-                       'is_public': validated_data.get('is_public', survey.get('is_public', False))
-                   }
-                   
-                   # Actualizar survey_type si está presente
-                   if 'survey_type' in validated_data:
-                       update_fields['survey_type'] = validated_data['survey_type']
-                   elif 'survey_type' not in survey:
-                       # Si no existe, usar 'survey' por defecto
-                       update_fields['survey_type'] = 'survey'
-                   
-                   # Actualizar checklist_config si está presente
-                   if 'checklist_config' in validated_data:
-                       update_fields['checklist_config'] = validated_data['checklist_config']
+            update_fields = {
+                'title': validated_data.get('title', survey['title']),
+                'description': validated_data.get('description', survey.get('description', '')),
+                'group': validated_data.get('group', survey['group']),
+                'questions': validated_data.get('questions', survey['questions']),
+                'is_public': validated_data.get('is_public', survey.get('is_public', False))
+            }
+            
+            # Actualizar survey_type si está presente
+            if 'survey_type' in validated_data:
+                update_fields['survey_type'] = validated_data['survey_type']
+            elif 'survey_type' not in survey:
+                # Si no existe, usar 'survey' por defecto
+                update_fields['survey_type'] = 'survey'
+            
+            # Actualizar checklist_config si está presente
+            if 'checklist_config' in validated_data:
+                update_fields['checklist_config'] = validated_data['checklist_config']
             
             # Para group_admin, asegurar que user_group_id no cambie (siempre el suyo)
             if user_role == 'group_admin':

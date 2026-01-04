@@ -92,3 +92,4 @@ Si ya tienes usuarios creados y quieres moverlos al volumen:
 - El script `start.sh` crea el directorio con permisos 755
 - Si hay problemas, verifica: `chmod 755 /app/data`
 
+

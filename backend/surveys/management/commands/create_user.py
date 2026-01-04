@@ -50,3 +50,4 @@ class Command(BaseCommand):
         except Exception as e:
             raise CommandError(f'❌ Error al crear el usuario: {str(e)}')
 
+

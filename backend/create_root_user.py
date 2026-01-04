@@ -103,3 +103,4 @@ if __name__ == '__main__':
     success = create_or_update_root_user()
     sys.exit(0 if success else 1)
 
+

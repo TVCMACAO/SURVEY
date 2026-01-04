@@ -81,3 +81,4 @@ cat VERSION
 - Si no quieres incrementar la versión, puedes hacer commit con `--no-verify` para saltar el hook
 - Los archivos de versión se actualizan automáticamente en todos los componentes del proyecto
 
+

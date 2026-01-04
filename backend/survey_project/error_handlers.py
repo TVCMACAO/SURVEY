@@ -59,3 +59,4 @@ def handler400(request, exception):
     from django.views.defaults import bad_request
     return bad_request(request, exception)
 
+

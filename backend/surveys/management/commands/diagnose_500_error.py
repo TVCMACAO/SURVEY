@@ -111,3 +111,4 @@ class Command(BaseCommand):
         
         self.stdout.write('\n=== FIN DEL DIAGNÓSTICO ===\n')
 
+

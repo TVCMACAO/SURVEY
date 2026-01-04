@@ -77,3 +77,4 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING('IMPORTANTE: Los usuarios migrados tienen contraseña temporal "temp_password_123"'))
             self.stdout.write(self.style.WARNING('Debes actualizar las contraseñas de los usuarios migrados.'))
 
+
