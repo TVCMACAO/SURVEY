@@ -3,6 +3,14 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSync, faCheckCircle, faExclamationTriangle } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch } from '../auth';
 import { useChecklistData } from '../hooks/useChecklistData';
+import {
+  validateRequiredQuestions,
+  validateAnswerFormat,
+  validateCheckLimit,
+  validateCheckNotLocked,
+  validateCompleteCheck,
+  validateArea
+} from '../utils/checklistValidations';
 
 const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout }) => {
   const [checklists, setChecklists] = useState([]);
@@ -22,7 +30,8 @@ const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout
     syncAllChecks,
     isCheckLocked,
     isLimitReached,
-    getTodayChecksCount
+    getTodayChecksCount,
+    getCurrentCheckKey
   } = useChecklistData();
 
   // Cargar checklists asignadas al usuario
@@ -87,9 +96,28 @@ const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout
     
     const checkData = getCheckData(selectedArea, activeCheck);
     
-    // Verificar si el chequeo está bloqueado
-    if (isCheckLocked(selectedArea, activeCheck)) {
-      setMessage({ type: 'error', text: 'Este chequeo está bloqueado y no puede ser modificado' });
+    // Validar que el chequeo no esté bloqueado
+    const lockValidation = validateCheckNotLocked(checkData);
+    if (!lockValidation.valid) {
+      setMessage({ type: 'error', text: lockValidation.error });
+      return;
+    }
+
+    // Validar formato de respuesta
+    const questions = selectedChecklist.questions || [];
+    const question = questions[questionIndex];
+    if (question) {
+      const formatValidation = validateAnswerFormat(compliance, question);
+      if (!formatValidation.valid) {
+        setMessage({ type: 'error', text: formatValidation.error });
+        return;
+      }
+    }
+
+    // Validar área
+    const areaValidation = validateArea(selectedArea, selectedChecklist);
+    if (!areaValidation.valid) {
+      setMessage({ type: 'error', text: areaValidation.error });
       return;
     }
 
@@ -169,7 +197,11 @@ const ChecklistOperativoView = ({ onBack, onViewSummary, hasChecklists, onLogout
   }
 
   const areas = extractAreasFromChecklist(selectedChecklist);
-  const currentCheckData = getCheckData(selectedArea, activeCheck);
+  
+  // Usar localData directamente del hook para que sea reactivo
+  const currentCheckKey = selectedArea && activeCheck ? getCurrentCheckKey(selectedArea, activeCheck) : null;
+  const currentCheckData = currentCheckKey ? localData[currentCheckKey] || null : null;
+  
   const isLocked = isCheckLocked(selectedArea, activeCheck);
   const limitReached = isLimitReached(selectedArea);
   const todayChecks = getTodayChecksCount(selectedArea);

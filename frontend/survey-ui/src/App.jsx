@@ -4146,49 +4146,59 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
 );
 };
 
-// --- COMPONENTE: PANTALLA DE SELECCIÓN INICIAL ---
+// --- COMPONENTE: MENÚ PRINCIPAL PWA ---
 
-const ChecklistSelectionView = ({ onSelectEncuestas, onSelectChequeos, onLogout }) => {
+const MainMenuView = ({ onSelectEncuestas, onSelectChequeos, onLogout, currentUser }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 md:p-12 max-w-2xl w-full">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 md:p-12 max-w-2xl w-full">
+        {/* Header con logo y bienvenida */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-4">
-            Bienvenido
+          <div className="mb-4">
+            <img 
+              src={logoImage} 
+              alt="Survey App Logo" 
+              className="h-20 md:h-24 w-auto object-contain mx-auto"
+            />
+          </div>
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">
+            Bienvenido{currentUser?.first_name ? `, ${currentUser.first_name}` : ''}
           </h1>
           <p className="text-lg text-gray-600">
             Selecciona el tipo de trabajo que deseas realizar
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        {/* Botones principales */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6">
           <button
             onClick={onSelectEncuestas}
-            className="group relative bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white p-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+            className="group relative bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white p-6 md:p-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95"
           >
             <div className="flex flex-col items-center">
-              <FontAwesomeIcon icon={faFileLines} size="3x" className="mb-4" />
-              <h2 className="text-2xl font-bold mb-2">Encuestas</h2>
-              <p className="text-sm opacity-90">Crear y gestionar encuestas</p>
+              <FontAwesomeIcon icon={faFileLines} size="2x" className="mb-3 md:mb-4" />
+              <h2 className="text-xl md:text-2xl font-bold mb-2">Encuestas</h2>
+              <p className="text-xs md:text-sm opacity-90 text-center">Crear y gestionar encuestas</p>
             </div>
           </button>
 
           <button
             onClick={onSelectChequeos}
-            className="group relative bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white p-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+            className="group relative bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white p-6 md:p-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95"
           >
             <div className="flex flex-col items-center">
-              <FontAwesomeIcon icon={faSquareCheck} size="3x" className="mb-4" />
-              <h2 className="text-2xl font-bold mb-2">Chequeos Operativos</h2>
-              <p className="text-sm opacity-90">Checklist de gestión ambiental</p>
+              <FontAwesomeIcon icon={faSquareCheck} size="2x" className="mb-3 md:mb-4" />
+              <h2 className="text-xl md:text-2xl font-bold mb-2">Chequeos Operativos</h2>
+              <p className="text-xs md:text-sm opacity-90 text-center">Checklist de gestión ambiental</p>
             </div>
           </button>
         </div>
 
-        <div className="text-center">
+        {/* Footer con botón de cerrar sesión */}
+        <div className="text-center pt-4 border-t border-gray-200">
           <button
             onClick={onLogout}
-            className="text-gray-500 hover:text-gray-700 text-sm underline"
+            className="text-gray-500 hover:text-gray-700 text-sm font-medium transition-colors"
           >
             Cerrar sesión
           </button>
@@ -4206,7 +4216,7 @@ export default function App() {
   const publicSurveyMatch = pathname.match(/^\/public\/survey\/(.+)$/);
   const publicSurveyId = publicSurveyMatch ? publicSurveyMatch[1] : null;
   const initialView = publicSurveyId ? 'public' : 'dashboard';
-  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'group-admin' | 'group-users' | 'checklist-summary' | 'checklist-selection' | 'checklist-operativo' | 'checklist-summary-view'
+  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'group-admin' | 'group-users' | 'checklist-summary' | 'menu-selection' | 'checklist-operativo' | 'checklist-summary-view'
   const [selectedGroupId, setSelectedGroupId] = useState(null); // ID del grupo seleccionado para gestionar usuarios
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -4349,17 +4359,8 @@ export default function App() {
       await login(loginCredentials.username, loginCredentials.password);
       await fetchCurrentUser(); // Obtener datos del usuario después del login
       
-      // Verificar si el usuario tiene checklists asignadas
-      const userHasChecklists = await hasChecklistsAssigned();
-      if (userHasChecklists) {
-        // Si tiene checklists, ir directamente a la vista de checklist operativo
-        // (sistema independiente de encuestas)
-        setView('checklist-operativo');
-      } else {
-        // Si no tiene checklists, ir al dashboard de encuestas
-        setView('dashboard');
-        fetchSurveys();
-      }
+      // Siempre mostrar el menú principal después del login
+      setView('menu-selection');
     } catch (error) {
       setLoginError(error.message || 'Error al iniciar sesión');
     }
@@ -4565,7 +4566,8 @@ export default function App() {
       setSurveyToEdit(null); // Clear pre-filled data
       setSurveyForResponses(null); // Clear responses survey
       setResponses([]); // Clear responses
-      setView('dashboard');
+      // Volver al menú principal
+      setView('menu-selection');
   }
 
   const fetchResponses = async (surveyId) => {
@@ -4738,24 +4740,21 @@ export default function App() {
               onLogout={handleLogout}
               userRole={currentUser?.role}
           />
-      ) : view === 'checklist-selection' ? (
-          <ChecklistSelectionView
+      ) : view === 'menu-selection' ? (
+          <MainMenuView
               onSelectEncuestas={() => {
                 setView('dashboard');
                 fetchSurveys();
               }}
               onSelectChequeos={() => setView('checklist-operativo')}
               onLogout={handleLogout}
+              currentUser={currentUser}
           />
       ) : view === 'checklist-operativo' ? (
           <ChecklistOperativoView
               onBack={() => {
-                // Si el usuario también tiene acceso a encuestas, ir al dashboard
-                // Si no, mantener en checklist
-                if (surveys.length > 0 || currentUser?.role === 'root' || currentUser?.role === 'group_admin') {
-                  setView('dashboard');
-                  fetchSurveys();
-                }
+                // Volver al menú principal
+                setView('menu-selection');
               }}
               onViewSummary={(checklist) => {
                 setSurveyForSummary(checklist);
