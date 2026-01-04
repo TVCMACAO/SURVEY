@@ -3379,7 +3379,6 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
   const [filterPublicStatus, setFilterPublicStatus] = React.useState('all'); // 'all' | 'public' | 'private'
   const [filterUserGroup, setFilterUserGroup] = React.useState('all');
   const [filterCreator, setFilterCreator] = React.useState('all');
-  const [filterQuestionCount, setFilterQuestionCount] = React.useState({ min: '', max: '' });
   
   // Filtrar encuestas activas y eliminadas (sin filtros aplicados aún)
   const allActiveSurveys = surveys.filter(s => !s.is_deleted);
@@ -3406,14 +3405,6 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
       }
     });
     return Array.from(groups.entries()).map(([id, name]) => ({ id, name }));
-  }, [allSurveysForFilters]);
-  
-  const questionCountRange = React.useMemo(() => {
-    const counts = allSurveysForFilters.map(s => s.questions?.length || 0);
-    return {
-      min: counts.length > 0 ? Math.min(...counts) : 0,
-      max: counts.length > 0 ? Math.max(...counts) : 0
-    };
   }, [allSurveysForFilters]);
   
   // Función de filtrado
@@ -3446,20 +3437,9 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
         if (survey.created_by_username !== filterCreator) return false;
       }
       
-      // Filtro por número de preguntas
-      const questionCount = survey.questions?.length || 0;
-      if (filterQuestionCount.min !== '' && filterQuestionCount.min !== null) {
-        const minValue = parseInt(filterQuestionCount.min);
-        if (!isNaN(minValue) && questionCount < minValue) return false;
-      }
-      if (filterQuestionCount.max !== '' && filterQuestionCount.max !== null) {
-        const maxValue = parseInt(filterQuestionCount.max);
-        if (!isNaN(maxValue) && questionCount > maxValue) return false;
-      }
-      
       return true;
     });
-  }, [searchTerm, filterPublicStatus, filterUserGroup, filterCreator, filterQuestionCount]);
+  }, [searchTerm, filterPublicStatus, filterUserGroup, filterCreator]);
   
   // Aplicar filtros
   const activeSurveys = React.useMemo(() => filterSurveys(allActiveSurveys), [filterSurveys, allActiveSurveys]);
@@ -3482,7 +3462,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
   };
   
   // Verificar si hay filtros activos
-  const hasActiveFilters = searchTerm || filterPublicStatus !== 'all' || filterUserGroup !== 'all' || filterCreator !== 'all' || filterQuestionCount.min !== '' || filterQuestionCount.max !== '';
+  const hasActiveFilters = searchTerm || filterPublicStatus !== 'all' || filterUserGroup !== 'all' || filterCreator !== 'all';
 
   return (
     <main className="flex-1 relative z-10">
@@ -3615,7 +3595,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                 </div>
                 
                 {/* Filtros */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
                   {/* Filtro por estado público/privado */}
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">
@@ -3669,32 +3649,6 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                       </select>
                     </div>
                   )}
-                  
-                  {/* Filtro por número de preguntas */}
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">
-                      Número de Preguntas
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
-                        placeholder="Min"
-                        min="0"
-                        value={filterQuestionCount.min}
-                        onChange={(e) => setFilterQuestionCount({...filterQuestionCount, min: e.target.value})}
-                        className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
-                      <span className="self-center text-gray-500 text-sm">-</span>
-                      <input
-                        type="number"
-                        placeholder="Max"
-                        min="0"
-                        value={filterQuestionCount.max}
-                        onChange={(e) => setFilterQuestionCount({...filterQuestionCount, max: e.target.value})}
-                        className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      />
-                    </div>
-                  </div>
                 </div>
                 
                 {/* Indicador de resultados filtrados */}
