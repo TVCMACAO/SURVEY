@@ -1,10 +1,18 @@
 # Multi-stage build para Survey App
-# Stage 1: Build Frontend
+# Stage 1: Build Frontend (Survey UI)
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 COPY frontend/survey-ui/package*.json ./
 RUN npm ci
 COPY frontend/survey-ui/ ./
+RUN npm run build
+
+# Stage 1b: Build Checklist App
+FROM node:20-alpine AS checklist-builder
+WORKDIR /app
+COPY frontend/checklist-app/package*.json ./
+RUN npm ci
+COPY frontend/checklist-app/ ./
 RUN npm run build
 
 # Stage 2: Build Backend
@@ -29,8 +37,9 @@ COPY --from=backend-builder /usr/local/lib/python3.10/site-packages /usr/local/l
 COPY --from=backend-builder /usr/local/bin /usr/local/bin
 COPY backend/ /app/
 
-# Copy frontend build to the location Django expects
+# Copy frontend builds to the location Django expects
 COPY --from=frontend-builder /app/dist /app/frontend/survey-ui/dist
+COPY --from=checklist-builder /app/dist /app/frontend/checklist-app/dist
 
 # Copy startup script
 COPY start.sh /start.sh

@@ -49,22 +49,27 @@ MONGO_DB_NAME=survey_db
 ## 📋 Qué Hace el Dockerfile
 
 El Dockerfile en la raíz:
-1. **Construye el frontend** (React) con Node.js
-2. **Prepara el backend** (Django) con Python
-3. **Instala Nginx y Supervisor**
-4. **Ejecuta ambos servicios** en un solo contenedor:
+1. **Construye el frontend de Survey App** (React) con Node.js
+2. **Construye el frontend de Checklist App** (React) con Node.js
+3. **Prepara el backend** (Django) con Python
+4. **Instala Nginx y Supervisor**
+5. **Ejecuta ambos servicios** en un solo contenedor:
    - Django en el puerto 8000 (interno)
    - Nginx en el puerto 80 (público)
    - Nginx hace proxy de `/api/` a Django
-   - Nginx sirve el frontend en `/`
+   - Nginx sirve Survey App en `/`
+   - Nginx sirve Checklist App en `/checklist/`
 
 ## 🔍 Verificar Despliegue
 
 Después del despliegue:
 
 1. **Revisa los logs** en EasyPanel
-2. **Accede a la aplicación**: `http://tu-dominio` o `https://tu-dominio`
-3. **Prueba la API**: `http://tu-dominio/api/surveys/`
+2. **Accede a Survey App**: `http://tu-dominio` o `https://tu-dominio`
+3. **Accede a Checklist App**: `http://tu-dominio/checklist/` o `https://tu-dominio/checklist/`
+4. **Prueba la API**: `http://tu-dominio/api/surveys/`
+
+**Nota**: Ambas aplicaciones comparten el mismo backend y sistema de autenticación.
 
 ## ⚠️ Si Hay Problemas
 
