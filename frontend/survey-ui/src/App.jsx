@@ -3874,16 +3874,6 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                      <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Mi Grupo
                    </button>
                  )}
-                 {hasChecklists && onViewChecklists && (
-                    <button
-                     onClick={onViewChecklists}
-                     className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm transition-all duration-200 flex items-center gap-2"
-                     title="Chequeos Operativos"
-                    >
-                      <FontAwesomeIcon icon={faSquareCheck} size="sm" className="fa-icon-force-white" />
-                      Chequeos Operativos
-                    </button>
-                 )}
                  {isRoot && onViewUsers && (
                     <button 
                      onClick={onViewUsers}
