@@ -5,7 +5,7 @@ import {
   faShareNodes, faTrash, faXmark, faBars, faEllipsisVertical, faChevronLeft, 
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
   faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus,
-  faSignature, faEraser, faEnvelope, faUser
+  faSignature, faEraser, faEnvelope, faUser, faSearch, faFilter
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
 import UserGroupsManager from './components/UserGroupsManager';
@@ -3371,19 +3371,118 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
   );
 };
 
-const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onViewGroupAdmin }) => {
+const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onViewGroupAdmin, userGroups = [] }) => {
   const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
   
-  // Filtrar encuestas activas y eliminadas
-  const activeSurveys = surveys.filter(s => !s.is_deleted);
-  const deletedSurveysList = deletedSurveys.length > 0 ? deletedSurveys : surveys.filter(s => s.is_deleted);
+  // Estados para búsqueda y filtros
+  const [searchTerm, setSearchTerm] = React.useState('');
+  const [filterPublicStatus, setFilterPublicStatus] = React.useState('all'); // 'all' | 'public' | 'private'
+  const [filterUserGroup, setFilterUserGroup] = React.useState('all');
+  const [filterCreator, setFilterCreator] = React.useState('all');
+  const [filterQuestionCount, setFilterQuestionCount] = React.useState({ min: '', max: '' });
   
-  // Calcular estadísticas solo para encuestas activas
+  // Filtrar encuestas activas y eliminadas (sin filtros aplicados aún)
+  const allActiveSurveys = surveys.filter(s => !s.is_deleted);
+  const allDeletedSurveys = deletedSurveys.length > 0 ? deletedSurveys : surveys.filter(s => s.is_deleted);
+  
+  // Obtener datos únicos para filtros (de todas las encuestas, activas y eliminadas)
+  const allSurveysForFilters = React.useMemo(() => {
+    return [...allActiveSurveys, ...allDeletedSurveys];
+  }, [allActiveSurveys, allDeletedSurveys]);
+  
+  const uniqueCreators = React.useMemo(() => {
+    const creators = new Set();
+    allSurveysForFilters.forEach(s => {
+      if (s.created_by_username) creators.add(s.created_by_username);
+    });
+    return Array.from(creators).sort();
+  }, [allSurveysForFilters]);
+  
+  const uniqueUserGroups = React.useMemo(() => {
+    const groups = new Map();
+    allSurveysForFilters.forEach(s => {
+      if (s.user_group_id && s.user_group_name) {
+        groups.set(s.user_group_id, s.user_group_name);
+      }
+    });
+    return Array.from(groups.entries()).map(([id, name]) => ({ id, name }));
+  }, [allSurveysForFilters]);
+  
+  const questionCountRange = React.useMemo(() => {
+    const counts = allSurveysForFilters.map(s => s.questions?.length || 0);
+    return {
+      min: counts.length > 0 ? Math.min(...counts) : 0,
+      max: counts.length > 0 ? Math.max(...counts) : 0
+    };
+  }, [allSurveysForFilters]);
+  
+  // Función de filtrado
+  const filterSurveys = React.useCallback((surveyList) => {
+    return surveyList.filter(survey => {
+      // Filtro por término de búsqueda (case-insensitive)
+      if (searchTerm) {
+        const searchLower = searchTerm.toLowerCase();
+        const matchesSearch = 
+          (survey.title || '').toLowerCase().includes(searchLower) ||
+          (survey.description || '').toLowerCase().includes(searchLower) ||
+          (survey.created_by_username || '').toLowerCase().includes(searchLower) ||
+          (survey.user_group_name || '').toLowerCase().includes(searchLower);
+        if (!matchesSearch) return false;
+      }
+      
+      // Filtro por estado público/privado
+      if (filterPublicStatus !== 'all') {
+        if (filterPublicStatus === 'public' && !survey.is_public) return false;
+        if (filterPublicStatus === 'private' && survey.is_public) return false;
+      }
+      
+      // Filtro por grupo de usuarios
+      if (filterUserGroup !== 'all') {
+        if (survey.user_group_id !== filterUserGroup) return false;
+      }
+      
+      // Filtro por creador
+      if (filterCreator !== 'all') {
+        if (survey.created_by_username !== filterCreator) return false;
+      }
+      
+      // Filtro por número de preguntas
+      const questionCount = survey.questions?.length || 0;
+      if (filterQuestionCount.min !== '' && filterQuestionCount.min !== null) {
+        const minValue = parseInt(filterQuestionCount.min);
+        if (!isNaN(minValue) && questionCount < minValue) return false;
+      }
+      if (filterQuestionCount.max !== '' && filterQuestionCount.max !== null) {
+        const maxValue = parseInt(filterQuestionCount.max);
+        if (!isNaN(maxValue) && questionCount > maxValue) return false;
+      }
+      
+      return true;
+    });
+  }, [searchTerm, filterPublicStatus, filterUserGroup, filterCreator, filterQuestionCount]);
+  
+  // Aplicar filtros
+  const activeSurveys = React.useMemo(() => filterSurveys(allActiveSurveys), [filterSurveys, allActiveSurveys]);
+  const deletedSurveysList = React.useMemo(() => filterSurveys(allDeletedSurveys), [filterSurveys, allDeletedSurveys]);
+  
+  // Calcular estadísticas solo para encuestas activas filtradas
   const totalSurveys = activeSurveys.length;
   const publicSurveys = activeSurveys.filter(s => s.is_public).length;
   const totalQuestions = activeSurveys.reduce((sum, s) => sum + (s.questions?.length || 0), 0);
   
   const isRoot = userRole === 'root';
+  
+  // Función para limpiar filtros
+  const clearFilters = () => {
+    setSearchTerm('');
+    setFilterPublicStatus('all');
+    setFilterUserGroup('all');
+    setFilterCreator('all');
+    setFilterQuestionCount({ min: '', max: '' });
+  };
+  
+  // Verificar si hay filtros activos
+  const hasActiveFilters = searchTerm || filterPublicStatus !== 'all' || filterUserGroup !== 'all' || filterCreator !== 'all' || filterQuestionCount.min !== '' || filterQuestionCount.max !== '';
 
   return (
     <main className="flex-1 relative z-10">
@@ -3475,6 +3574,138 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                     )}
                   </button>
                 </div>
+              </div>
+            )}
+            
+            {/* Buscador y Filtros - Mostrar solo si hay encuestas */}
+            {((activeTab === 'active' && allActiveSurveys.length > 0) || (activeTab === 'deleted' && isRoot && allDeletedSurveys.length > 0)) && (
+              <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 shadow-lg p-6 mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <FontAwesomeIcon icon={faFilter} className="text-indigo-600" />
+                    Buscar y Filtrar
+                  </h2>
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearFilters}
+                      className="text-sm text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+                    >
+                      <FontAwesomeIcon icon={faXmark} size="sm" />
+                      Limpiar filtros
+                    </button>
+                  )}
+                </div>
+                
+                {/* Buscador */}
+                <div className="mb-4">
+                  <div className="relative">
+                    <FontAwesomeIcon 
+                      icon={faSearch} 
+                      className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                      size="sm"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Buscar por título, descripción, creador o grupo..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                
+                {/* Filtros */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Filtro por estado público/privado */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Estado
+                    </label>
+                    <select
+                      value={filterPublicStatus}
+                      onChange={(e) => setFilterPublicStatus(e.target.value)}
+                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    >
+                      <option value="all">Todos</option>
+                      <option value="public">Públicas</option>
+                      <option value="private">Privadas</option>
+                    </select>
+                  </div>
+                  
+                  {/* Filtro por grupo de usuarios (solo si hay grupos disponibles o es root) */}
+                  {(isRoot || uniqueUserGroups.length > 0) && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Grupo
+                      </label>
+                      <select
+                        value={filterUserGroup}
+                        onChange={(e) => setFilterUserGroup(e.target.value)}
+                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      >
+                        <option value="all">Todos los grupos</option>
+                        {uniqueUserGroups.map(group => (
+                          <option key={group.id} value={group.id}>{group.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  
+                  {/* Filtro por creador */}
+                  {uniqueCreators.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Creador
+                      </label>
+                      <select
+                        value={filterCreator}
+                        onChange={(e) => setFilterCreator(e.target.value)}
+                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      >
+                        <option value="all">Todos los creadores</option>
+                        {uniqueCreators.map(creator => (
+                          <option key={creator} value={creator}>{creator}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  
+                  {/* Filtro por número de preguntas */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Número de Preguntas
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        placeholder="Min"
+                        min="0"
+                        value={filterQuestionCount.min}
+                        onChange={(e) => setFilterQuestionCount({...filterQuestionCount, min: e.target.value})}
+                        className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                      <span className="self-center text-gray-500">-</span>
+                      <input
+                        type="number"
+                        placeholder="Max"
+                        min="0"
+                        value={filterQuestionCount.max}
+                        onChange={(e) => setFilterQuestionCount({...filterQuestionCount, max: e.target.value})}
+                        className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Indicador de resultados filtrados */}
+                {hasActiveFilters && (
+                  <div className="mt-4 text-sm text-gray-600">
+                    {activeTab === 'active' 
+                      ? `Mostrando ${activeSurveys.length} de ${allActiveSurveys.length} encuestas activas`
+                      : `Mostrando ${deletedSurveysList.length} de ${allDeletedSurveys.length} encuestas eliminadas`
+                    }
+                  </div>
+                )}
               </div>
             )}
             
@@ -4037,6 +4268,7 @@ export default function App() {
               userRole={currentUser?.role}
               onViewUsers={() => setView('users')}
               onViewGroupAdmin={() => setView('group-admin')}
+              userGroups={userGroups}
           />
       ) : view === 'group-admin' ? (
           <GroupAdminDashboard
