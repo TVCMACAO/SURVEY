@@ -3609,22 +3609,22 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                       placeholder="Buscar por título, descripción, creador o grupo..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     />
                   </div>
                 </div>
                 
                 {/* Filtros */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
                   {/* Filtro por estado público/privado */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">
                       Estado
                     </label>
                     <select
                       value={filterPublicStatus}
                       onChange={(e) => setFilterPublicStatus(e.target.value)}
-                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="w-full px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     >
                       <option value="all">Todos</option>
                       <option value="public">Públicas</option>
@@ -3635,13 +3635,13 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                   {/* Filtro por grupo de usuarios (solo si hay grupos disponibles o es root) */}
                   {(isRoot || uniqueUserGroups.length > 0) && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">
                         Grupo
                       </label>
                       <select
                         value={filterUserGroup}
                         onChange={(e) => setFilterUserGroup(e.target.value)}
-                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="w-full px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       >
                         <option value="all">Todos los grupos</option>
                         {uniqueUserGroups.map(group => (
@@ -3654,13 +3654,13 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                   {/* Filtro por creador */}
                   {uniqueCreators.length > 0 && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">
                         Creador
                       </label>
                       <select
                         value={filterCreator}
                         onChange={(e) => setFilterCreator(e.target.value)}
-                        className="w-full px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="w-full px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       >
                         <option value="all">Todos los creadores</option>
                         {uniqueCreators.map(creator => (
@@ -3672,7 +3672,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                   
                   {/* Filtro por número de preguntas */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">
                       Número de Preguntas
                     </label>
                     <div className="flex gap-2">
@@ -3682,16 +3682,16 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                         min="0"
                         value={filterQuestionCount.min}
                         onChange={(e) => setFilterQuestionCount({...filterQuestionCount, min: e.target.value})}
-                        className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       />
-                      <span className="self-center text-gray-500">-</span>
+                      <span className="self-center text-gray-500 text-sm">-</span>
                       <input
                         type="number"
                         placeholder="Max"
                         min="0"
                         value={filterQuestionCount.max}
                         onChange={(e) => setFilterQuestionCount({...filterQuestionCount, max: e.target.value})}
-                        className="flex-1 px-3 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                        className="flex-1 px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       />
                     </div>
                   </div>
