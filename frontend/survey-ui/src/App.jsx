@@ -2408,73 +2408,12 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   };
 
   const fetchGroups = async () => {
-    // #region agent log
-    fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-            location:'App.jsx:fetchGroups',
-            message:'Attempting to fetch groups',
-            data: { userRole: userRole, usersCount: users.length },
-            timestamp:Date.now(),
-            sessionId:'debug-session',
-            runId:'run1',
-            hypothesisId:'A'
-        })
-    }).catch(()=>{});
-    // #endregion
     try {
       const response = await authenticatedFetch('/api/groups/');
-      // #region agent log
-      fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-              location:'App.jsx:fetchGroups',
-              message:'Response received for groups',
-              data: { status: response.status, ok: response.ok, statusText: response.statusText },
-              timestamp:Date.now(),
-              sessionId:'debug-session',
-              runId:'run1',
-              hypothesisId:'A'
-          })
-      }).catch(()=>{});
-      // #endregion
       if (!response.ok) {
-        const errorText = await response.text();
-        // #region agent log
-        fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9',{
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({
-                location:'App.jsx:fetchGroups',
-                message:'Response not OK',
-                data: { status: response.status, errorText: errorText.substring(0, 500) },
-                timestamp:Date.now(),
-                sessionId:'debug-session',
-                runId:'run1',
-                hypothesisId:'A'
-            })
-        }).catch(()=>{});
-        // #endregion
         throw new Error('Error al cargar los grupos. Status: ' + response.status);
       }
       const data = await response.json();
-      // #region agent log
-      fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-              location:'App.jsx:fetchGroups',
-              message:'Groups data received',
-              data: { groupsCount: data.length, firstGroup: data.length > 0 ? data[0] : null },
-              timestamp:Date.now(),
-              sessionId:'debug-session',
-              runId:'run1',
-              hypothesisId:'A'
-          })
-      }).catch(()=>{});
-      // #endregion
       
       // Enriquecer grupos con información de usuarios
       const enrichedGroups = await Promise.all(data.map(async (group) => {
@@ -2495,40 +2434,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         };
       }));
       
-      // #region agent log
-      fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-              location:'App.jsx:fetchGroups',
-              message:'Groups enriched successfully',
-              data: { enrichedGroupsCount: enrichedGroups.length },
-              timestamp:Date.now(),
-              sessionId:'debug-session',
-              runId:'run1',
-              hypothesisId:'A'
-          })
-      }).catch(()=>{});
-      // #endregion
-      
       setGroups(enrichedGroups);
     } catch (error) {
       console.error("Error fetching groups:", error);
-      // #region agent log
-      fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({
-              location:'App.jsx:fetchGroups',
-              message:'Error during fetchGroups',
-              data: { errorMessage: error.message, errorStack: error.stack ? error.stack.substring(0, 500) : 'No stack' },
-              timestamp:Date.now(),
-              sessionId:'debug-session',
-              runId:'run1',
-              hypothesisId:'A'
-          })
-      }).catch(()=>{});
-      // #endregion
       alert('No se pudieron cargar los grupos. ' + error.message);
     }
   };
