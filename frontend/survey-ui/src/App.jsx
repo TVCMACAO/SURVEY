@@ -4,7 +4,7 @@ import {
   faPlus, faGear, faFont, faListUl, faSquareCheck, faStar, faCalendarDays, 
   faShareNodes, faTrash, faXmark, faBars, faEllipsisVertical, faChevronLeft, 
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
-  faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus,
+  faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus, faUser,
   faSignature, faEraser, faEnvelope
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
