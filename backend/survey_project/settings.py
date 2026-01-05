@@ -227,5 +227,28 @@ MONGO_USERNAME = os.environ.get('MONGO_USERNAME', 'root')
 MONGO_PASSWORD = os.environ.get('MONGO_PASSWORD', 'surveypass123')
 MONGO_HOST = os.environ.get('MONGO_HOST', 'mongo')
 MONGO_PORT = os.environ.get('MONGO_PORT', '27017')
-MONGO_URI = os.environ.get('MONGO_URI', f'mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/')
+
+# Si MONGO_URI está definida, usarla directamente; si no, construirla
+# Nota: Si se construye manualmente y se usa usuario root, agregar ?authSource=admin
+if 'MONGO_URI' in os.environ:
+    MONGO_URI = os.environ.get('MONGO_URI')
+else:
+    # Construir URI con authSource=admin si es usuario root
+    base_uri = f'mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/'
+    if MONGO_USERNAME == 'root':
+        # Agregar authSource=admin para usuarios root
+        if '?' in base_uri:
+            MONGO_URI = base_uri + '&authSource=admin'
+        else:
+            MONGO_URI = base_uri + '?authSource=admin'
+    else:
+        MONGO_URI = base_uri
+
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'survey_db') # Name of the database to use
+
+# Log MongoDB URI configuration (ocultar contraseña)
+if 'MONGO_URI' in os.environ:
+    _mongo_uri_log = MONGO_URI[:30] + "..." + MONGO_URI[-20:] if len(MONGO_URI) > 50 else MONGO_URI
+    print(f"MongoDB URI configured from environment (preview: {_mongo_uri_log})")
+else:
+    print(f"MongoDB URI constructed: mongodb://{MONGO_USERNAME}:***@{MONGO_HOST}:{MONGO_PORT}/")
