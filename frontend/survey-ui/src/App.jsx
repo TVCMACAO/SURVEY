@@ -5,16 +5,10 @@ import {
   faShareNodes, faTrash, faXmark, faBars, faEllipsisVertical, faChevronLeft, 
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
   faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus,
-  faSignature, faEraser, faEnvelope, faUser, faSearch, faFilter
+  faSignature, faEraser, faEnvelope
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
-import UserGroupsManager from './components/UserGroupsManager';
-import GroupUsersManager from './components/GroupUsersManager';
-import GroupAdminDashboard from './components/GroupAdminDashboard';
-import ChecklistOperativoView from './components/ChecklistOperativoView';
-import ChecklistMonthlySummaryView from './components/ChecklistMonthlySummaryView';
 import * as XLSX from 'xlsx';
-import logoImage from './assets/logo-survey-app.png';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -172,9 +166,8 @@ const ToolButton = ({ icon, label, onClick, color }) => (
 
 // --- VISTA: EDITOR DE ENCUESTAS ---
 
-const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection, surveyType = 'survey' }) => {
+const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection }) => {
   const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(data.type);
-  const isChecklist = surveyType === 'checklist';
 
   return (
     <div 
@@ -223,68 +216,11 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                          {data.type === 'Casillas' && <div className="w-4 h-4 sm:w-5 sm:h-5 rounded border-2 border-indigo-200 flex-shrink-0" />}
                          {data.type === 'Desplegable' && <span className="text-gray-400 text-xs sm:text-sm flex-shrink-0">{idx + 1}.</span>}
 
-                         <input 
-                           value={opt} 
-                           onChange={(e) => { 
-                             if (isChecklist && data.type === 'Opción Única') {
-                               // Validar que solo sean "Cumple" o "No cumple"
-                               const newValue = e.target.value;
-                               if (newValue !== 'Cumple' && newValue !== 'No cumple' && newValue !== '') {
-                                 alert('Las listas de chequeo solo permiten opciones "Cumple" y "No cumple".');
-                                 return;
-                               }
-                             }
-                             const newOpts = [...data.options]; 
-                             newOpts[idx] = e.target.value; 
-                             onUpdate({...data, options: newOpts}); 
-                           }} 
-                           className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" 
-                         />
-                         {!(isChecklist && data.type === 'Opción Única' && data.options?.length === 2) && (
-                           <button onClick={() => { 
-                             if (isChecklist && data.type === 'Opción Única' && data.options?.length <= 2) {
-                               alert('Las listas de chequeo deben tener exactamente 2 opciones: "Cumple" y "No cumple".');
-                               return;
-                             }
-                             const newOpts = data.options.filter((_, i) => i !== idx); 
-                             onUpdate({...data, options: newOpts}); 
-                           }} className="flex-shrink-0 p-1">
-                             <FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" />
-                           </button>
-                         )}
+                         <input value={opt} onChange={(e) => { const newOpts = [...data.options]; newOpts[idx] = e.target.value; onUpdate({...data, options: newOpts}); }} className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" />
+                         <button onClick={() => { const newOpts = data.options.filter((_, i) => i !== idx); onUpdate({...data, options: newOpts}); }} className="flex-shrink-0 p-1"><FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" /></button>
                        </div>
                      ))}
-                     {!(isChecklist && data.type === 'Opción Única' && data.options?.length >= 2) && (
-                       <button 
-                         onClick={() => {
-                           if (isChecklist && data.type === 'Opción Única') {
-                             if (data.options?.length >= 2) {
-                               alert('Las listas de chequeo solo permiten 2 opciones: "Cumple" y "No cumple".');
-                               return;
-                             }
-                             // Agregar la opción faltante
-                             const hasCumple = data.options?.includes('Cumple');
-                             const hasNoCumple = data.options?.includes('No cumple');
-                             if (!hasCumple) {
-                               onUpdate({...data, options: [...(data.options || []), 'Cumple']});
-                             } else if (!hasNoCumple) {
-                               onUpdate({...data, options: [...(data.options || []), 'No cumple']});
-                             }
-                           } else {
-                             onUpdate({...data, options: [...(data.options || []), `Opción ${data.options?.length + 1}`]});
-                           }
-                         }} 
-                         className="text-xs font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 mt-2 sm:mt-3 pl-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-indigo-50 rounded-lg w-fit transition-colors"
-                       >
-                         <FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" />
-                         {isChecklist && data.type === 'Opción Única' ? 'Agregar opción faltante' : `Agregar opción`}
-                       </button>
-                     )}
-                     {isChecklist && data.type === 'Opción Única' && (
-                       <p className="text-xs text-gray-500 italic mt-2">
-                         Las listas de chequeo requieren exactamente 2 opciones: "Cumple" y "No cumple"
-                       </p>
-                     )}
+                     <button onClick={() => onUpdate({...data, options: [...(data.options || []), `Opción ${data.options?.length + 1}`]})} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 mt-2 sm:mt-3 pl-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-indigo-50 rounded-lg w-fit transition-colors"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /></button>
                   </div>
                 )}
                 {data.type === 'Puntuación' && <div className="flex gap-4 justify-center py-6 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">{[1,2,3,4,5].map(i => <FontAwesomeIcon key={i} icon={faStar} size="lg" className="text-gray-300 fa-icon-force-current" />)}</div>}
@@ -544,11 +480,6 @@ const SurveyPreview = ({ surveyData, onBack }) => {
           >
             <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
           </button>
-          <img 
-            src={logoImage} 
-            alt="Survey App Logo" 
-            className="h-24 w-auto object-contain hidden md:block"
-          />
           <div>
             <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Vista Previa</h1>
             <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">Modo Previsualización</span>
@@ -1218,17 +1149,11 @@ const PublicSurveyView = ({ surveyId }) => {
   );
 };
 
-const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGroups = [] }) => { // Added initialSurveyData, currentUser, userGroups
+const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initialSurveyData
   const [activeQuestionId, setActiveQuestionId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [surveyData, setSurveyData] = useState(initialSurveyData || { title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [], survey_type: 'survey' }); // Initialize with initialSurveyData or default
+  const [surveyData, setSurveyData] = useState(initialSurveyData || { title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Initialize with initialSurveyData or default
   const [showSectionManager, setShowSectionManager] = useState(false);
-  const [surveyType, setSurveyType] = useState(initialSurveyData?.survey_type || 'survey'); // 'survey' or 'checklist'
-  // Para group_admin, siempre usar su grupo asignado (no puede elegir)
-  const initialGroupId = currentUser?.role === 'group_admin' 
-    ? (currentUser?.user_group_id || '')
-    : (initialSurveyData?.user_group_id || currentUser?.user_group_id || '');
-  const [selectedUserGroupId, setSelectedUserGroupId] = useState(initialGroupId);
 
   // Auto-resize textarea when title changes
   React.useEffect(() => {
@@ -1291,36 +1216,15 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
         conditional_logic: q.conditional_logic || null
       }));
       
-      // Para group_admin, siempre usar su grupo asignado
-      const finalUserGroupId = currentUser?.role === 'group_admin' 
-        ? (currentUser?.user_group_id || '')
-        : (initialSurveyData.user_group_id || currentUser?.user_group_id || '');
-      
       setSurveyData({
         ...initialSurveyData,
         questions: questionsWithSections,
-        sections: sections,
-        user_group_id: finalUserGroupId,
-        survey_type: initialSurveyData.survey_type || 'survey'
+        sections: sections
       });
-      setSelectedUserGroupId(finalUserGroupId);
-      setSurveyType(initialSurveyData.survey_type || 'survey');
     } else {
-      // Para group_admin, siempre inicializar con su grupo
-      const defaultGroupId = currentUser?.role === 'group_admin' 
-        ? (currentUser?.user_group_id || '')
-        : '';
-      setSurveyData({ 
-        title: "Mi Nueva Encuesta", 
-        description: "Descripción breve de la encuesta", 
-        questions: [],
-        user_group_id: defaultGroupId,
-        survey_type: 'survey'
-      });
-      setSelectedUserGroupId(defaultGroupId);
-      setSurveyType('survey');
+      setSurveyData({ title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [] }); // Reset if no initial data
     }
-  }, [initialSurveyData, currentUser]);
+  }, [initialSurveyData]);
 
   const questionTools = [
     { label: 'Texto Corto', icon: faFont, color: 'blue', type: 'Texto Corto' },
@@ -1336,21 +1240,13 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
   ];
 
   const addQuestion = (type) => {
-    // Para checklists, solo permitir "Opción Única"
-    if (surveyType === 'checklist' && type !== 'Opción Única') {
-      alert('Las listas de chequeo solo permiten preguntas tipo "Opción Única" con opciones "Cumple" y "No cumple".');
-      return;
-    }
-    
     const newQ = { 
       id: generateId(), 
       type, 
       text: '', 
       description: '', 
       required: false, 
-      options: ['Opción Única', 'Casillas', 'Desplegable'].includes(type) 
-        ? (surveyType === 'checklist' ? ['Cumple', 'No cumple'] : ['Opción 1'])
-        : [],
+      options: ['Opción Única', 'Casillas', 'Desplegable'].includes(type) ? ['Opción 1'] : [],
       section_id: null, // Will be assigned to a section if sections exist
       conditional_logic: null
     };
@@ -1419,35 +1315,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
     setSurveyData(prev => ({ ...prev, questions: prev.questions.filter(q => q.id !== id) }));
   };
   
-  const handlePublish = () => {
-    // Validar checklist: todas las preguntas deben ser "Opción Única" con exactamente 2 opciones: "Cumple" y "No cumple"
-    if (surveyType === 'checklist') {
-      const invalidQuestions = surveyData.questions.filter(q => {
-        if (q.type !== 'Opción Única') return true;
-        if (!q.options || q.options.length !== 2) return true;
-        const options = q.options.map(opt => opt.trim());
-        return !(options.includes('Cumple') && options.includes('No cumple'));
-      });
-      
-      if (invalidQuestions.length > 0) {
-        alert('Las listas de chequeo solo pueden tener preguntas tipo "Opción Única" con exactamente 2 opciones: "Cumple" y "No cumple".');
-        return;
-      }
-    }
-    
-    // Para group_admin, siempre usar su grupo asignado
-    let finalUserGroupId = selectedUserGroupId || null;
-    if (currentUser?.role === 'group_admin' && currentUser?.user_group_id) {
-      finalUserGroupId = currentUser.user_group_id;
-    }
-    
-    const dataToSave = {
-      ...surveyData,
-      user_group_id: finalUserGroupId,
-      survey_type: surveyType
-    };
-    onSave(dataToSave);
-  };
+  const handlePublish = () => onSave(surveyData);
 
   return (
     <>
@@ -1457,10 +1325,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
           
           {/* Contenedor scrollable para las herramientas */}
           <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide md:flex md:flex-col md:gap-2 md:px-2">
-            {(surveyType === 'checklist' 
-              ? questionTools.filter(tool => tool.type === 'Opción Única')
-              : questionTools
-            ).map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
+            {questionTools.map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
           </div>
           
           {/* Footer del sidebar en desktop */}
@@ -1473,10 +1338,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
         
         {/* Vista móvil - sidebar horizontal */}
         <div className="flex md:hidden flex-row items-center gap-1.5 sm:gap-2 flex-shrink-0 min-w-0">
-          {(surveyType === 'checklist' 
-            ? questionTools.filter(tool => tool.type === 'Opción Única')
-            : questionTools
-          ).map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
+          {questionTools.map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
         </div>
         
       </nav>
@@ -1496,35 +1358,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
              </button>
              <div className="min-w-0 flex-1">
                <h1 className="text-lg md:text-xl lg:text-2xl font-black text-gray-800 tracking-tight leading-tight break-words">{surveyData.title}</h1>
-               <div className="flex items-center gap-2 mt-1">
-                 <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block">Modo Edición</span>
-                 {surveyType === 'checklist' && (
-                   <span className="text-xs font-bold text-green-600 bg-green-100 px-2 py-1 rounded-full">Lista de Chequeo</span>
-                 )}
-               </div>
+               <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">Modo Edición</span>
              </div>
            </div>
            <div className="flex gap-2 flex-shrink-0 w-full md:w-auto">
-             {/* Selector de tipo de encuesta - solo mostrar si no hay preguntas o es nueva encuesta */}
-             {(!initialSurveyData || surveyData.questions.length === 0) && (
-               <select
-                 value={surveyType}
-                 onChange={(e) => {
-                   const newType = e.target.value;
-                   if (newType === 'checklist' && surveyData.questions.length > 0) {
-                     if (!window.confirm('Cambiar a Lista de Chequeo eliminará todas las preguntas actuales. ¿Continuar?')) {
-                       return;
-                     }
-                     setSurveyData({ ...surveyData, questions: [] });
-                   }
-                   setSurveyType(newType);
-                 }}
-                 className="flex-1 md:flex-none px-3 md:px-4 py-2 md:py-2.5 bg-white border-2 border-gray-300 rounded-xl font-bold text-xs md:text-sm shadow-lg hover:border-indigo-500 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-               >
-                 <option value="survey">Encuesta</option>
-                 <option value="checklist">Lista de Chequeo</option>
-               </select>
-             )}
              <button 
                onClick={() => setShowSectionManager(!showSectionManager)} 
                className="flex-1 md:flex-none px-4 md:px-5 py-2 md:py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-xs md:text-sm shadow-xl flex items-center justify-center gap-2 transition-transform active:scale-95"
@@ -1653,7 +1490,6 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
                    onUpdate={(newData) => updateQuestion(q.id, newData)}
                    sections={surveyData.sections || []}
                    onAssignSection={(sectionId) => assignQuestionToSection(q.id, sectionId)}
-                   surveyType={surveyType}
                  />
                ))
              )}
@@ -1677,253 +1513,6 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, userGrou
 };
 
 
-// --- VISTA: RESUMEN MENSUAL DE CHECKLIST ---
-
-const ChecklistMonthlySummary = ({ survey, onBack }) => {
-  const [summaryData, setSummaryData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-
-  const months = [
-    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-  ];
-
-  const fetchSummary = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await authenticatedFetch(
-        `/api/checklists/${survey.id || survey._id}/monthly-summary/?year=${selectedYear}&month=${selectedMonth}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setSummaryData(data);
-      } else {
-        const errorData = await response.json();
-        setError(errorData.detail || 'Error al cargar el resumen');
-      }
-    } catch (err) {
-      setError('Error al cargar el resumen: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (survey) {
-      fetchSummary();
-    }
-  }, [survey, selectedYear, selectedMonth]);
-
-  const exportToExcel = () => {
-    if (!summaryData || !summaryData.areas || summaryData.areas.length === 0) return;
-
-    const wsData = [];
-    
-    // Header row
-    const headerRow = ['SERVICIO', 'PREGUNTA'];
-    for (let day = 1; day <= 31; day++) {
-      headerRow.push(`Día ${day}`);
-    }
-    headerRow.push('PROMEDIO POR ÁREAS');
-    wsData.push(headerRow);
-
-    // Data rows
-    summaryData.areas.forEach(area => {
-      area.questions.forEach((question, qIdx) => {
-        const row = [];
-        if (qIdx === 0) {
-          row.push(area.name);
-        } else {
-          row.push('');
-        }
-        row.push(question.text);
-        
-        question.days.forEach(dayData => {
-          row.push(dayData.status);
-        });
-        
-        if (qIdx === 0) {
-          row.push(`${area.average}%`);
-        } else {
-          row.push('');
-        }
-        
-        wsData.push(row);
-      });
-    });
-
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    XLSX.utils.book_append_sheet(wb, ws, 'Resumen Mensual');
-    XLSX.writeFile(wb, `Resumen_Mensual_${selectedYear}_${selectedMonth}.xlsx`);
-  };
-
-  const getStatusColor = (status) => {
-    if (status === 'C' || status === 'C/C') return 'bg-green-100 text-green-700';
-    if (status === 'C/NC') return 'bg-yellow-100 text-yellow-700';
-    if (status === 'NC' || status === 'NC/NC') return 'bg-red-100 text-red-700';
-    return 'bg-gray-100 text-gray-500';
-  };
-
-  if (loading && !summaryData) {
-    return (
-      <main className="flex-1 relative z-10">
-        <header className="sticky top-0 z-40 px-4 py-4 md:px-12 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
-          <div className="flex items-center gap-3">
-            <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
-              <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
-            </button>
-            <img 
-              src={logoImage} 
-              alt="Survey App Logo" 
-              className="h-24 w-auto object-contain hidden md:block"
-            />
-            <div>
-              <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Resumen Mensual</h1>
-              <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">Cargando...</span>
-            </div>
-          </div>
-        </header>
-        <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
-          <div className="text-center py-20">
-            <p className="text-gray-500">Cargando resumen mensual...</p>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <main className="flex-1 relative z-10">
-      <header className="sticky top-0 z-40 px-4 py-4 md:px-12 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
-        <div className="flex items-center gap-3">
-          <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
-            <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
-          </button>
-          <img 
-            src={logoImage} 
-            alt="Survey App Logo" 
-            className="h-24 w-auto object-contain hidden md:block"
-          />
-          <div>
-            <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Resumen Mensual de Cumplimiento</h1>
-            <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">{survey.title}</span>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={fetchSummary}
-            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-bold text-sm flex items-center gap-2"
-          >
-            <FontAwesomeIcon icon={faSearch} size="sm" /> Refrescar
-          </button>
-          <button
-            onClick={exportToExcel}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-sm flex items-center gap-2"
-            disabled={!summaryData}
-          >
-            <FontAwesomeIcon icon={faFileExcel} size="sm" /> Exportar
-          </button>
-        </div>
-      </header>
-
-      <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
-            {error}
-          </div>
-        )}
-
-        <div className="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-          <label className="text-sm font-bold text-gray-700">Seleccionar Mes:</label>
-          <div className="flex gap-2">
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-            >
-              {months.map((month, idx) => (
-                <option key={idx} value={idx + 1}>{month}</option>
-              ))}
-            </select>
-            <input
-              type="number"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 w-32"
-              min="2020"
-              max="2100"
-            />
-          </div>
-        </div>
-
-        {summaryData && summaryData.areas && summaryData.areas.length > 0 ? (
-          <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 shadow-lg overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-indigo-50">
-                  <th className="border border-gray-300 px-4 py-3 text-left font-bold text-gray-700 sticky left-0 bg-indigo-50 z-10">SERVICIO</th>
-                  <th className="border border-gray-300 px-4 py-3 text-left font-bold text-gray-700">PREGUNTA</th>
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                    <th key={day} className="border border-gray-300 px-2 py-3 text-center font-bold text-gray-700 text-xs min-w-[60px]">
-                      {day}
-                    </th>
-                  ))}
-                  <th className="border border-gray-300 px-4 py-3 text-center font-bold text-gray-700 bg-green-50">PROMEDIO POR ÁREAS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summaryData.areas.map((area, areaIdx) => (
-                  area.questions.map((question, qIdx) => (
-                    <tr key={`${areaIdx}-${qIdx}`} className="hover:bg-gray-50">
-                      {qIdx === 0 && (
-                        <td 
-                          rowSpan={area.questions.length} 
-                          className="border border-gray-300 px-4 py-3 font-bold text-gray-800 sticky left-0 bg-white z-10"
-                        >
-                          {area.name}
-                        </td>
-                      )}
-                      <td className="border border-gray-300 px-4 py-3 text-gray-700">
-                        {question.text}
-                      </td>
-                      {question.days.map((dayData, dayIdx) => (
-                        <td 
-                          key={dayIdx} 
-                          className={`border border-gray-300 px-2 py-2 text-center text-xs font-bold ${getStatusColor(dayData.status)}`}
-                        >
-                          {dayData.status}
-                        </td>
-                      ))}
-                      {qIdx === 0 && (
-                        <td 
-                          rowSpan={area.questions.length}
-                          className="border border-gray-300 px-4 py-3 text-center font-bold text-gray-800 bg-green-50"
-                        >
-                          {area.average}%
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center py-24 border-2 border-dashed border-gray-300/60 rounded-3xl bg-white/40 backdrop-blur-sm">
-            <p className="text-2xl font-black text-gray-700 mb-2">No hay datos disponibles</p>
-            <p className="text-gray-500">No se encontraron chequeos para el mes seleccionado.</p>
-          </div>
-        )}
-      </div>
-    </main>
-  );
-};
-
 // --- VISTA: RESPUESTAS DE ENCUESTAS ---
 
 const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
@@ -1939,11 +1528,6 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
             <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
               <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
             </button>
-            <img 
-              src={logoImage} 
-              alt="Survey App Logo" 
-              className="h-24 w-auto object-contain hidden md:block"
-            />
             <div>
               <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Respuestas</h1>
               <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">Cargando...</span>
@@ -2309,11 +1893,6 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
             <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={() => { setSelectedResponse(null); }} title="Volver">
               <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
             </button>
-            <img 
-              src={logoImage} 
-              alt="Survey App Logo" 
-              className="h-24 w-auto object-contain hidden md:block"
-            />
             <div>
               <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Respuesta Individual</h1>
             </div>
@@ -2364,11 +1943,6 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
           <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
             <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
           </button>
-          <img 
-            src={logoImage} 
-            alt="Survey App Logo" 
-            className="h-24 w-auto object-contain hidden md:block"
-          />
           <div>
             <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">{survey.title || 'Respuestas'}</h1>
             <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">
@@ -2787,13 +2361,10 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
 // --- VISTA: GESTIÓN DE USUARIOS ---
 
 const UserManagementView = ({ onBack, onLogout, userRole }) => {
-  const [activeTab, setActiveTab] = useState('users'); // 'users' or 'groups'
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showUserForm, setShowUserForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
-  const [userGroups, setUserGroups] = useState([]);
-  const [loadingGroups, setLoadingGroups] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
     first_name: '',
@@ -2802,7 +2373,6 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     password: '',
     password_confirm: '',
     role: 'encuestador',
-    user_group_id: '',
     is_active: true
   });
   const [formError, setFormError] = useState('');
@@ -2829,25 +2399,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     }
   };
 
-  const fetchUserGroups = async () => {
-    setLoadingGroups(true);
-    try {
-      const response = await authenticatedFetch('/api/user-groups/');
-      if (response.ok) {
-        const data = await response.json();
-        setUserGroups(data);
-      }
-    } catch (err) {
-      console.error('Error al cargar grupos:', err);
-    } finally {
-      setLoadingGroups(false);
-    }
-  };
-
   useEffect(() => {
     if (userRole === 'root') {
       fetchUsers();
-      fetchUserGroups();
     } else {
       alert('No tienes permisos para acceder a esta sección.');
       onBack();
@@ -2867,9 +2421,6 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       setFormError('La contraseña debe tener al menos 8 caracteres.');
       return;
     }
-
-    // Removida validación obligatoria de grupo para group_admin
-    // El grupo se puede asignar después de crear el usuario y el grupo
 
     try {
       const response = await authenticatedFetch('/api/users/', {
@@ -2892,7 +2443,6 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         password: '',
         password_confirm: '',
         role: 'encuestador',
-        user_group_id: '',
         is_active: true
       });
       alert('Usuario creado exitosamente.');
@@ -2916,19 +2466,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       return;
     }
 
-    // Removida validación obligatoria de grupo para group_admin
-    // El grupo se puede asignar después de crear el usuario y el grupo
-
     try {
       const updateData = { ...formData };
       if (!updateData.password) {
         delete updateData.password;
         delete updateData.password_confirm;
-      }
-      
-      // Convertir user_group_id vacío a null
-      if (updateData.user_group_id === '') {
-        updateData.user_group_id = null;
       }
 
       const response = await authenticatedFetch(`/api/users/${editingUser.id}/`, {
@@ -2952,7 +2494,6 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         password: '',
         password_confirm: '',
         role: 'encuestador',
-        user_group_id: '',
         is_active: true
       });
       alert('Usuario actualizado exitosamente.');
@@ -2995,7 +2536,6 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       password: '',
       password_confirm: '',
       role: user.role || 'encuestador',
-      user_group_id: user.user_group_id || '',
       is_active: user.is_active !== undefined ? user.is_active : true
     });
     setShowUserForm(true);
@@ -3012,7 +2552,6 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       password: '',
       password_confirm: '',
       role: 'encuestador',
-      user_group_id: '',
       is_active: true
     });
     setShowUserForm(true);
@@ -3023,8 +2562,6 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     switch (role) {
       case 'root':
         return 'bg-red-100 text-red-700 border-red-300';
-      case 'group_admin':
-        return 'bg-purple-100 text-purple-700 border-purple-300';
       case 'analista':
         return 'bg-blue-100 text-blue-700 border-blue-300';
       case 'encuestador':
@@ -3038,8 +2575,6 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     switch (role) {
       case 'root':
         return 'Root';
-      case 'group_admin':
-        return 'Admin de Grupo';
       case 'analista':
         return 'Analista';
       case 'encuestador':
@@ -3061,28 +2596,19 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     <main className="flex-1 relative z-10">
       <header className="sticky top-0 z-40 px-4 py-5 md:px-12 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div className="flex items-center gap-4">
-            <img 
-              src={logoImage} 
-              alt="Survey App Logo" 
-              className="h-24 w-auto object-contain hidden md:block"
-            />
-            <div>
-              <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
-                Gestión de Usuarios
-              </h1>
-              <p className="text-sm text-gray-600 font-medium">Administra usuarios y grupos del sistema.</p>
-            </div>
+          <div>
+            <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
+              Gestión de Usuarios
+            </h1>
+            <p className="text-sm text-gray-600 font-medium">Administra los usuarios del sistema.</p>
           </div>
           <div className="flex gap-3">
-            {activeTab === 'users' && (
-              <button 
-                onClick={handleNewUser} 
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
-              >
-                <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" /> Nuevo Usuario
-              </button>
-            )}
+            <button 
+              onClick={handleNewUser} 
+              className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
+            >
+              <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" /> Nuevo Usuario
+            </button>
             <button 
               onClick={onBack} 
               className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2"
@@ -3099,41 +2625,10 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
             )}
           </div>
         </div>
-        
-        {/* Pestañas */}
-        <div className="max-w-7xl mx-auto mt-4 flex gap-2 border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`px-6 py-3 font-bold text-sm transition-all ${
-              activeTab === 'users'
-                ? 'text-indigo-600 border-b-2 border-indigo-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <FontAwesomeIcon icon={faUsers} size="sm" className="mr-2" /> Usuarios
-          </button>
-          <button
-            onClick={() => setActiveTab('groups')}
-            className={`px-6 py-3 font-bold text-sm transition-all ${
-              activeTab === 'groups'
-                ? 'text-indigo-600 border-b-2 border-indigo-600'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <FontAwesomeIcon icon={faUsers} size="sm" className="mr-2" /> Grupos
-          </button>
-        </div>
       </header>
 
       <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
-        {activeTab === 'groups' ? (
-          <UserGroupsManager 
-            onGroupSelect={(group) => {
-              setActiveTab('users');
-              // Opcional: filtrar usuarios por grupo o mostrar información del grupo
-            }}
-          />
-        ) : showUserForm ? (
+        {showUserForm ? (
           <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black text-gray-800">
@@ -3256,46 +2751,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                 >
                   <option value="encuestador">Encuestador</option>
                   <option value="analista">Analista</option>
-                  <option value="group_admin">Administrador de Grupo</option>
                   <option value="root">Root</option>
                 </select>
-                {formData.role === 'group_admin' && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Los administradores de grupo pueden gestionar usuarios y encuestas de su grupo asignado. Puedes crear el usuario primero y asignar el grupo después.
-                  </p>
-                )}
               </div>
-
-              {formData.role === 'group_admin' && (
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Grupo <span className="text-gray-400 text-xs">(Opcional - puedes asignarlo después)</span>
-                  </label>
-                  {loadingGroups ? (
-                    <p className="text-sm text-gray-500">Cargando grupos...</p>
-                  ) : (
-                    <>
-                      <select
-                        value={formData.user_group_id}
-                        onChange={(e) => setFormData({...formData, user_group_id: e.target.value})}
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      >
-                        <option value="">Seleccionar grupo (opcional)</option>
-                        {userGroups.filter(g => g.is_active !== false).map(group => (
-                          <option key={group.id} value={group.id}>
-                            {group.name} {group.description ? `- ${group.description}` : ''}
-                          </option>
-                        ))}
-                      </select>
-                      {userGroups.filter(g => g.is_active !== false).length === 0 && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          No hay grupos activos disponibles. Puedes crear el grupo después y asignarlo a este administrador.
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
 
               <div className="flex items-center gap-3">
                 <input
@@ -3351,36 +2809,35 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
               <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 shadow-lg overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gradient-to-r from-indigo-50/80 to-purple-50/80 backdrop-blur-sm border-b-2 border-indigo-200/60">
+                    <thead className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b-2 border-indigo-200">
                       <tr>
-                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">ID</th>
-                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Usuario</th>
-                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Nombre</th>
-                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider hidden md:table-cell">Email</th>
-                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Rol</th>
-                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Estado</th>
-                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider hidden lg:table-cell">Fecha de Registro</th>
-                        <th className="px-4 md:px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider hidden md:table-cell">Creado por</th>
-                        <th className="px-4 md:px-6 py-4 text-center text-xs font-black text-gray-700 uppercase tracking-wider">Acciones</th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">ID</th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Usuario</th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Nombre</th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Email</th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Rol</th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Estado</th>
+                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Fecha de Registro</th>
+                        <th className="px-6 py-4 text-center text-xs font-black text-gray-700 uppercase tracking-wider">Acciones</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200/60 bg-white/50">
+                    <tbody className="divide-y divide-gray-200">
                       {users.map((user) => (
-                        <tr key={user.id} className="hover:bg-indigo-50/30 transition-all duration-200">
-                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.id.substring(0, 8)}...</td>
-                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.username}</td>
-                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        <tr key={user.id} className="hover:bg-indigo-50/50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.id}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.username}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                             {user.first_name || user.last_name 
                               ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || '-'
                               : '-'}
                           </td>
-                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-600 hidden md:table-cell">{user.email || '-'}</td>
-                          <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{user.email || '-'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${getRoleBadgeColor(user.role)}`}>
                               {getRoleLabel(user.role)}
                             </span>
                           </td>
-                          <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-4 whitespace-nowrap">
                             {user.is_active ? (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-300">
                                 Activo
@@ -3391,30 +2848,21 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-600 hidden lg:table-cell">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {user.date_joined ? new Date(user.date_joined).toLocaleDateString('es-ES') : '-'}
                           </td>
-                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm text-gray-600 hidden md:table-cell">
-                            {user.created_by_username ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                                {user.created_by_username}
-                              </span>
-                            ) : (
-                              <span className="text-gray-400 italic">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 md:px-6 py-4 whitespace-nowrap text-center">
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
                             <div className="flex items-center justify-center gap-2">
                               <button
                                 onClick={() => handleEditUser(user)}
-                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
+                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                                 title="Editar usuario"
                               >
                                 <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
                               </button>
                               <button
                                 onClick={() => handleDeleteUser(user.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                 title="Eliminar usuario"
                               >
                                 <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
@@ -3613,7 +3061,7 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
 );
 };
 
-const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus, onViewMonthlySummary }) => {
+const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus }) => {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const titleRef = React.useRef(null);
@@ -3659,18 +3107,11 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
           {/* Header con título y badge - SIN FLEX, igual que eliminadas */}
           <div className="mb-4">
             <h3 className="text-xl font-black text-gray-800">{survey.title || 'Sin título'}</h3>
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              {survey.is_public && (
-                <span className="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                  Pública
-                </span>
-              )}
-              {survey.survey_type === 'checklist' && (
-                <span className="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">
-                  Lista de Chequeo
-                </span>
-              )}
-            </div>
+            {survey.is_public && (
+              <span className="inline-block mt-2 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                Pública
+              </span>
+            )}
           </div>
 
           {/* Descripción mejorada */}
@@ -3682,23 +3123,11 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
           <div className="flex flex-col gap-4 pt-4 border-t border-gray-200/60">
             {/* Información de la encuesta */}
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+              <div className="flex items-center gap-3 text-xs text-gray-500">
                 <span className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-lg font-semibold">
                   <FontAwesomeIcon icon={faListUl} size="sm" className="text-indigo-500 fa-icon-force-current" />
                   {survey.questions.length} {survey.questions.length === 1 ? 'Pregunta' : 'Preguntas'}
                 </span>
-                {survey.created_by_username && (
-                  <span className="flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg font-semibold">
-                    <FontAwesomeIcon icon={faUser} size="sm" className="fa-icon-force-current" />
-                    {survey.created_by_username}
-                  </span>
-                )}
-                {survey.user_group_name && (
-                  <span className="flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-lg font-semibold">
-                    <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-current" />
-                    {survey.user_group_name}
-                  </span>
-                )}
                 {survey.created_at && (
                   <span className="flex items-center gap-1 text-gray-400">
                     <FontAwesomeIcon icon={faCalendarDays} size="sm" className="fa-icon-force-current" />
@@ -3710,15 +3139,6 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
 
             {/* Botones de acción mejorados */}
             <div className="flex items-center justify-end gap-1">
-              {survey.survey_type === 'checklist' && onViewMonthlySummary && (
-                <button 
-                  onClick={(e) => { e.stopPropagation(); onViewMonthlySummary(survey); }} 
-                  className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-blue-50 hover:to-cyan-50 text-gray-500 hover:text-blue-600 transition-all duration-200 hover:scale-110 active:scale-95" 
-                  title="Ver Resumen Mensual"
-                >
-                  <FontAwesomeIcon icon={faTable} size="sm" className="fa-icon-force-current" />
-                </button>
-              )}
               <button 
                 onClick={handleShare} 
                 className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-green-50 hover:to-emerald-50 text-gray-500 hover:text-green-600 transition-all duration-200 hover:scale-110 active:scale-95" 
@@ -3755,134 +3175,40 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
   );
 };
 
-const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onViewGroupAdmin, userGroups = [], onViewMonthlySummary }) => {
+const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers }) => {
   const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
   
-  // Estados para búsqueda y filtros
-  const [searchTerm, setSearchTerm] = React.useState('');
-  const [filterPublicStatus, setFilterPublicStatus] = React.useState('all'); // 'all' | 'public' | 'private'
-  const [filterUserGroup, setFilterUserGroup] = React.useState('all');
-  const [filterCreator, setFilterCreator] = React.useState('all');
+  // Filtrar encuestas activas y eliminadas
+  const activeSurveys = surveys.filter(s => !s.is_deleted);
+  const deletedSurveysList = deletedSurveys.length > 0 ? deletedSurveys : surveys.filter(s => s.is_deleted);
   
-  // Filtrar encuestas activas y eliminadas (sin filtros aplicados aún)
-  const allActiveSurveys = surveys.filter(s => !s.is_deleted);
-  const allDeletedSurveys = deletedSurveys.length > 0 ? deletedSurveys : surveys.filter(s => s.is_deleted);
-  
-  // Obtener datos únicos para filtros (de todas las encuestas, activas y eliminadas)
-  const allSurveysForFilters = React.useMemo(() => {
-    return [...allActiveSurveys, ...allDeletedSurveys];
-  }, [allActiveSurveys, allDeletedSurveys]);
-  
-  const uniqueCreators = React.useMemo(() => {
-    const creators = new Set();
-    allSurveysForFilters.forEach(s => {
-      if (s.created_by_username) creators.add(s.created_by_username);
-    });
-    return Array.from(creators).sort();
-  }, [allSurveysForFilters]);
-  
-  const uniqueUserGroups = React.useMemo(() => {
-    const groups = new Map();
-    allSurveysForFilters.forEach(s => {
-      if (s.user_group_id && s.user_group_name) {
-        groups.set(s.user_group_id, s.user_group_name);
-      }
-    });
-    return Array.from(groups.entries()).map(([id, name]) => ({ id, name }));
-  }, [allSurveysForFilters]);
-  
-  // Función de filtrado
-  const filterSurveys = React.useCallback((surveyList) => {
-    return surveyList.filter(survey => {
-      // Filtro por término de búsqueda (case-insensitive)
-      if (searchTerm) {
-        const searchLower = searchTerm.toLowerCase();
-        const matchesSearch = 
-          (survey.title || '').toLowerCase().includes(searchLower) ||
-          (survey.description || '').toLowerCase().includes(searchLower) ||
-          (survey.created_by_username || '').toLowerCase().includes(searchLower) ||
-          (survey.user_group_name || '').toLowerCase().includes(searchLower);
-        if (!matchesSearch) return false;
-      }
-      
-      // Filtro por estado público/privado
-      if (filterPublicStatus !== 'all') {
-        if (filterPublicStatus === 'public' && !survey.is_public) return false;
-        if (filterPublicStatus === 'private' && survey.is_public) return false;
-      }
-      
-      // Filtro por grupo de usuarios
-      if (filterUserGroup !== 'all') {
-        if (survey.user_group_id !== filterUserGroup) return false;
-      }
-      
-      // Filtro por creador
-      if (filterCreator !== 'all') {
-        if (survey.created_by_username !== filterCreator) return false;
-      }
-      
-      return true;
-    });
-  }, [searchTerm, filterPublicStatus, filterUserGroup, filterCreator]);
-  
-  // Aplicar filtros
-  const activeSurveys = React.useMemo(() => filterSurveys(allActiveSurveys), [filterSurveys, allActiveSurveys]);
-  const deletedSurveysList = React.useMemo(() => filterSurveys(allDeletedSurveys), [filterSurveys, allDeletedSurveys]);
-  
-  // Calcular estadísticas solo para encuestas activas filtradas
+  // Calcular estadísticas solo para encuestas activas
   const totalSurveys = activeSurveys.length;
   const publicSurveys = activeSurveys.filter(s => s.is_public).length;
   const totalQuestions = activeSurveys.reduce((sum, s) => sum + (s.questions?.length || 0), 0);
   
   const isRoot = userRole === 'root';
-  
-  // Función para limpiar filtros
-  const clearFilters = () => {
-    setSearchTerm('');
-    setFilterPublicStatus('all');
-    setFilterUserGroup('all');
-    setFilterCreator('all');
-    setFilterQuestionCount({ min: '', max: '' });
-  };
-  
-  // Verificar si hay filtros activos
-  const hasActiveFilters = searchTerm || filterPublicStatus !== 'all' || filterUserGroup !== 'all' || filterCreator !== 'all';
 
   return (
     <main className="flex-1 relative z-10">
         <header className="sticky top-0 z-40 px-4 py-5 md:px-12 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-               <div className="flex items-center gap-4">
-                 <img 
-                   src={logoImage} 
-                   alt="Survey App Logo" 
-                   className="h-24 w-auto object-contain hidden md:block"
-                 />
-                 <div>
-                   <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
-                     Mis Encuestas
-                   </h1>
-                   <p className="text-sm text-gray-600 font-medium">Gestiona y crea tus formularios de manera eficiente.</p>
-                 </div>
+               <div>
+                 <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
+                   Mis Encuestas
+                 </h1>
+                 <p className="text-sm text-gray-600 font-medium">Gestiona y crea tus formularios de manera eficiente.</p>
                </div>
                <div className="flex gap-3">
-                 {userRole === 'group_admin' && onViewGroupAdmin && (
-                   <button 
-                     onClick={onViewGroupAdmin} 
-                     className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
-                   >
-                     <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Mi Grupo
-                   </button>
-                 )}
                  {isRoot && onViewUsers && (
-                    <button 
-                     onClick={onViewUsers}
+                   <button 
+                     onClick={onViewUsers} 
                      className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
                    >
                      <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Usuarios
                    </button>
                  )}
-                 <button
+                 <button 
                    onClick={onNewSurvey} 
                    className="px-6 py-3 bg-gradient-to-r from-gray-900 to-gray-800 hover:from-black hover:to-gray-900 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
                  >
@@ -3938,112 +3264,6 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                     )}
                   </button>
                 </div>
-              </div>
-            )}
-            
-            {/* Buscador y Filtros - Mostrar solo si hay encuestas */}
-            {((activeTab === 'active' && allActiveSurveys.length > 0) || (activeTab === 'deleted' && isRoot && allDeletedSurveys.length > 0)) && (
-              <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 shadow-lg p-6 mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                    <FontAwesomeIcon icon={faFilter} className="text-indigo-600" />
-                    Buscar y Filtrar
-                  </h2>
-                  {hasActiveFilters && (
-                    <button
-                      onClick={clearFilters}
-                      className="text-sm text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
-                    >
-                      <FontAwesomeIcon icon={faXmark} size="sm" />
-                      Limpiar filtros
-                    </button>
-                  )}
-                </div>
-                
-                {/* Buscador */}
-                <div className="mb-4">
-                  <div className="relative">
-                    <FontAwesomeIcon 
-                      icon={faSearch} 
-                      className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-                      size="sm"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Buscar por título, descripción, creador o grupo..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 sm:py-3 text-sm sm:text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                
-                {/* Filtros */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-                  {/* Filtro por estado público/privado */}
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">
-                      Estado
-                    </label>
-                    <select
-                      value={filterPublicStatus}
-                      onChange={(e) => setFilterPublicStatus(e.target.value)}
-                      className="w-full px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    >
-                      <option value="all">Todos</option>
-                      <option value="public">Públicas</option>
-                      <option value="private">Privadas</option>
-                    </select>
-                  </div>
-                  
-                  {/* Filtro por grupo de usuarios (solo si hay grupos disponibles o es root) */}
-                  {(isRoot || uniqueUserGroups.length > 0) && (
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">
-                        Grupo
-                      </label>
-                      <select
-                        value={filterUserGroup}
-                        onChange={(e) => setFilterUserGroup(e.target.value)}
-                        className="w-full px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      >
-                        <option value="all">Todos los grupos</option>
-                        {uniqueUserGroups.map(group => (
-                          <option key={group.id} value={group.id}>{group.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  
-                  {/* Filtro por creador */}
-                  {uniqueCreators.length > 0 && (
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1.5 sm:mb-2">
-                        Creador
-                      </label>
-                      <select
-                        value={filterCreator}
-                        onChange={(e) => setFilterCreator(e.target.value)}
-                        className="w-full px-3 py-2 sm:px-4 sm:py-2.5 text-sm border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      >
-                        <option value="all">Todos los creadores</option>
-                        {uniqueCreators.map(creator => (
-                          <option key={creator} value={creator}>{creator}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-                
-                {/* Indicador de resultados filtrados */}
-                {hasActiveFilters && (
-                  <div className="mt-4 text-sm text-gray-600">
-                    {activeTab === 'active' 
-                      ? `Mostrando ${activeSurveys.length} de ${allActiveSurveys.length} encuestas activas`
-                      : `Mostrando ${deletedSurveysList.length} de ${allDeletedSurveys.length} encuestas eliminadas`
-                    }
-                  </div>
-                )}
               </div>
             )}
             
@@ -4123,20 +3343,14 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
 
                   {/* Grid de encuestas */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {activeSurveys.map(s => (
-                        <SurveyCard
-                          key={s.id || s._id}
-                          survey={s}
-                          onEdit={() => onEditSurvey(s)}
-                          onDelete={() => onDeleteSurvey(s.id || s._id)}
-                          onViewResponses={() => onViewResponses(s)}
-                          onShare={(survey) => {
-                            // Share logic
-                          }}
-                          onUpdatePublicStatus={(surveyId, isPublic) => onUpdatePublicStatus(surveyId, isPublic)}
-                          onViewMonthlySummary={onViewMonthlySummary}
-                        />
-                      ))}
+                      {activeSurveys.map(s => <SurveyCard 
+                        key={s.id || s._id} 
+                        survey={s} 
+                        onEdit={() => onEditSurvey(s)} 
+                        onDelete={() => onDeleteSurvey(s.id || s._id)} 
+                        onViewResponses={() => onViewResponses(s)} 
+                        onUpdatePublicStatus={onUpdatePublicStatus}
+                      />)}
                   </div>
                 </>
               )
@@ -4144,68 +3358,6 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
         </div>
     </main>
 );
-};
-
-// --- COMPONENTE: MENÚ PRINCIPAL PWA ---
-
-const MainMenuView = ({ onSelectEncuestas, onSelectChequeos, onLogout, currentUser }) => {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 md:p-12 max-w-2xl w-full">
-        {/* Header con logo y bienvenida */}
-        <div className="text-center mb-8">
-          <div className="mb-4">
-            <img 
-              src={logoImage} 
-              alt="Survey App Logo" 
-              className="h-20 md:h-24 w-auto object-contain mx-auto"
-            />
-          </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-2">
-            Bienvenido{currentUser?.first_name ? `, ${currentUser.first_name}` : ''}
-          </h1>
-          <p className="text-lg text-gray-600">
-            Selecciona el tipo de trabajo que deseas realizar
-          </p>
-        </div>
-
-        {/* Botones principales */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-6">
-          <button
-            onClick={onSelectEncuestas}
-            className="group relative bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white p-6 md:p-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95"
-          >
-            <div className="flex flex-col items-center">
-              <FontAwesomeIcon icon={faFileLines} size="2x" className="mb-3 md:mb-4" />
-              <h2 className="text-xl md:text-2xl font-bold mb-2">Encuestas</h2>
-              <p className="text-xs md:text-sm opacity-90 text-center">Crear y gestionar encuestas</p>
-            </div>
-          </button>
-
-          <button
-            onClick={onSelectChequeos}
-            className="group relative bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white p-6 md:p-8 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95"
-          >
-            <div className="flex flex-col items-center">
-              <FontAwesomeIcon icon={faSquareCheck} size="2x" className="mb-3 md:mb-4" />
-              <h2 className="text-xl md:text-2xl font-bold mb-2">Chequeos Operativos</h2>
-              <p className="text-xs md:text-sm opacity-90 text-center">Checklist de gestión ambiental</p>
-            </div>
-          </button>
-        </div>
-
-        {/* Footer con botón de cerrar sesión */}
-        <div className="text-center pt-4 border-t border-gray-200">
-          <button
-            onClick={onLogout}
-            className="text-gray-500 hover:text-gray-700 text-sm font-medium transition-colors"
-          >
-            Cerrar sesión
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 };
 
 // --- COMPONENTE PRINCIPAL (GESTOR DE VISTAS) ---
@@ -4216,53 +3368,31 @@ export default function App() {
   const publicSurveyMatch = pathname.match(/^\/public\/survey\/(.+)$/);
   const publicSurveyId = publicSurveyMatch ? publicSurveyMatch[1] : null;
   const initialView = publicSurveyId ? 'public' : 'dashboard';
-  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users' | 'group-admin' | 'group-users' | 'checklist-summary' | 'menu-selection' | 'checklist-operativo' | 'checklist-summary-view'
-  const [selectedGroupId, setSelectedGroupId] = useState(null); // ID del grupo seleccionado para gestionar usuarios
+  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users'
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingSurveyId, setEditingSurveyId] = useState(null); // State to hold the ID of the survey being edited
   const [surveyToEdit, setSurveyToEdit] = useState(null); // State to hold the fetched survey data
   const [surveyForResponses, setSurveyForResponses] = useState(null); // Survey to view responses for
-  const [surveyForSummary, setSurveyForSummary] = useState(null); // Survey to view monthly summary for
   const [responses, setResponses] = useState([]); // Responses for the selected survey
   const [responsesLoading, setResponsesLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loginCredentials, setLoginCredentials] = useState({ username: '', password: '' });
   const [currentUser, setCurrentUser] = useState(null); // Usuario actual con su rol
   const [deletedSurveys, setDeletedSurveys] = useState([]); // Encuestas eliminadas
-  const [userGroups, setUserGroups] = useState([]); // Grupos de usuarios (para root)
-  const [hasChecklists, setHasChecklists] = useState(false); // Si el usuario tiene checklists asignadas
 
   const fetchSurveys = async () => {
     setLoading(true);
     try {
-        // El backend ya filtra por grupo de usuario según el rol
         const response = await authenticatedFetch('/api/surveys/');
         if (!response.ok) throw new Error('Error al cargar los datos.');
         const data = await response.json();
-        // Filtrar checklists - las checklists son un sistema independiente
-        // Solo mostrar encuestas normales en el dashboard
-        const surveysOnly = data.filter(s => s.survey_type !== 'checklist');
-        setSurveys(surveysOnly);
+        setSurveys(data);
     } catch (error) {
         console.error("Error fetching surveys:", error);
         alert('No se pudieron cargar las encuestas. ' + error.message);
     } finally {
         setLoading(false);
-    }
-  };
-  
-  const fetchUserGroups = async () => {
-    if (currentUser?.role === 'root') {
-      try {
-        const response = await authenticatedFetch('/api/user-groups/');
-        if (response.ok) {
-          const data = await response.json();
-          setUserGroups(data);
-        }
-      } catch (error) {
-        console.error("Error fetching user groups:", error);
-      }
     }
   };
 
@@ -4313,42 +3443,9 @@ export default function App() {
       if (response.ok) {
         const userData = await response.json();
         setCurrentUser(userData);
-        // Si es root, cargar grupos de usuarios
-        if (userData.role === 'root') {
-          await fetchUserGroups();
-        }
-        // Verificar si tiene checklists asignadas
-        await checkUserChecklists();
       }
     } catch (error) {
       console.error("Error fetching current user:", error);
-    }
-  };
-
-  const checkUserChecklists = async () => {
-    try {
-      const response = await authenticatedFetch('/api/me/checklists/');
-      if (response.ok) {
-        const data = await response.json();
-        setHasChecklists(data.has_checklists || false);
-      }
-    } catch (error) {
-      console.error("Error checking checklists:", error);
-      setHasChecklists(false);
-    }
-  };
-
-  const hasChecklistsAssigned = async () => {
-    try {
-      const response = await authenticatedFetch('/api/me/checklists/');
-      if (response.ok) {
-        const data = await response.json();
-        return data.has_checklists || false;
-      }
-      return false;
-    } catch (error) {
-      console.error("Error checking checklists:", error);
-      return false;
     }
   };
 
@@ -4358,9 +3455,8 @@ export default function App() {
     try {
       await login(loginCredentials.username, loginCredentials.password);
       await fetchCurrentUser(); // Obtener datos del usuario después del login
-      
-      // Siempre mostrar el menú principal después del login
-      setView('menu-selection');
+      setView('dashboard');
+      fetchSurveys();
     } catch (error) {
       setLoginError(error.message || 'Error al iniciar sesión');
     }
@@ -4436,21 +3532,6 @@ export default function App() {
       })),
       is_public: surveyData.is_public || false
     };
-    
-    // Agregar user_group_id según el rol del usuario
-    if (currentUser) {
-      const userRole = currentUser.role;
-      // Root puede especificar user_group_id, group_admin y usuarios regulares se asigna automáticamente
-      if (userRole === 'root' && surveyData.user_group_id) {
-        surveyPayload.user_group_id = surveyData.user_group_id;
-      } else if (userRole === 'group_admin' && currentUser.user_group_id) {
-        // Para group_admin, SIEMPRE asignar automáticamente su grupo (no puede elegir)
-        surveyPayload.user_group_id = currentUser.user_group_id;
-      } else if (userRole !== 'root' && currentUser.user_group_id) {
-        // Para usuarios regulares, asignar automáticamente su grupo
-        surveyPayload.user_group_id = currentUser.user_group_id;
-      }
-    }
 
     try {
         const response = await authenticatedFetch(url, { 
@@ -4566,8 +3647,7 @@ export default function App() {
       setSurveyToEdit(null); // Clear pre-filled data
       setSurveyForResponses(null); // Clear responses survey
       setResponses([]); // Clear responses
-      // Volver al menú principal
-      setView('menu-selection');
+      setView('dashboard');
   }
 
   const fetchResponses = async (surveyId) => {
@@ -4595,11 +3675,6 @@ export default function App() {
     setSurveyForResponses(survey);
     setView('responses');
     await fetchResponses(surveyId);
-  };
-
-  const handleViewMonthlySummary = (survey) => {
-    setSurveyForSummary(survey);
-    setView('checklist-summary');
   };
 
   const handleUpdatePublicStatus = async (surveyId, isPublic) => {
@@ -4635,15 +3710,8 @@ export default function App() {
           <div className="absolute bottom-[-10%] left-[20%] w-[60%] h-[40%] bg-pink-200/30 rounded-full mix-blend-multiply filter blur-[120px] animate-blob animation-delay-4000" />
         </div>
         <div className="relative z-10 bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl p-8 w-full max-w-md">
-          <div className="flex flex-col items-center mb-6">
-            <img 
-              src={logoImage} 
-              alt="Survey App Logo" 
-              className="h-24 w-auto mb-4 object-contain"
-            />
-            <h1 className="text-3xl font-black text-gray-800 mb-2">Survey App</h1>
-            <p className="text-gray-500">Inicia sesión para continuar</p>
-          </div>
+          <h1 className="text-3xl font-black text-gray-800 mb-2">Survey App</h1>
+          <p className="text-gray-500 mb-6">Inicia sesión para continuar</p>
           <form onSubmit={handleLogin}>
             <div className="mb-4">
               <label className="block text-sm font-bold text-gray-700 mb-2">Usuario</label>
@@ -4714,93 +3782,12 @@ export default function App() {
               onUpdatePublicStatus={handleUpdatePublicStatus}
               userRole={currentUser?.role}
               onViewUsers={() => setView('users')}
-              onViewGroupAdmin={() => setView('group-admin')}
-              userGroups={userGroups}
-          />
-      ) : view === 'group-admin' ? (
-          <GroupAdminDashboard
-              currentUser={currentUser}
-              onBack={handleBackToDashboard}
-              onNewSurvey={handleNewSurvey}
-              onEditSurvey={(survey) => {
-                const surveyId = survey.id || survey._id;
-                if (!surveyId) {
-                  alert('Error: La encuesta no tiene un ID válido');
-                  return;
-                }
-                setEditingSurveyId(surveyId);
-              }}
-              onDeleteSurvey={handleDeleteSurvey}
-              onViewResponses={handleViewResponses}
-              onLogout={handleLogout}
           />
       ) : view === 'users' ? (
           <UserManagementView
               onBack={handleBackToDashboard}
               onLogout={handleLogout}
               userRole={currentUser?.role}
-          />
-      ) : view === 'menu-selection' ? (
-          <MainMenuView
-              onSelectEncuestas={() => {
-                setView('dashboard');
-                fetchSurveys();
-              }}
-              onSelectChequeos={() => setView('checklist-operativo')}
-              onLogout={handleLogout}
-              currentUser={currentUser}
-          />
-      ) : view === 'checklist-operativo' ? (
-          <ChecklistOperativoView
-              onBack={() => {
-                // Volver al menú principal
-                setView('menu-selection');
-              }}
-              onViewSummary={(checklist) => {
-                setSurveyForSummary(checklist);
-                setView('checklist-summary-view');
-              }}
-              hasChecklists={hasChecklists}
-              onLogout={handleLogout}
-              userRole={currentUser?.role}
-              onCreateChecklist={() => {
-                // Crear nueva checklist - abrir editor con tipo checklist pre-seleccionado
-                setEditingSurveyId(null);
-                setSurveyToEdit({
-                  title: "Nueva Checklist Operativa",
-                  description: "Checklist de gestión ambiental",
-                  questions: [],
-                  sections: [],
-                  survey_type: 'checklist',
-                  checklist_config: { max_checks_per_day: 2 }
-                });
-                setView('editor');
-              }}
-              onEditChecklist={(checklist) => {
-                // Editar checklist existente
-                const checklistId = checklist.id || checklist._id;
-                if (checklistId) {
-                  setEditingSurveyId(checklistId);
-                } else {
-                  // Si no tiene ID, usar los datos directamente
-                  setSurveyToEdit({
-                    ...checklist,
-                    survey_type: 'checklist'
-                  });
-                  setEditingSurveyId(null);
-                }
-                setView('editor');
-              }}
-          />
-      ) : view === 'checklist-summary-view' ? (
-          <ChecklistMonthlySummaryView
-              checklist={surveyForSummary}
-              onBack={() => setView('checklist-operativo')}
-          />
-      ) : view === 'checklist-summary' ? (
-          <ChecklistMonthlySummary
-              survey={surveyForSummary}
-              onBack={handleBackToDashboard}
           />
       ) : view === 'responses' ? (
           <SurveyResponsesView
@@ -4814,8 +3801,6 @@ export default function App() {
               onSave={handleSaveSurvey}
               onBack={handleBackToDashboard}
               initialSurveyData={surveyToEdit} // Pass the fetched survey data to the editor
-              currentUser={currentUser}
-              userGroups={userGroups}
           />
       )}
 

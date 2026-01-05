@@ -4,4 +4,3 @@ djangorestframework-simplejwt==5.3.1
 pymongo==4.8.0
 gunicorn==22.0.0
 django-cors-headers==4.4.0
-whitenoise==6.7.0

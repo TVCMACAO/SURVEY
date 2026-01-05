@@ -31,23 +31,6 @@ DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', '192.168.0.248,localhost,127.0.0.1')
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(',') if host.strip()]
 
-# Always add EasyPanel domain to ALLOWED_HOSTS
-EASYPANEL_DOMAINS = [
-    'chat-survey-app.rhfh8t.easypanel.host',
-    'easypanel.clinicamaicao.com',
-    'www.clinicamaicao.com',
-    '.easypanel.host',  # Wildcard for all EasyPanel subdomains
-    '.clinicamaicao.com',  # Wildcard for clinicamaicao.com subdomains
-]
-for domain in EASYPANEL_DOMAINS:
-    if domain not in ALLOWED_HOSTS:
-        ALLOWED_HOSTS.append(domain)
-
-# Log ALLOWED_HOSTS for debugging
-import logging
-logger = logging.getLogger(__name__)
-logger.info(f"ALLOWED_HOSTS configured: {ALLOWED_HOSTS}")
-
 # CORS_ALLOWED_ORIGINS for Flutter and EasyPanel
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000", # For local development
@@ -58,8 +41,6 @@ CORS_ALLOWED_ORIGINS = [
     "http://easypanel.clinicamaicao.com", # EasyPanel production domain (HTTP fallback)
     "https://www.clinicamaicao.com", # Production domain
     "http://www.clinicamaicao.com", # Production domain (HTTP fallback)
-    "https://chat-survey-app.rhfh8t.easypanel.host", # EasyPanel subdomain
-    "http://chat-survey-app.rhfh8t.easypanel.host", # EasyPanel subdomain (HTTP fallback)
 ]
 
 # Allow CORS from environment variable (comma-separated)
@@ -88,8 +69,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',  # WhiteNoise for static files
-    'survey_project.middleware.HostHeaderLoggingMiddleware',  # Custom logging middleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware', # Must be before CommonMiddleware
     'django.middleware.common.CommonMiddleware',
@@ -123,108 +102,12 @@ WSGI_APPLICATION = 'survey_project.wsgi.application'
 # Database
 # Using default SQLite for Django's auth and admin
 # Application data (Surveys, Responses, Groups) will use MongoDB via pymongo directly
-# 
-# For EasyPanel: Use persistent volume at /app/data/db.sqlite3
-# If /app/data exists (volume mounted), use it; otherwise use default location
-import os
-# #region agent log
-DEBUG_LOG_PATH = Path('/app/debug.log')  # Use container path
-try:
-    import json
-    import time
-    log_data = {
-        "timestamp": int(time.time() * 1000),
-        "location": "settings.py:129",
-        "message": "Checking /app/data directory existence",
-        "data": {
-            "/app/data exists": os.path.exists('/app/data'),
-            "BASE_DIR": str(BASE_DIR),
-            "hypothesisId": "A"
-        },
-        "sessionId": "debug-session",
-        "runId": "run1"
-    }
-    with open(DEBUG_LOG_PATH, 'a') as f:
-        f.write(json.dumps(log_data) + '\n')
-except Exception as e:
-    # Silently fail to avoid breaking Django startup
-    pass
-# #endregion
-if os.path.exists('/app/data'):
-    SQLITE_DB_PATH = Path('/app/data/db.sqlite3')
-    # #region agent log
-    try:
-        log_data = {
-            "timestamp": int(time.time() * 1000),
-            "location": "settings.py:154",
-            "message": "Using persistent volume path",
-            "data": {
-                "db_path": str(SQLITE_DB_PATH),
-                "db_exists": SQLITE_DB_PATH.exists(),
-                "hypothesisId": "A"
-            },
-            "sessionId": "debug-session",
-            "runId": "run1"
-        }
-        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(DEBUG_LOG_PATH, 'a') as f:
-            f.write(json.dumps(log_data) + '\n')
-    except Exception:
-        # Silently fail to avoid breaking Django startup
-        pass
-    # #endregion
-else:
-    SQLITE_DB_PATH = BASE_DIR / 'db.sqlite3'
-    # #region agent log
-    try:
-        log_data = {
-            "timestamp": int(time.time() * 1000),
-            "location": "settings.py:178",
-            "message": "Using default path (NOT PERSISTENT)",
-            "data": {
-                "db_path": str(SQLITE_DB_PATH),
-                "db_exists": SQLITE_DB_PATH.exists(),
-                "warning": "This path will be lost on redeploy!",
-                "hypothesisId": "A"
-            },
-            "sessionId": "debug-session",
-            "runId": "run1"
-        }
-        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(DEBUG_LOG_PATH, 'a') as f:
-            f.write(json.dumps(log_data) + '\n')
-    except Exception:
-        # Silently fail to avoid breaking Django startup
-        pass
-    # #endregion
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': SQLITE_DB_PATH,
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
-# #region agent log
-try:
-    log_data = {
-        "timestamp": int(time.time() * 1000),
-        "location": "settings.py:208",
-        "message": "Database configuration finalized",
-        "data": {
-            "database_name": str(DATABASES['default']['NAME']),
-            "database_path_resolved": str(Path(DATABASES['default']['NAME']).resolve()),
-            "hypothesisId": "A"
-        },
-        "sessionId": "debug-session",
-        "runId": "run1"
-    }
-    DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(DEBUG_LOG_PATH, 'a') as f:
-        f.write(json.dumps(log_data) + '\n')
-except Exception:
-    # Silently fail to avoid breaking Django startup
-    pass
-# #endregion
 
 
 # Password validation
@@ -262,74 +145,19 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-
-# WhiteNoise configuration for serving static files
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
-# Frontend React build directory
-# In Docker container, frontend is copied to /app/frontend/survey-ui/dist
-FRONTEND_ROOT = Path('/app/frontend/survey-ui/dist')
-
-# Logging configuration
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'survey_project': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'surveys': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-    },
-}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-AUTH_USER_MODEL = 'surveys.User'  # Mantener para compatibilidad, pero usar MongoDB backend
-
-# Backend de autenticación personalizado para MongoDB
-AUTHENTICATION_BACKENDS = [
-    'surveys.mongo_auth_backend.MongoAuthBackend',  # Backend de MongoDB primero
-    'django.contrib.auth.backends.ModelBackend',  # Fallback a SQLite si es necesario
-]
+AUTH_USER_MODEL = 'surveys.User'
 
 # Django REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'surveys.mongo_jwt_auth.MongoJWTAuthentication',  # JWT con MongoDB
-        'rest_framework_simplejwt.authentication.JWTAuthentication',  # Fallback
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    'EXCEPTION_HANDLER': 'survey_project.exception_handler.custom_exception_handler',
     # 'DEFAULT_PERMISSION_CLASSES': (
     #     'rest_framework.permissions.IsAuthenticated', # Default to require authentication
     # ),
@@ -369,33 +197,9 @@ SIMPLE_JWT = {
 }
 
 # MongoDB Connection String (for pymongo)
-# Default URI for EasyPanel MongoDB (works for both local and EasyPanel)
-DEFAULT_MONGO_URI = 'mongodb://root:1b20629a87ea780a63aa@easypanel.clinicamaicao.com:27017/?tls=false&authSource=admin'
-
 MONGO_USERNAME = os.environ.get('MONGO_USERNAME', 'root')
 MONGO_PASSWORD = os.environ.get('MONGO_PASSWORD', 'surveypass123')
 MONGO_HOST = os.environ.get('MONGO_HOST', 'mongo')
 MONGO_PORT = os.environ.get('MONGO_PORT', '27017')
-
-# Use MONGO_URI from environment, or default to EasyPanel URI, or construct from components
-MONGO_URI = os.environ.get('MONGO_URI', DEFAULT_MONGO_URI)
-if not MONGO_URI or MONGO_URI == DEFAULT_MONGO_URI or MONGO_URI.startswith('mongodb://'):
-    # Use the provided URI as-is or use default
-    pass
-else:
-    # Fallback: construct from components if MONGO_URI is not a full URI
-    MONGO_URI = f'mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/'
-
+MONGO_URI = os.environ.get('MONGO_URI', f'mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/')
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'survey_db') # Name of the database to use
-
-# Ensure MONGO_URI has authSource=admin if it doesn't already (and has query params)
-if MONGO_URI and 'authSource' not in MONGO_URI:
-    # Add authSource=admin to the URI
-    separator = '&' if '?' in MONGO_URI else '?'
-    MONGO_URI = f"{MONGO_URI}{separator}authSource=admin"
-
-# Log MongoDB URI (without password) for debugging
-import logging
-logger = logging.getLogger(__name__)
-safe_uri = MONGO_URI.split('@')[0] + '@***' if '@' in MONGO_URI else MONGO_URI
-logger.info(f"MongoDB URI configured (password hidden): {safe_uri}")

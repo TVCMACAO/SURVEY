@@ -3,16 +3,12 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     CustomTokenObtainPairView,
     SurveyGroupListCreate, SurveyGroupRetrieveUpdateDestroy,
-    UserGroupListCreate, UserGroupRetrieveUpdateDestroy,
-    UserGroupUsersListCreate, UserGroupUsersRetrieveUpdateDestroy,
     SurveyListCreate, SurveyRetrieveUpdateDestroy,
     SurveyRestoreView, SurveyPermanentDeleteView,
     ResponseListCreate, ResponseRetrieve,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
     PublicSurveyView, PublicResponseCreate,
-    ResponseSyncView, SyncStatusView,
-    ChecklistMonthlySummaryView,
-    UserChecklistsView
+    ResponseSyncView, SyncStatusView
 )
 
 urlpatterns = [
@@ -22,28 +18,18 @@ urlpatterns = [
     
     # Rutas de usuario
     path('me/', CurrentUserView.as_view(), name='current_user'),
-    path('me/checklists/', UserChecklistsView.as_view(), name='user-checklists'),
     path('users/', UserListCreate.as_view(), name='user-list-create'),
-    path('users/<str:pk>/', UserRetrieveUpdateDestroy.as_view(), name='user-detail'),  # Cambiado a str para ObjectId de MongoDB
+    path('users/<int:pk>/', UserRetrieveUpdateDestroy.as_view(), name='user-detail'),
 
     # Rutas para Grupos de Encuestas
     path('groups/', SurveyGroupListCreate.as_view(), name='surveygroup-list-create'),
     path('groups/<str:pk>/', SurveyGroupRetrieveUpdateDestroy.as_view(), name='surveygroup-detail'),
-
-    # Rutas para Grupos de Usuarios
-    path('user-groups/', UserGroupListCreate.as_view(), name='usergroup-list-create'),
-    path('user-groups/<str:pk>/', UserGroupRetrieveUpdateDestroy.as_view(), name='usergroup-detail'),
-    path('user-groups/<str:group_id>/users/', UserGroupUsersListCreate.as_view(), name='usergroup-users-list-create'),
-    path('user-groups/<str:group_id>/users/<str:user_id>/', UserGroupUsersRetrieveUpdateDestroy.as_view(), name='usergroup-users-detail'),  # Cambiado a str para ObjectId de MongoDB
 
     # Rutas para Encuestas
     path('surveys/', SurveyListCreate.as_view(), name='survey-list-create'),
     path('surveys/<str:pk>/', SurveyRetrieveUpdateDestroy.as_view(), name='survey-detail'),
     path('surveys/<str:pk>/restore/', SurveyRestoreView.as_view(), name='survey-restore'),
     path('surveys/<str:pk>/permanent-delete/', SurveyPermanentDeleteView.as_view(), name='survey-permanent-delete'),
-    
-    # Rutas para Checklists
-    path('checklists/<str:survey_id>/monthly-summary/', ChecklistMonthlySummaryView.as_view(), name='checklist-monthly-summary'),
 
     # Rutas para Respuestas
     path('responses/', ResponseListCreate.as_view(), name='response-list-create'),

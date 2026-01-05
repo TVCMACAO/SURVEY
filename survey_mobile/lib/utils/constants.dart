@@ -1,6 +1,6 @@
 class ApiConstants {
-  // URL del servidor en EasyPanel
-  static const String baseUrl = 'https://chat-survey-app.rhfh8t.easypanel.host/api';
+  // Cambiar según tu configuración
+  static const String baseUrl = 'http://192.168.0.248:8085/api';
   
   // Endpoints
   static const String login = '/token/';
@@ -21,7 +21,7 @@ class StorageKeys {
 
 class DatabaseConstants {
   static const String databaseName = 'survey_mobile.db';
-  static const int databaseVersion = 3;
+  static const int databaseVersion = 2;
   
   // Tablas
   static const String tableSurveys = 'surveys';
