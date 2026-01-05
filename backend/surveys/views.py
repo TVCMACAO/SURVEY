@@ -967,7 +967,7 @@ class SurveyRetrieveUpdateDestroy(APIView):
     def get(self, request, pk):
         survey = self.get_object(pk)
         
-        # Verificar permisos: si es group_admin, solo puede ver encuestas de su grupo
+        # Verificar permisos según el grupo del usuario
         user_role = None
         user_group_id = None
         if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
@@ -978,9 +978,11 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 user_role = None
                 user_group_id = None
         
-        if user_role == 'group_admin' and user_group_id:
-            # Verificar que la encuesta pertenece al grupo del admin
-            survey_group = survey.get('group')
+        survey_group = survey.get('group')
+        
+        # Si el usuario NO es root y tiene user_group_id: solo puede ver encuestas de su grupo
+        if user_role != 'root' and user_group_id:
+            # Verificar que la encuesta pertenece al grupo del usuario
             try:
                 if str(survey_group) != str(user_group_id) and str(survey_group) != str(ObjectId(user_group_id)):
                     return Response(
@@ -993,6 +995,13 @@ class SurveyRetrieveUpdateDestroy(APIView):
                         {"detail": "No tienes permisos para ver esta encuesta."},
                         status=status.HTTP_403_FORBIDDEN
                     )
+        elif user_role != 'root' and not user_group_id:
+            # Usuario sin grupo asignado y no es root: no puede ver ninguna encuesta
+            return Response(
+                {"detail": "No tienes permisos para ver esta encuesta."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        # Si el usuario es root: puede ver todas las encuestas (con o sin grupo)
         
         # Enriquecer con información del grupo y usuario creador
         groups_collection = get_survey_groups_collection()
