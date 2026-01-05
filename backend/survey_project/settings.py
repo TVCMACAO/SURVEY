@@ -232,6 +232,12 @@ MONGO_PORT = os.environ.get('MONGO_PORT', '27017')
 # Nota: Si se construye manualmente y se usa usuario root, agregar ?authSource=admin
 if 'MONGO_URI' in os.environ:
     MONGO_URI = os.environ.get('MONGO_URI')
+    # Si la URI contiene usuario root pero no tiene authSource=admin, agregarlo
+    if 'root@' in MONGO_URI and 'authSource=admin' not in MONGO_URI:
+        if '?' in MONGO_URI:
+            MONGO_URI = MONGO_URI + '&authSource=admin'
+        else:
+            MONGO_URI = MONGO_URI + '?authSource=admin'
 else:
     # Construir URI con authSource=admin si es usuario root
     base_uri = f'mongodb://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_HOST}:{MONGO_PORT}/'
