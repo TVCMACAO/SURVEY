@@ -28,8 +28,12 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-8j#s=h1a!5m%)y+b^^x30
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 # Get allowed hosts from environment variable, default to safe values
-ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', '192.168.0.248,localhost,127.0.0.1')
+ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', '192.168.0.248,localhost,127.0.0.1,easypanel.clinicamaicao.com,www.clinicamaicao.com')
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(',') if host.strip()]
+
+# Para producción con proxies reversos (EasyPanel)
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = None  # EasyPanel maneja SSL
 
 # CORS_ALLOWED_ORIGINS for Flutter and EasyPanel
 CORS_ALLOWED_ORIGINS = [
