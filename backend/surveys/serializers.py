@@ -32,6 +32,17 @@ class ObjectIdField(serializers.Field):
         return str(value) if value else None
 
 class UserSerializer(serializers.ModelSerializer):
+    # Campo role personalizado que acepta todos los roles válidos incluyendo group_admin
+    role = serializers.ChoiceField(
+        choices=[
+            ('root', 'Root'),
+            ('group_admin', 'Administrador de Grupo'),
+            ('encuestador', 'Encuestador'),
+            ('analista', 'Analista'),
+        ],
+        required=False
+    )
+    
     class Meta:
         model = User
         fields = ('id', 'username', 'first_name', 'last_name', 'email', 'role', 'is_active', 'date_joined')
