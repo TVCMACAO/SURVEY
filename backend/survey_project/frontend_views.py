@@ -28,19 +28,34 @@ def serve_frontend_asset(request, path):
     Sirve archivos estáticos del frontend (JS, CSS, imágenes, etc.)
     Los archivos están en dist/assets/ cuando se construye con Vite
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     frontend_dirs = [
         Path('/app/frontend/survey-ui/dist'),
         Path(__file__).resolve().parent.parent.parent / 'frontend' / 'survey-ui' / 'dist',
     ]
     
+    # Log para debugging
+    logger.info(f"Buscando asset: {path}")
+    
     for frontend_dir in frontend_dirs:
+        # Verificar que el directorio base existe
+        if not frontend_dir.exists():
+            logger.warning(f"Frontend dir no existe: {frontend_dir}")
+            continue
+        
         # Intentar primero en assets/ (estructura de Vite)
         asset_path = frontend_dir / 'assets' / path
+        logger.info(f"Intentando: {asset_path} (existe: {asset_path.exists()})")
+        
         if not asset_path.exists():
             # Si no está en assets/, intentar directamente
             asset_path = frontend_dir / path
+            logger.info(f"Intentando directamente: {asset_path} (existe: {asset_path.exists()})")
         
         if asset_path.exists() and asset_path.is_file():
+            logger.info(f"Asset encontrado: {asset_path}")
             # Determinar content type
             content_type = 'application/octet-stream'
             if path.endswith('.js'):
@@ -62,4 +77,14 @@ def serve_frontend_asset(request, path):
             
             return FileResponse(open(asset_path, 'rb'), content_type=content_type)
     
-    raise Http404(f"Asset not found: {path}. Checked in: {[str(d / 'assets' / path) for d in frontend_dirs]}")
+    # Listar archivos disponibles para debugging
+    checked_paths = []
+    for frontend_dir in frontend_dirs:
+        if frontend_dir.exists():
+            assets_dir = frontend_dir / 'assets'
+            if assets_dir.exists():
+                checked_paths.append(f"{assets_dir}: {list(assets_dir.iterdir())[:5] if assets_dir.exists() else 'no existe'}")
+    
+    error_msg = f"Asset not found: {path}. Checked paths: {checked_paths}"
+    logger.error(error_msg)
+    raise Http404(error_msg)
