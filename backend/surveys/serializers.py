@@ -24,7 +24,7 @@ class ObjectIdField(serializers.Field):
         if data_str:
             return data_str
         
-            raise serializers.ValidationError("Invalid ObjectId format.")
+        raise serializers.ValidationError("Invalid ObjectId format.")
 
     def to_representation(self, value):
         if isinstance(value, ObjectId):

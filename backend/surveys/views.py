@@ -496,9 +496,29 @@ class SurveyListCreate(APIView):
             pass
         # #endregion
         
-        if serializer.is_valid():
-            surveys_collection = get_surveys_collection()
-            validated_data = serializer.validated_data
+        if not serializer.is_valid():
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "C",
+                        "location": "views.py:499",
+                        "message": "Serializer validation failed",
+                        "data": {
+                            "errors": str(serializer.errors),
+                            "errors_dict": dict(serializer.errors)
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        surveys_collection = get_surveys_collection()
+        validated_data = serializer.validated_data
             
             # Verificar permisos: si es group_admin, solo puede crear encuestas en su grupo
             user_role = None
