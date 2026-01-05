@@ -1314,8 +1314,42 @@ class CurrentUserView(APIView):
             # Verificar si es un MongoUser (autenticación MongoDB)
             from .mongo_user_model import MongoUser
             
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "A",
+                        "location": "views.py:1313",
+                        "message": "CurrentUserView - checking user type",
+                        "data": {
+                            "user_type": type(request.user).__name__ if request.user else None,
+                            "is_mongo_user": isinstance(request.user, MongoUser) if request.user else False,
+                            "has_date_joined": hasattr(request.user, 'date_joined') if request.user else False,
+                            "date_joined_type": type(request.user.date_joined).__name__ if request.user and hasattr(request.user, 'date_joined') and request.user.date_joined else None
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
             if isinstance(request.user, MongoUser):
                 # Si es MongoUser, crear un diccionario con los datos
+                # Manejar date_joined correctamente (puede ser datetime, string, o None)
+                date_joined_value = None
+                if request.user.date_joined:
+                    if hasattr(request.user.date_joined, 'isoformat'):
+                        # Es un objeto datetime
+                        date_joined_value = request.user.date_joined.isoformat()
+                    elif isinstance(request.user.date_joined, str):
+                        # Ya es un string
+                        date_joined_value = request.user.date_joined
+                    else:
+                        # Intentar convertir a string
+                        date_joined_value = str(request.user.date_joined)
+                
                 user_data = {
                     'id': request.user.id,
                     'username': request.user.username,
@@ -1324,7 +1358,7 @@ class CurrentUserView(APIView):
                     'email': request.user.email,
                     'role': request.user.role,
                     'is_active': request.user.is_active,
-                    'date_joined': request.user.date_joined.isoformat() if request.user.date_joined else None
+                    'date_joined': date_joined_value
                 }
                 # #region agent log
                 try:

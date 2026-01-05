@@ -68,6 +68,11 @@ class MongoAuthBackend(BaseBackend):
         """
         from .mongo_user_model import MongoUser
         
+        # Manejar date_joined (puede ser datetime de MongoDB o None)
+        date_joined = user_doc.get('date_joined')
+        # Si es un datetime de MongoDB, mantenerlo como está
+        # Si es None, mantenerlo como None
+        
         user = MongoUser(
             id=str(user_doc.get('_id', user_doc.get('id'))),
             username=user_doc.get('username'),
@@ -78,7 +83,7 @@ class MongoAuthBackend(BaseBackend):
             is_superuser=user_doc.get('is_superuser', False),
             first_name=user_doc.get('first_name', ''),
             last_name=user_doc.get('last_name', ''),
-            date_joined=user_doc.get('date_joined'),
+            date_joined=date_joined,
         )
         return user
 
