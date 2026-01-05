@@ -519,17 +519,17 @@ class SurveyListCreate(APIView):
         
         surveys_collection = get_surveys_collection()
         validated_data = serializer.validated_data
-            
-            # Verificar permisos: si es group_admin, solo puede crear encuestas en su grupo
-            user_role = None
-            user_group_id = None
-            if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
-                try:
-                    user_role = getattr(request.user, 'role', None)
-                    user_group_id = getattr(request.user, 'user_group_id', None)
-                except (AttributeError, TypeError):
-                    user_role = None
-                    user_group_id = None
+        
+        # Verificar permisos: si es group_admin, solo puede crear encuestas en su grupo
+        user_role = None
+        user_group_id = None
+        if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
+            try:
+                user_role = getattr(request.user, 'role', None)
+                user_group_id = getattr(request.user, 'user_group_id', None)
+            except (AttributeError, TypeError):
+                user_role = None
+                user_group_id = None
             
             # Si es group_admin, forzar el grupo a su grupo
             if user_role == 'group_admin' and user_group_id:
