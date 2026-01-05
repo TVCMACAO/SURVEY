@@ -579,40 +579,29 @@ class SurveyListCreate(APIView):
                 pass
             # #endregion
             
+            # Verificar primero que el grupo existe antes de asignarlo
+            groups_collection = get_survey_groups_collection()
+            group_obj = None
+            
+            # Intentar buscar el grupo por ObjectId
             try:
-                validated_data['group'] = ObjectId(user_group_id)
+                if isinstance(user_group_id, ObjectId):
+                    group_obj = groups_collection.find_one({"_id": user_group_id})
+                else:
+                    group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id)})
             except Exception:
-                validated_data['group'] = user_group_id
-        
-        # Validar que el group_id existe
-        groups_collection = get_survey_groups_collection()
-        group_found = False
-        group_to_check = validated_data.get('group')
-        
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "D",
-                    "location": "views.py:547",
-                    "message": "Validating group exists",
-                    "data": {
-                        "group_to_check": str(group_to_check) if group_to_check else None,
-                        "group_to_check_type": type(group_to_check).__name__ if group_to_check else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
-        # Try ObjectId first
-        try:
-            group_obj = groups_collection.find_one({"_id": ObjectId(group_to_check)})
+                pass
+            
+            # Si no se encontró, intentar como string
+            if not group_obj:
+                try:
+                    group_obj = groups_collection.find_one({"_id": user_group_id})
+                except Exception:
+                    pass
+            
             if group_obj:
-                group_found = True
+                # El grupo existe, usar su ObjectId
+                validated_data['group'] = group_obj['_id']
                 # #region agent log
                 try:
                     with open(log_file_path, 'a') as f:
@@ -620,17 +609,48 @@ class SurveyListCreate(APIView):
                             "sessionId": "debug-session",
                             "runId": "run1",
                             "hypothesisId": "D",
-                            "location": "views.py:547",
-                            "message": "Group found with ObjectId",
+                            "location": "views.py:540",
+                            "message": "Group found for group_admin, using it",
                             "data": {
-                                "group_id": str(group_obj.get('_id'))
+                                "group_id": str(group_obj['_id']),
+                                "group_name": group_obj.get('name', 'N/A')
                             },
                             "timestamp": int(__import__('time').time() * 1000)
                         }) + '\n')
                 except Exception:
                     pass
                 # #endregion
-        except Exception as e:
+            else:
+                # El grupo no existe, esto es un error
+                # #region agent log
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "D",
+                            "location": "views.py:540",
+                            "message": "Group not found for group_admin user_group_id",
+                            "data": {
+                                "user_group_id": str(user_group_id),
+                                "all_groups": [{"_id": str(g.get('_id')), "name": g.get('name')} for g in groups_collection.find({}, {'_id': 1, 'name': 1})[:10]]
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+                return Response(
+                    {"detail": f"El grupo asociado a tu usuario (ID: {user_group_id}) no existe en el sistema. Contacta al administrador."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Validar que el group_id existe (solo si no es group_admin, porque ya lo validamos arriba)
+        if user_role != 'group_admin':
+            groups_collection = get_survey_groups_collection()
+            group_found = False
+            group_to_check = validated_data.get('group')
+            
             # #region agent log
             try:
                 with open(log_file_path, 'a') as f:
@@ -639,22 +659,32 @@ class SurveyListCreate(APIView):
                         "runId": "run1",
                         "hypothesisId": "D",
                         "location": "views.py:547",
-                        "message": "Error checking group with ObjectId",
+                        "message": "Validating group exists (non-group_admin)",
                         "data": {
-                            "error": str(e)
+                            "group_to_check": str(group_to_check) if group_to_check else None,
+                            "group_to_check_type": type(group_to_check).__name__ if group_to_check else None
                         },
                         "timestamp": int(__import__('time').time() * 1000)
                     }) + '\n')
             except Exception:
                 pass
             # #endregion
-            pass
-        
-        # Try as string
-        if not group_found:
-            group_obj = groups_collection.find_one({"_id": group_to_check})
-            if group_obj:
-                group_found = True
+            
+            # Try ObjectId first
+            try:
+                group_obj = groups_collection.find_one({"_id": ObjectId(group_to_check)})
+                if group_obj:
+                    group_found = True
+            except Exception as e:
+                pass
+            
+            # Try as string
+            if not group_found:
+                group_obj = groups_collection.find_one({"_id": group_to_check})
+                if group_obj:
+                    group_found = True
+            
+            if not group_found:
                 # #region agent log
                 try:
                     with open(log_file_path, 'a') as f:
@@ -663,36 +693,17 @@ class SurveyListCreate(APIView):
                             "runId": "run1",
                             "hypothesisId": "D",
                             "location": "views.py:547",
-                            "message": "Group found with string ID",
+                            "message": "Group not found",
                             "data": {
-                                "group_id": str(group_obj.get('_id'))
+                                "group_to_check": str(group_to_check),
+                                "all_groups": [str(g.get('_id')) for g in groups_collection.find({}, {'_id': 1})[:10]]
                             },
                             "timestamp": int(__import__('time').time() * 1000)
                         }) + '\n')
                 except Exception:
                     pass
                 # #endregion
-        
-        if not group_found:
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "D",
-                        "location": "views.py:547",
-                        "message": "Group not found",
-                        "data": {
-                            "group_to_check": str(group_to_check),
-                            "all_groups": [str(g.get('_id')) for g in groups_collection.find({}, {'_id': 1})[:10]]
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
-            raise ValidationError(detail="El grupo de encuestas especificado no existe.")
+                raise ValidationError(detail="El grupo de encuestas especificado no existe.")
 
             result = surveys_collection.insert_one({
                 'title': validated_data['title'],
