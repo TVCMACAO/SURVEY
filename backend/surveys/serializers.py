@@ -40,6 +40,17 @@ class UserSerializer(serializers.ModelSerializer):
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'})
     password_confirm = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'})
+    # Campo role personalizado que acepta todos los roles válidos incluyendo group_admin
+    role = serializers.ChoiceField(
+        choices=[
+            ('root', 'Root'),
+            ('group_admin', 'Administrador de Grupo'),
+            ('encuestador', 'Encuestador'),
+            ('analista', 'Analista'),
+        ],
+        required=False,
+        default='encuestador'
+    )
     
     class Meta:
         model = User
@@ -92,6 +103,16 @@ class UserCreateSerializer(serializers.ModelSerializer):
 class UserUpdateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8, required=False, style={'input_type': 'password'})
     password_confirm = serializers.CharField(write_only=True, min_length=8, required=False, style={'input_type': 'password'})
+    # Campo role personalizado que acepta todos los roles válidos incluyendo group_admin
+    role = serializers.ChoiceField(
+        choices=[
+            ('root', 'Root'),
+            ('group_admin', 'Administrador de Grupo'),
+            ('encuestador', 'Encuestador'),
+            ('analista', 'Analista'),
+        ],
+        required=False
+    )
     
     class Meta:
         model = User

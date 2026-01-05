@@ -5,6 +5,7 @@ class User(AbstractUser):
     # Add custom roles field to Django's User model
     ROLE_CHOICES = [
         ('root', 'Root'),
+        ('group_admin', 'Administrador de Grupo'),
         ('encuestador', 'Encuestador'),
         ('analista', 'Analista'),
     ]
