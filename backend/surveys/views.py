@@ -1620,12 +1620,182 @@ class UserRetrieveUpdateDestroy(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        user = self.get_object(pk)
-        serializer = UserUpdateSerializer(user, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(UserSerializer(user).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        import json
+        import traceback
+        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        
+        # #region agent log
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "H",
+                    "location": "views.py:1608",
+                    "message": "UserRetrieveUpdateDestroy.put called",
+                    "data": {
+                        "pk": str(pk),
+                        "pk_type": type(pk).__name__
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        try:
+            user = self.get_object(pk)
+            
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "H",
+                        "location": "views.py:1608",
+                        "message": "User found, updating",
+                        "data": {
+                            "user_id": str(user.id) if user else None,
+                            "username": user.username if user else None
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
+            serializer = UserUpdateSerializer(user, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                
+                # Obtener el usuario actualizado de MongoDB y devolverlo como diccionario
+                from .mongo_user_utils import get_user_by_id
+                updated_user_doc = get_user_by_id(pk)
+                
+                if updated_user_doc:
+                    # Manejar date_joined correctamente
+                    date_joined_value = None
+                    date_joined = updated_user_doc.get('date_joined')
+                    if date_joined:
+                        if hasattr(date_joined, 'isoformat'):
+                            date_joined_value = date_joined.isoformat()
+                        elif isinstance(date_joined, str):
+                            date_joined_value = date_joined
+                        else:
+                            date_joined_value = str(date_joined)
+                    
+                    user_data = {
+                        'id': str(updated_user_doc.get('_id', updated_user_doc.get('id'))),
+                        'username': updated_user_doc.get('username'),
+                        'email': updated_user_doc.get('email', ''),
+                        'role': updated_user_doc.get('role', 'encuestador'),
+                        'is_active': updated_user_doc.get('is_active', True),
+                        'first_name': updated_user_doc.get('first_name', ''),
+                        'last_name': updated_user_doc.get('last_name', ''),
+                        'date_joined': date_joined_value
+                    }
+                    
+                    # #region agent log
+                    try:
+                        with open(log_file_path, 'a') as f:
+                            f.write(json.dumps({
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "H",
+                                "location": "views.py:1608",
+                                "message": "User updated successfully",
+                                "data": {
+                                    "user_id": user_data.get('id')
+                                },
+                                "timestamp": int(__import__('time').time() * 1000)
+                            }) + '\n')
+                    except Exception:
+                        pass
+                    # #endregion
+                    
+                    return Response(user_data)
+                else:
+                    # Si no se encuentra, devolver los datos del objeto user actualizado
+                    user_data = {
+                        'id': str(user.id),
+                        'username': user.username,
+                        'email': user.email,
+                        'role': user.role,
+                        'is_active': user.is_active,
+                        'first_name': user.first_name,
+                        'last_name': user.last_name,
+                        'date_joined': user.date_joined.isoformat() if user.date_joined and hasattr(user.date_joined, 'isoformat') else (str(user.date_joined) if user.date_joined else None)
+                    }
+                    return Response(user_data)
+            else:
+                # #region agent log
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "H",
+                            "location": "views.py:1608",
+                            "message": "Serializer validation failed",
+                            "data": {
+                                "errors": serializer.errors
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except NotFound as e:
+            # #region agent log
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"UserRetrieveUpdateDestroy.put - User not found: {pk}")
+            
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "H",
+                        "location": "views.py:1608",
+                        "message": "User not found",
+                        "data": {
+                            "pk": str(pk)
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            raise
+        except Exception as e:
+            # #region agent log
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"UserRetrieveUpdateDestroy.put failed: {type(e).__name__} - {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "H",
+                        "location": "views.py:1608",
+                        "message": "UserRetrieveUpdateDestroy.put failed",
+                        "data": {
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                            "traceback": traceback.format_exc()
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            raise
 
     def delete(self, request, pk):
         # Verificar que el usuario es 'root'

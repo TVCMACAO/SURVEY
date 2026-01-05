@@ -19,7 +19,7 @@ urlpatterns = [
     # Rutas de usuario
     path('me/', CurrentUserView.as_view(), name='current_user'),
     path('users/', UserListCreate.as_view(), name='user-list-create'),
-    path('users/<int:pk>/', UserRetrieveUpdateDestroy.as_view(), name='user-detail'),
+    path('users/<str:pk>/', UserRetrieveUpdateDestroy.as_view(), name='user-detail'),
 
     # Rutas para Grupos de Encuestas
     path('groups/', SurveyGroupListCreate.as_view(), name='surveygroup-list-create'),
