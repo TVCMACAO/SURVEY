@@ -15,9 +15,20 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
+from django.views.static import serve
+from django.conf import settings
+from .frontend_views import serve_frontend, serve_frontend_asset
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('surveys.urls')),
+    
+    # Servir archivos estáticos del frontend (JS, CSS, assets, etc.)
+    re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
+    re_path(r'^assets/(?P<path>.*)$', serve_frontend_asset),
+    
+    # Servir el frontend React para todas las demás rutas
+    # Esto debe ir al final para capturar todas las rutas no manejadas
+    re_path(r'^(?!api/|admin/|static/|assets/).*$', serve_frontend, name='frontend'),
 ]
