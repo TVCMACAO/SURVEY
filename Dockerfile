@@ -3,23 +3,32 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 COPY frontend/survey-ui/package*.json ./
-RUN npm ci
+RUN test -f package.json || (echo "ERROR: package.json no encontrado en survey-ui" && exit 1)
+RUN npm ci || (echo "ERROR: npm ci falló en survey-ui" && exit 1)
 COPY frontend/survey-ui/ ./
-RUN npm run build
+RUN npm run build || (echo "ERROR: npm run build falló en survey-ui" && exit 1)
+RUN test -d dist || (echo "ERROR: directorio dist no se creó en survey-ui" && exit 1)
 
 # Stage 1b: Build Checklist App
 FROM node:20-alpine AS checklist-builder
 WORKDIR /app
 # Copiar archivos de checklist-app
 COPY frontend/checklist-app/package*.json ./
+# Verificar que package.json existe
+RUN test -f package.json || (echo "ERROR: package.json no encontrado en checklist-app" && exit 1)
 # Instalar dependencias
-RUN npm ci
+RUN npm ci || (echo "ERROR: npm ci falló en checklist-app" && exit 1)
 # Copiar resto de archivos
 COPY frontend/checklist-app/ ./
+# Verificar archivos críticos
+RUN test -f index.html || (echo "ERROR: index.html no encontrado" && exit 1)
+RUN test -f vite.config.js || (echo "ERROR: vite.config.js no encontrado" && exit 1)
+RUN test -d src || (echo "ERROR: directorio src no encontrado" && exit 1)
 # Construir la aplicación
-RUN npm run build
+RUN npm run build || (echo "ERROR: npm run build falló en checklist-app" && exit 1)
 # Verificar que el build se completó
-RUN test -d dist && test -f dist/index.html || (echo "ERROR: Build de checklist-app falló - dist/index.html no encontrado" && exit 1)
+RUN test -d dist || (echo "ERROR: directorio dist no se creó" && exit 1)
+RUN test -f dist/index.html || (echo "ERROR: dist/index.html no encontrado después del build" && ls -la dist/ && exit 1)
 
 # Stage 2: Build Backend
 FROM python:3.10-slim-bullseye AS backend-builder
