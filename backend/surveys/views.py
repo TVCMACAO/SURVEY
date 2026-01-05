@@ -191,41 +191,80 @@ class SurveyListCreate(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        surveys_collection = get_surveys_collection()
-        group_id = request.query_params.get('group_id')
-        show_deleted = request.query_params.get('show_deleted', 'false').lower() == 'true'
+        # #region agent log
+        import json
+        import traceback
+        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "B",
+                    "location": "views.py:193",
+                    "message": "SurveyListCreate.get called",
+                    "data": {
+                        "user_authenticated": request.user.is_authenticated if request.user else False,
+                        "user_id": request.user.id if request.user and hasattr(request.user, 'id') else None
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
         
-        query = {}
-        if group_id:
+        try:
+            surveys_collection = get_surveys_collection()
+            # #region agent log
             try:
-                # Try ObjectId first, if it fails, use as string
-                query['group'] = ObjectId(group_id)
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:193",
+                        "message": "MongoDB collection obtained",
+                        "data": {},
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
             except Exception:
-                query['group'] = group_id
+                pass
+            # #endregion
+            
+            group_id = request.query_params.get('group_id')
+            show_deleted = request.query_params.get('show_deleted', 'false').lower() == 'true'
+            
+            query = {}
+            if group_id:
+                try:
+                    # Try ObjectId first, if it fails, use as string
+                    query['group'] = ObjectId(group_id)
+                except Exception:
+                    query['group'] = group_id
 
-        # Solo usuarios root pueden ver eliminadas, y solo si lo solicitan explícitamente
-        user_role = None
-        if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
-            try:
-                user_role = getattr(request.user, 'role', None)
-            except (AttributeError, TypeError):
-                user_role = None
-        if not show_deleted or user_role != 'root':
-            # Excluir eliminadas: campo no existe o es False/None
-            # Usar $and para combinar con otras condiciones si existen
-            deleted_condition = {
-                '$or': [
-                    {'is_deleted': {'$ne': True}},
-                    {'is_deleted': {'$exists': False}}
-                ]
-            }
-            if query:
-                # Combinar condiciones existentes con filtro de eliminadas
-                query = {'$and': [query, deleted_condition]}
-            else:
-                query = deleted_condition
+            # Solo usuarios root pueden ver eliminadas, y solo si lo solicitan explícitamente
+            user_role = None
+            if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
+                try:
+                    user_role = getattr(request.user, 'role', None)
+                except (AttributeError, TypeError):
+                    user_role = None
+            if not show_deleted or user_role != 'root':
+                # Excluir eliminadas: campo no existe o es False/None
+                # Usar $and para combinar con otras condiciones si existen
+                deleted_condition = {
+                    '$or': [
+                        {'is_deleted': {'$ne': True}},
+                        {'is_deleted': {'$exists': False}}
+                    ]
+                }
+                if query:
+                    # Combinar condiciones existentes con filtro de eliminadas
+                    query = {'$and': [query, deleted_condition]}
+                else:
+                    query = deleted_condition
 
-        surveys = list(surveys_collection.find(query))
+            surveys = list(surveys_collection.find(query))
         
         # #region agent log
         import json
@@ -249,18 +288,76 @@ class SurveyListCreate(APIView):
             pass
         # #endregion
         
-        for survey in surveys:
-            # Handle both ObjectId and string _id formats
-            if '_id' in survey:
-                if isinstance(survey['_id'], ObjectId):
-                    survey['id'] = str(survey['_id'])
-                else:
-                    survey['id'] = str(survey['_id'])
-            elif 'id' not in survey:
-                # If no _id, use id field if it exists
-                survey['id'] = survey.get('id', '')
-        serializer = SurveySerializer(surveys, many=True)
-        return Response(serializer.data)
+            for survey in surveys:
+                # Handle both ObjectId and string _id formats
+                if '_id' in survey:
+                    if isinstance(survey['_id'], ObjectId):
+                        survey['id'] = str(survey['_id'])
+                    else:
+                        survey['id'] = str(survey['_id'])
+                elif 'id' not in survey:
+                    # If no _id, use id field if it exists
+                    survey['id'] = survey.get('id', '')
+            
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:262",
+                        "message": "Surveys processed, creating serializer",
+                        "data": {
+                            "count": len(surveys),
+                            "query": str(query)
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
+            serializer = SurveySerializer(surveys, many=True)
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:262",
+                        "message": "Serializer created, returning response",
+                        "data": {
+                            "serialized_count": len(serializer.data) if serializer.data else 0
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            return Response(serializer.data)
+        except Exception as e:
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:193",
+                        "message": "SurveyListCreate.get failed",
+                        "data": {
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                            "traceback": traceback.format_exc()
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            raise
 
     def post(self, request):
         serializer = SurveySerializer(data=request.data)
@@ -1176,8 +1273,70 @@ class CurrentUserView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data)
+        # #region agent log
+        import json
+        import traceback
+        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "A",
+                    "location": "views.py:1178",
+                    "message": "CurrentUserView.get called",
+                    "data": {
+                        "user_authenticated": request.user.is_authenticated if request.user else False,
+                        "user_id": request.user.id if request.user and hasattr(request.user, 'id') else None,
+                        "user_username": request.user.username if request.user else None
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        try:
+            serializer = UserSerializer(request.user)
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "A",
+                        "location": "views.py:1178",
+                        "message": "UserSerializer created successfully",
+                        "data": {
+                            "serializer_data_keys": list(serializer.data.keys()) if serializer.data else []
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            return Response(serializer.data)
+        except Exception as e:
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "A",
+                        "location": "views.py:1178",
+                        "message": "CurrentUserView.get failed",
+                        "data": {
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                            "traceback": traceback.format_exc()
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            raise
 
 class UserListCreate(APIView):
     """
