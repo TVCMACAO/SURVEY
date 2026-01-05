@@ -117,12 +117,108 @@ class SurveyGroupListCreate(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        groups_collection = get_survey_groups_collection()
-        groups = list(groups_collection.find())
-        for group in groups:
-            group['id'] = str(group['_id']) # Convert ObjectId to string for serialization
-        serializer = SurveyGroupSerializer(groups, many=True)
-        return Response(serializer.data)
+        # #region agent log
+        import json
+        import traceback
+        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        try:
+            user_role = getattr(request.user, 'role', None) if request.user else None
+            user_group_id = getattr(request.user, 'user_group_id', None) if request.user else None
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "B",
+                    "location": "views.py:SurveyGroupListCreate.get",
+                    "message": "Entering SurveyGroupListCreate.get",
+                    "data": {
+                        "user_id": str(request.user.id) if request.user and hasattr(request.user, 'id') else 'N/A',
+                        "user_role": user_role,
+                        "user_group_id": str(user_group_id) if user_group_id else None
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        try:
+            groups_collection = get_survey_groups_collection()
+            groups = list(groups_collection.find())
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:SurveyGroupListCreate.get",
+                        "message": "Groups fetched from MongoDB",
+                        "data": {"groups_count": len(groups)},
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
+            for group in groups:
+                group['id'] = str(group['_id']) # Convert ObjectId to string for serialization
+            
+            serializer = SurveyGroupSerializer(groups, many=True)
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:SurveyGroupListCreate.get",
+                        "message": "Serializer created",
+                        "data": {"serializer_valid": serializer.is_valid() if hasattr(serializer, 'is_valid') else 'N/A', "groups_count": len(groups)},
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
+            serialized_data = serializer.data
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:SurveyGroupListCreate.get",
+                        "message": "Returning serialized groups",
+                        "data": {"serialized_groups_count": len(serialized_data)},
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            return Response(serialized_data)
+        except Exception as e:
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:SurveyGroupListCreate.get",
+                        "message": "Error in SurveyGroupListCreate.get",
+                        "data": {
+                            "error_message": str(e),
+                            "error_type": type(e).__name__,
+                            "traceback": traceback.format_exc()[:1000]
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            raise
 
     def post(self, request):
         serializer = SurveyGroupSerializer(data=request.data)
