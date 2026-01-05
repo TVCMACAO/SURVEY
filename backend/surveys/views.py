@@ -1373,7 +1373,29 @@ class UserListCreate(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        users = User.objects.all().order_by('-date_joined')
+        # Obtener usuarios de MongoDB
+        from .mongo_utils import get_mongo_collection
+        users_collection = get_mongo_collection('users')
+        users_docs = list(users_collection.find().sort('date_joined', -1))
+        
+        # Convertir a objetos MongoUser
+        from .mongo_user_model import MongoUser
+        users = []
+        for user_doc in users_docs:
+            user = MongoUser(
+                id=str(user_doc.get('_id', user_doc.get('id'))),
+                username=user_doc.get('username'),
+                email=user_doc.get('email', ''),
+                role=user_doc.get('role', 'encuestador'),
+                is_active=user_doc.get('is_active', True),
+                is_staff=user_doc.get('is_staff', False),
+                is_superuser=user_doc.get('is_superuser', False),
+                first_name=user_doc.get('first_name', ''),
+                last_name=user_doc.get('last_name', ''),
+                date_joined=user_doc.get('date_joined'),
+            )
+            users.append(user)
+        
         serializer = UserSerializer(users, many=True)
         return Response(serializer.data)
 
@@ -1406,10 +1428,26 @@ class UserRetrieveUpdateDestroy(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self, pk):
-        try:
-            return User.objects.get(pk=pk)
-        except User.DoesNotExist:
+        from .mongo_user_utils import get_user_by_id
+        from .mongo_user_model import MongoUser
+        
+        user_doc = get_user_by_id(pk)
+        if user_doc is None:
             raise NotFound(detail="Usuario no encontrado.")
+        
+        user = MongoUser(
+            id=str(user_doc.get('_id', user_doc.get('id'))),
+            username=user_doc.get('username'),
+            email=user_doc.get('email', ''),
+            role=user_doc.get('role', 'encuestador'),
+            is_active=user_doc.get('is_active', True),
+            is_staff=user_doc.get('is_staff', False),
+            is_superuser=user_doc.get('is_superuser', False),
+            first_name=user_doc.get('first_name', ''),
+            last_name=user_doc.get('last_name', ''),
+            date_joined=user_doc.get('date_joined'),
+        )
+        return user
 
     def get(self, request, pk):
         # Verificar que el usuario es 'root'
@@ -1476,7 +1514,22 @@ class UserRetrieveUpdateDestroy(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        user.delete()
+        # Eliminar de MongoDB
+        from .mongo_utils import get_mongo_collection
+        from bson import ObjectId
+        
+        users_collection = get_mongo_collection('users')
+        
+        try:
+            delete_id = ObjectId(user.id)
+        except:
+            delete_id = user.id
+        
+        result = users_collection.delete_one({'_id': delete_id})
+        
+        if result.deleted_count == 0:
+            raise NotFound(detail="Usuario no encontrado.")
+        
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 class SyncStatusView(APIView):

@@ -55,16 +55,37 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return attrs
     
     def create(self, validated_data):
+        from .mongo_user_utils import create_user
+        
         validated_data.pop('password_confirm')
         password = validated_data.pop('password')
-        user = User.objects.create_user(
+        
+        # Crear usuario en MongoDB
+        user_doc = create_user(
             username=validated_data['username'],
             email=validated_data.get('email', ''),
             password=password,
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
             role=validated_data.get('role', 'encuestador'),
-            is_active=validated_data.get('is_active', True),
+            is_staff=validated_data.get('is_staff', False),
+            is_superuser=validated_data.get('is_superuser', False),
+        )
+        
+        # Convertir a objeto MongoUser para compatibilidad
+        from .mongo_user_model import MongoUser
+        from datetime import datetime
+        user = MongoUser(
+            id=str(user_doc['_id']),
+            username=user_doc['username'],
+            email=user_doc.get('email', ''),
+            role=user_doc.get('role', 'encuestador'),
+            is_active=user_doc.get('is_active', True),
+            is_staff=user_doc.get('is_staff', False),
+            is_superuser=user_doc.get('is_superuser', False),
+            first_name=user_doc.get('first_name', ''),
+            last_name=user_doc.get('last_name', ''),
+            date_joined=user_doc.get('date_joined'),
         )
         return user
 
@@ -92,16 +113,44 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         return attrs
     
     def update(self, instance, validated_data):
+        from .mongo_utils import get_mongo_collection
+        from bson import ObjectId
+        from django.contrib.auth.hashers import make_password
+        
         password = validated_data.pop('password', None)
         validated_data.pop('password_confirm', None)
         
-        if password:
-            instance.set_password(password)
+        # Actualizar en MongoDB
+        users_collection = get_mongo_collection('users')
+        user_id = instance.id if hasattr(instance, 'id') else instance.pk
         
+        try:
+            # Intentar convertir a ObjectId
+            update_id = ObjectId(user_id)
+        except:
+            update_id = user_id
+        
+        update_data = {}
+        for attr, value in validated_data.items():
+            update_data[attr] = value
+        
+        if password:
+            update_data['password'] = make_password(password)
+        
+        if update_data:
+            users_collection.update_one(
+                {'_id': update_id},
+                {'$set': update_data}
+            )
+        
+        # Actualizar el objeto instance con los nuevos valores
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         
-        instance.save()
+        if password:
+            # No podemos usar set_password en MongoUser, pero ya lo actualizamos en MongoDB
+            pass
+        
         return instance
 
 class SurveyGroupSerializer(serializers.Serializer):
