@@ -61,6 +61,10 @@ except Exception as e:
     print('La aplicación iniciará pero puede tener problemas de conexión')
 " 2>&1 || echo "WARNING: No se pudo verificar MongoDB (continuando...)"
 
+# Asegurar que el usuario root existe
+echo "=== Verificando usuario root ==="
+python /app/ensure_root_user.py 2>&1 || echo "WARNING: No se pudo verificar/crear usuario root (continuando...)"
+
 # Iniciar Gunicorn (usar set -e solo para Gunicorn)
 echo "=== Iniciando Gunicorn ==="
 echo "Comando: gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000"
