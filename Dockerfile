@@ -5,7 +5,9 @@ WORKDIR /app
 COPY frontend/survey-ui/package*.json ./
 RUN npm ci
 COPY frontend/survey-ui/ ./
-RUN npm run build
+RUN npm run build && \
+    test -f dist/index.html || (echo "ERROR: dist/index.html no existe después del build" && exit 1) && \
+    echo "Frontend build exitoso: $(ls -la dist/ | head -10)"
 
 # Stage 1b: Build Checklist App (opcional - si falla, crea placeholder)
 FROM node:20-alpine AS checklist-builder
@@ -48,6 +50,10 @@ COPY backend/ /app/
 # Copy frontend builds to the location Django expects
 COPY --from=frontend-builder /app/dist /app/frontend/survey-ui/dist
 COPY --from=checklist-builder /app/dist /app/frontend/checklist-app/dist
+
+# Verificar que los archivos se copiaron correctamente
+RUN test -f /app/frontend/survey-ui/dist/index.html || (echo "ERROR: Frontend index.html no encontrado después de COPY" && exit 1) && \
+    echo "Frontend verificado: $(ls -la /app/frontend/survey-ui/dist/ | head -10)"
 
 # Copy startup script
 COPY start.sh /start.sh
