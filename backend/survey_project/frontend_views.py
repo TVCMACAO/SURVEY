@@ -169,28 +169,28 @@ def serve_frontend(request):
         pass
     # #endregion
     
-        # Si no se encuentra el archivo, devolver un 404 en lugar de 500
-        error_msg = "Frontend not found. Checked paths: " + ", ".join(str(p) for p in frontend_paths)
-        
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "C",
-                    "location": "frontend_views.py:9",
-                    "message": "Frontend file not found, returning 404",
-                    "data": {
-                        "error_msg": error_msg
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
-        raise Http404(error_msg)
+    # Si no se encuentra el archivo, devolver un 404 en lugar de 500
+    error_msg = "Frontend not found. Checked paths: " + ", ".join(str(p) for p in frontend_paths)
+    
+    # #region agent log
+    try:
+        with open(log_file_path, 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "C",
+                "location": "frontend_views.py:9",
+                "message": "Frontend file not found, returning 404",
+                "data": {
+                    "error_msg": error_msg
+                },
+                "timestamp": int(__import__('time').time() * 1000)
+            }) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
+    raise Http404(error_msg)
     except Exception as e:
         # Capturar cualquier error inesperado y devolver un 500 con información de debug
         # #region agent log
