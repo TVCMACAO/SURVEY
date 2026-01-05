@@ -52,10 +52,10 @@ sys.path.insert(0, '/app')
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings')
 import django
 django.setup()
-from surveys.mongo_utils import get_mongo_client
+from surveys.mongo_utils import get_mongo_db
 try:
-    client = get_mongo_client()
-    client.admin.command('ping')
+    db = get_mongo_db()
+    db.command('ping')
     print('MongoDB: Conexión exitosa')
 except Exception as e:
     print(f'WARNING: No se pudo conectar a MongoDB: {e}')
