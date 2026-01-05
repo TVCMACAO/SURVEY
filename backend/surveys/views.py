@@ -221,12 +221,51 @@ class SurveyGroupListCreate(APIView):
             raise
 
     def post(self, request):
+        # #region agent log
+        import json
+        import traceback
+        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "C",
+                    "location": "views.py:SurveyGroupListCreate.post",
+                    "message": "Entering SurveyGroupListCreate.post",
+                    "data": {
+                        "user_id": str(request.user.id) if request.user and hasattr(request.user, 'id') else 'N/A',
+                        "user_role": getattr(request.user, 'role', None) if request.user else None,
+                        "request_data": dict(request.data) if hasattr(request.data, '__dict__') else str(request.data)[:200]
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
         serializer = SurveyGroupSerializer(data=request.data)
         if serializer.is_valid():
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "C",
+                        "location": "views.py:SurveyGroupListCreate.post",
+                        "message": "Serializer is valid",
+                        "data": {"validated_data": dict(serializer.validated_data)},
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
             groups_collection = get_survey_groups_collection()
             # Asegurarse de que el usuario autenticado es el creador
             validated_data = serializer.validated_data
-            validated_data['created_by'] = request.user.id # Usar el ID del usuario autenticado
+            validated_data['created_by'] = str(request.user.id) # Usar el ID del usuario autenticado como string
             
             result = groups_collection.insert_one({
                 'name': validated_data['name'],
@@ -235,7 +274,38 @@ class SurveyGroupListCreate(APIView):
             # Recuperar el objeto insertado para serializarlo con el ID correcto
             new_group = groups_collection.find_one({'_id': result.inserted_id})
             new_group['id'] = str(new_group['_id'])
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "C",
+                        "location": "views.py:SurveyGroupListCreate.post",
+                        "message": "Group created successfully",
+                        "data": {"group_id": new_group['id'], "group_name": new_group.get('name')},
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
             return Response(SurveyGroupSerializer(new_group).data, status=status.HTTP_201_CREATED)
+        
+        # #region agent log
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "C",
+                    "location": "views.py:SurveyGroupListCreate.post",
+                    "message": "Serializer validation failed",
+                    "data": {"errors": dict(serializer.errors)},
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class SurveyGroupRetrieveUpdateDestroy(APIView):

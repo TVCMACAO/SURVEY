@@ -188,7 +188,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 class SurveyGroupSerializer(serializers.Serializer):
     id = ObjectIdField(read_only=True)
     name = serializers.CharField(max_length=255)
-    created_by = serializers.IntegerField() # Usamos IntegerField para el ID de usuario de Django
+    created_by = serializers.CharField(read_only=True, required=False) # Se establece automáticamente en la vista
 
     def create(self, validated_data):
         # Esto será manejado en la vista, ya que no estamos usando modelos de Django para MongoDB
