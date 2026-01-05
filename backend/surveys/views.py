@@ -1296,12 +1296,13 @@ class CurrentUserView(APIView):
                     "sessionId": "debug-session",
                     "runId": "run1",
                     "hypothesisId": "A",
-                    "location": "views.py:1178",
+                    "location": "views.py:1288",
                     "message": "CurrentUserView.get called",
                     "data": {
                         "user_authenticated": request.user.is_authenticated if request.user else False,
                         "user_id": request.user.id if request.user and hasattr(request.user, 'id') else None,
-                        "user_username": request.user.username if request.user else None
+                        "user_username": request.user.username if request.user else None,
+                        "user_type": type(request.user).__name__ if request.user else None
                     },
                     "timestamp": int(__import__('time').time() * 1000)
                 }) + '\n')
@@ -1310,39 +1311,80 @@ class CurrentUserView(APIView):
         # #endregion
         
         try:
-            serializer = UserSerializer(request.user)
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "A",
-                        "location": "views.py:1178",
-                        "message": "UserSerializer created successfully",
-                        "data": {
-                            "serializer_data_keys": list(serializer.data.keys()) if serializer.data else []
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
-            return Response(serializer.data)
+            # Verificar si es un MongoUser (autenticación MongoDB)
+            from .mongo_user_model import MongoUser
+            
+            if isinstance(request.user, MongoUser):
+                # Si es MongoUser, crear un diccionario con los datos
+                user_data = {
+                    'id': request.user.id,
+                    'username': request.user.username,
+                    'first_name': request.user.first_name,
+                    'last_name': request.user.last_name,
+                    'email': request.user.email,
+                    'role': request.user.role,
+                    'is_active': request.user.is_active,
+                    'date_joined': request.user.date_joined.isoformat() if request.user.date_joined else None
+                }
+                # #region agent log
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "A",
+                            "location": "views.py:1288",
+                            "message": "CurrentUserView - MongoUser detected, returning dict",
+                            "data": {
+                                "user_data_keys": list(user_data.keys())
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+                return Response(user_data)
+            else:
+                # Si es un modelo de Django normal, usar el serializer
+                serializer = UserSerializer(request.user)
+                # #region agent log
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "A",
+                            "location": "views.py:1288",
+                            "message": "UserSerializer created successfully",
+                            "data": {
+                                "serializer_data_keys": list(serializer.data.keys()) if serializer.data else []
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+                return Response(serializer.data)
         except Exception as e:
             # #region agent log
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"CurrentUserView.get failed: {type(e).__name__} - {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
             try:
                 with open(log_file_path, 'a') as f:
                     f.write(json.dumps({
                         "sessionId": "debug-session",
                         "runId": "run1",
                         "hypothesisId": "A",
-                        "location": "views.py:1178",
+                        "location": "views.py:1288",
                         "message": "CurrentUserView.get failed",
                         "data": {
                             "error_type": type(e).__name__,
                             "error_message": str(e),
-                            "traceback": traceback.format_exc()
+                            "traceback": traceback.format_exc(),
+                            "user_type": type(request.user).__name__ if request.user else None
                         },
                         "timestamp": int(__import__('time').time() * 1000)
                     }) + '\n')
