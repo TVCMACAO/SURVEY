@@ -3,6 +3,7 @@ Vistas para servir el frontend React en producción
 """
 from django.http import Http404, FileResponse
 from pathlib import Path
+import os
 
 
 def serve_frontend(request):
