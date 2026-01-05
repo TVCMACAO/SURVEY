@@ -40,9 +40,18 @@ RUN echo "=== Estructura de archivos ===" && ls -la && \
     test -f vite.config.js || (echo "ERROR: vite.config.js no encontrado" && exit 1) && \
     test -d src || (echo "ERROR: directorio src no encontrado" && exit 1) && \
     echo "=== Contenido de src ===" && ls -la src/ || true
-# Construir la aplicación
+# Construir la aplicación con manejo de errores mejorado
 RUN echo "=== Iniciando build ===" && \
-    npm run build || (echo "ERROR: npm run build falló en checklist-app" && echo "=== Logs de npm ===" && cat package-lock.json 2>/dev/null || echo "No package-lock.json" && exit 1)
+    npm run build 2>&1 | tee /tmp/build.log || { \
+      echo "ERROR: npm run build falló en checklist-app" && \
+      echo "=== Logs de build ===" && \
+      cat /tmp/build.log && \
+      echo "=== Verificando node_modules ===" && \
+      ls -la node_modules/ 2>/dev/null | head -5 || echo "No node_modules" && \
+      echo "=== Verificando package-lock.json ===" && \
+      test -f package-lock.json && echo "package-lock.json existe" || echo "No package-lock.json" && \
+      exit 1; \
+    }
 # Verificar que el build se completó
 RUN test -d dist || (echo "ERROR: directorio dist no se creó" && ls -la && exit 1) && \
     test -f dist/index.html || (echo "ERROR: dist/index.html no encontrado después del build" && echo "=== Contenido de dist ===" && ls -la dist/ && exit 1) && \
