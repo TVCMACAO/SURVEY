@@ -286,6 +286,20 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             return result
         except Exception as e:
             # #region agent log
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            error_info = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "error_args": str(e.args) if hasattr(e, 'args') else None,
+                "traceback": traceback.format_exc()
+            }
+            
+            # Log a stderr (visible en Gunicorn logs)
+            logger.error(f"validate() exception: {error_info['error_type']} - {error_info['error_message']}")
+            logger.error(f"Traceback: {error_info['traceback']}")
+            
             try:
                 with open(log_file_path, 'a') as f:
                     f.write(json.dumps({
@@ -294,12 +308,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                         "hypothesisId": "B",
                         "location": "serializers.py:234",
                         "message": "validate() - exception in super().validate()",
-                        "data": {
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "error_args": str(e.args) if hasattr(e, 'args') else None,
-                            "traceback": traceback.format_exc()
-                        },
+                        "data": error_info,
                         "timestamp": int(__import__('time').time() * 1000)
                     }) + '\n')
             except Exception:

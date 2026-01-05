@@ -77,6 +77,20 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         except Exception as e:
             # #region agent log
             import traceback
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            error_info = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "error_args": str(e.args) if hasattr(e, 'args') else None,
+                "traceback": traceback.format_exc()
+            }
+            
+            # Log a stderr (visible en Gunicorn logs)
+            logger.error(f"Token request failed: {error_info['error_type']} - {error_info['error_message']}")
+            logger.error(f"Traceback: {error_info['traceback']}")
+            
             try:
                 with open(log_file_path, 'a') as f:
                     f.write(json.dumps({
@@ -85,12 +99,7 @@ class CustomTokenObtainPairView(TokenObtainPairView):
                         "hypothesisId": "D",
                         "location": "views.py:73",
                         "message": "Token request failed",
-                        "data": {
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "error_args": str(e.args) if hasattr(e, 'args') else None,
-                            "traceback": traceback.format_exc()
-                        },
+                        "data": error_info,
                         "timestamp": int(__import__('time').time() * 1000)
                     }) + '\n')
             except Exception:
