@@ -21,25 +21,32 @@ WORKDIR /app
 # Copiar archivos de checklist-app
 COPY frontend/checklist-app/package*.json ./
 # Verificar que package.json existe
-RUN test -f package.json || (echo "ERROR: package.json no encontrado en checklist-app" && exit 1)
+RUN test -f package.json || (echo "ERROR: package.json no encontrado en checklist-app" && ls -la && exit 1)
+# Mostrar contenido de package.json para debug
+RUN echo "=== package.json contenido ===" && cat package.json || true
 # Instalar dependencias (usar npm install si no hay package-lock.json, npm ci si existe)
 RUN if [ -f package-lock.json ]; then \
+      echo "Usando npm ci (package-lock.json encontrado)" && \
       npm ci || (echo "ERROR: npm ci falló en checklist-app" && exit 1); \
     else \
       echo "package-lock.json no encontrado, usando npm install..." && \
-      npm install || (echo "ERROR: npm install falló en checklist-app" && exit 1); \
+      npm install --verbose || (echo "ERROR: npm install falló en checklist-app" && exit 1); \
     fi
 # Copiar resto de archivos
 COPY frontend/checklist-app/ ./
-# Verificar archivos críticos
-RUN test -f index.html || (echo "ERROR: index.html no encontrado" && exit 1)
-RUN test -f vite.config.js || (echo "ERROR: vite.config.js no encontrado" && exit 1)
-RUN test -d src || (echo "ERROR: directorio src no encontrado" && exit 1)
+# Verificar archivos críticos y mostrar estructura
+RUN echo "=== Estructura de archivos ===" && ls -la && \
+    test -f index.html || (echo "ERROR: index.html no encontrado" && exit 1) && \
+    test -f vite.config.js || (echo "ERROR: vite.config.js no encontrado" && exit 1) && \
+    test -d src || (echo "ERROR: directorio src no encontrado" && exit 1) && \
+    echo "=== Contenido de src ===" && ls -la src/ || true
 # Construir la aplicación
-RUN npm run build || (echo "ERROR: npm run build falló en checklist-app" && exit 1)
+RUN echo "=== Iniciando build ===" && \
+    npm run build || (echo "ERROR: npm run build falló en checklist-app" && echo "=== Logs de npm ===" && cat package-lock.json 2>/dev/null || echo "No package-lock.json" && exit 1)
 # Verificar que el build se completó
-RUN test -d dist || (echo "ERROR: directorio dist no se creó" && exit 1)
-RUN test -f dist/index.html || (echo "ERROR: dist/index.html no encontrado después del build" && ls -la dist/ && exit 1)
+RUN test -d dist || (echo "ERROR: directorio dist no se creó" && ls -la && exit 1) && \
+    test -f dist/index.html || (echo "ERROR: dist/index.html no encontrado después del build" && echo "=== Contenido de dist ===" && ls -la dist/ && exit 1) && \
+    echo "=== Build completado exitosamente ===" && ls -la dist/ | head -10
 
 # Stage 2: Build Backend
 FROM python:3.10-slim-bullseye AS backend-builder
