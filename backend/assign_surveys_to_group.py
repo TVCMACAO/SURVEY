@@ -7,11 +7,21 @@ import sys
 import django
 
 # Configurar Django
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Intentar diferentes paths
+possible_paths = [
+    '/app',  # Path en el contenedor Docker
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),  # Path local
+]
+for path in possible_paths:
+    if os.path.exists(path) and os.path.exists(os.path.join(path, 'manage.py')):
+        sys.path.insert(0, path)
+        break
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings')
 django.setup()
 
 from surveys.mongo_utils import get_survey_groups_collection, get_surveys_collection, get_mongo_collection
+from surveys.mongo_user_utils import get_user_by_username
 from bson import ObjectId
 
 # Títulos de las encuestas a asignar
@@ -52,9 +62,13 @@ def main():
     
     if not group:
         print(f"   Grupo '{GROUP_NAME}' no existe. Creándolo...")
+        # Obtener el ID del usuario root
+        root_user = get_user_by_username('root')
+        created_by = str(root_user['_id']) if root_user else None
+        
         result = groups_collection.insert_one({
             'name': GROUP_NAME,
-            'created_by': 'root'  # O el ID del usuario root
+            'created_by': created_by
         })
         group = groups_collection.find_one({'_id': result.inserted_id})
         print(f"   ✓ Grupo '{GROUP_NAME}' creado con ID: {group['_id']}")
