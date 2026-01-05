@@ -61,9 +61,9 @@ except Exception as e:
     print('La aplicación iniciará pero puede tener problemas de conexión')
 " 2>&1 || echo "WARNING: No se pudo verificar MongoDB (continuando...)"
 
-# Asegurar que el usuario root existe
-echo "=== Verificando usuario root ==="
-python /app/ensure_root_user.py 2>&1 || echo "WARNING: No se pudo verificar/crear usuario root (continuando...)"
+# Inicializar MongoDB (crear índices y usuario root)
+echo "=== Inicializando MongoDB ==="
+python /app/init_mongodb.py 2>&1 || echo "WARNING: No se pudo inicializar MongoDB completamente (continuando...)"
 
 # Iniciar Gunicorn (usar set -e solo para Gunicorn)
 echo "=== Iniciando Gunicorn ==="
