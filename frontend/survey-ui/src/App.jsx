@@ -2361,10 +2361,14 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
 // --- VISTA: GESTIÓN DE USUARIOS ---
 
 const UserManagementView = ({ onBack, onLogout, userRole }) => {
+  const [activeTab, setActiveTab] = useState('usuarios'); // 'usuarios' o 'grupos'
   const [users, setUsers] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showUserForm, setShowUserForm] = useState(false);
+  const [showGroupForm, setShowGroupForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [editingGroup, setEditingGroup] = useState(null);
   const [formData, setFormData] = useState({
     username: '',
     first_name: '',
@@ -2374,6 +2378,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     password_confirm: '',
     role: 'encuestador',
     is_active: true
+  });
+  const [groupFormData, setGroupFormData] = useState({
+    name: ''
   });
   const [formError, setFormError] = useState('');
 
@@ -2399,14 +2406,56 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     }
   };
 
+  const fetchGroups = async () => {
+    try {
+      const response = await authenticatedFetch('/api/groups/');
+      if (!response.ok) {
+        throw new Error('Error al cargar los grupos.');
+      }
+      const data = await response.json();
+      
+      // Enriquecer grupos con información de usuarios
+      const enrichedGroups = await Promise.all(data.map(async (group) => {
+        // Contar usuarios en este grupo
+        const usersInGroup = users.filter(u => u.user_group_id === group.id || String(u.user_group_id) === String(group.id));
+        
+        // Obtener el admin del grupo (usuario con role group_admin y user_group_id = group.id)
+        const admin = users.find(u => 
+          u.role === 'group_admin' && 
+          (u.user_group_id === group.id || String(u.user_group_id) === String(group.id))
+        );
+        
+        return {
+          ...group,
+          user_count: usersInGroup.length,
+          admin_username: admin ? admin.username : null,
+          admin_name: admin ? `${admin.first_name || ''} ${admin.last_name || ''}`.trim() || admin.username : null
+        };
+      }));
+      
+      setGroups(enrichedGroups);
+    } catch (error) {
+      console.error("Error fetching groups:", error);
+      alert('No se pudieron cargar los grupos. ' + error.message);
+    }
+  };
+
   useEffect(() => {
-    if (userRole === 'root') {
-      fetchUsers();
+    if (userRole === 'root' || userRole === 'group_admin') {
+      fetchUsers().then(() => {
+        fetchGroups();
+      });
     } else {
       alert('No tienes permisos para acceder a esta sección.');
       onBack();
     }
   }, [userRole]);
+
+  useEffect(() => {
+    if (activeTab === 'grupos' && users.length > 0) {
+      fetchGroups();
+    }
+  }, [activeTab, users]);
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
@@ -2562,6 +2611,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     switch (role) {
       case 'root':
         return 'bg-red-100 text-red-700 border-red-300';
+      case 'group_admin':
+        return 'bg-gray-100 text-gray-700 border-gray-300';
       case 'analista':
         return 'bg-blue-100 text-blue-700 border-blue-300';
       case 'encuestador':
@@ -2575,6 +2626,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     switch (role) {
       case 'root':
         return 'Root';
+      case 'group_admin':
+        return 'group_admin';
       case 'analista':
         return 'Analista';
       case 'encuestador':
@@ -2582,6 +2635,97 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       default:
         return role;
     }
+  };
+
+  // Funciones para gestión de grupos
+  const handleCreateGroup = async (e) => {
+    e.preventDefault();
+    setFormError('');
+
+    try {
+      const response = await authenticatedFetch('/api/groups/', {
+        method: 'POST',
+        body: JSON.stringify(groupFormData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || JSON.stringify(errorData));
+      }
+
+      await fetchGroups();
+      setShowGroupForm(false);
+      setGroupFormData({ name: '' });
+      alert('Grupo creado exitosamente.');
+    } catch (error) {
+      console.error("Error creating group:", error);
+      setFormError(error.message);
+    }
+  };
+
+  const handleUpdateGroup = async (e) => {
+    e.preventDefault();
+    setFormError('');
+
+    try {
+      const response = await authenticatedFetch(`/api/groups/${editingGroup.id}/`, {
+        method: 'PUT',
+        body: JSON.stringify(groupFormData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || JSON.stringify(errorData));
+      }
+
+      await fetchGroups();
+      setShowGroupForm(false);
+      setEditingGroup(null);
+      setGroupFormData({ name: '' });
+      alert('Grupo actualizado exitosamente.');
+    } catch (error) {
+      console.error("Error updating group:", error);
+      setFormError(error.message);
+    }
+  };
+
+  const handleDeleteGroup = async (groupId) => {
+    if (!confirm('¿Estás seguro de que deseas eliminar este grupo?')) {
+      return;
+    }
+
+    try {
+      const response = await authenticatedFetch(`/api/groups/${groupId}/`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Error al eliminar el grupo.');
+      }
+
+      await fetchGroups();
+      alert('Grupo eliminado exitosamente.');
+    } catch (error) {
+      console.error("Error deleting group:", error);
+      alert('Error al eliminar el grupo: ' + error.message);
+    }
+  };
+
+  const handleEditGroup = (group) => {
+    setEditingGroup(group);
+    setGroupFormData({
+      name: group.name || ''
+    });
+    setShowGroupForm(true);
+    setFormError('');
+  };
+
+  const handleNewGroup = () => {
+    setEditingGroup(null);
+    setGroupFormData({ name: '' });
+    setShowGroupForm(true);
+    setFormError('');
   };
 
   if (loading) {
@@ -2600,15 +2744,25 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
             <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
               Gestión de Usuarios
             </h1>
-            <p className="text-sm text-gray-600 font-medium">Administra los usuarios del sistema.</p>
+            <p className="text-sm text-gray-600 font-medium">Administra usuarios y grupos del sistema.</p>
           </div>
           <div className="flex gap-3">
-            <button 
-              onClick={handleNewUser} 
-              className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
-            >
-              <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" /> Nuevo Usuario
-            </button>
+            {activeTab === 'usuarios' && (
+              <button 
+                onClick={handleNewUser} 
+                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
+              >
+                <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" /> Nuevo Usuario
+              </button>
+            )}
+            {activeTab === 'grupos' && (
+              <button 
+                onClick={handleNewGroup} 
+                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
+              >
+                <FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-white" /> Nuevo Grupo
+              </button>
+            )}
             <button 
               onClick={onBack} 
               className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2"
@@ -2625,10 +2779,34 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
             )}
           </div>
         </div>
+        
+        {/* Tabs */}
+        <div className="max-w-7xl mx-auto mt-4 flex gap-4 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('usuarios')}
+            className={`px-6 py-3 font-bold text-sm transition-colors ${
+              activeTab === 'usuarios'
+                ? 'text-purple-600 border-b-2 border-purple-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Usuarios
+          </button>
+          <button
+            onClick={() => setActiveTab('grupos')}
+            className={`px-6 py-3 font-bold text-sm transition-colors ${
+              activeTab === 'grupos'
+                ? 'text-purple-600 border-b-2 border-purple-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Grupos
+          </button>
+        </div>
       </header>
 
       <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
-        {showUserForm ? (
+        {activeTab === 'usuarios' && showUserForm ? (
           <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black text-gray-800">
@@ -2751,7 +2929,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                 >
                   <option value="encuestador">Encuestador</option>
                   <option value="analista">Analista</option>
-                  <option value="root">Root</option>
+                  <option value="group_admin">Administrador de Grupo</option>
+                  {userRole === 'root' && <option value="root">Root</option>}
                 </select>
               </div>
 
@@ -2789,7 +2968,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
               </div>
             </form>
           </div>
-        ) : (
+        ) : activeTab === 'usuarios' ? (
           <>
             {users.length === 0 ? (
               <div className="text-center py-24 border-2 border-dashed border-gray-300/60 rounded-3xl bg-white/40 backdrop-blur-sm">
@@ -2877,7 +3056,137 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
               </div>
             )}
           </>
-        )}
+        ) : activeTab === 'grupos' ? (
+          <>
+            {showGroupForm ? (
+              <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-black text-gray-800">
+                    {editingGroup ? 'Editar Grupo' : 'Nuevo Grupo'}
+                  </h2>
+                  <button 
+                    onClick={() => {
+                      setShowGroupForm(false);
+                      setEditingGroup(null);
+                      setFormError('');
+                    }}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <FontAwesomeIcon icon={faXmark} size="lg" className="text-gray-500" />
+                  </button>
+                </div>
+
+                <form onSubmit={editingGroup ? handleUpdateGroup : handleCreateGroup} className="space-y-4">
+                  {formError && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+                      {formError}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Nombre del Grupo <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={groupFormData.name}
+                      onChange={(e) => setGroupFormData({...groupFormData, name: e.target.value})}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      required
+                      autoComplete="off"
+                    />
+                  </div>
+
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      type="submit"
+                      className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-xl hover:shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95"
+                    >
+                      {editingGroup ? 'Actualizar Grupo' : 'Crear Grupo'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGroupForm(false);
+                        setEditingGroup(null);
+                        setFormError('');
+                      }}
+                      className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <>
+                {groups.length === 0 ? (
+                  <div className="text-center py-24 border-2 border-dashed border-gray-300/60 rounded-3xl bg-white/40 backdrop-blur-sm">
+                    <div className="w-20 h-20 bg-gradient-to-br from-indigo-100 to-purple-200 rounded-full flex items-center justify-center mx-auto mb-6 text-indigo-400 shadow-inner">
+                      <FontAwesomeIcon icon={faUsers} size="2x" className="fa-icon-force-current" />
+                    </div>
+                    <p className="text-2xl font-black text-gray-700 mb-2">No hay grupos</p>
+                    <p className="text-gray-500 mb-6">Crea el primer grupo para comenzar.</p>
+                    <button
+                      onClick={handleNewGroup}
+                      className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-xl hover:shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 mx-auto"
+                    >
+                      <FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-white" /> Crear Grupo
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
+                    <h2 className="text-xl font-black text-gray-800 mb-6">Gestión de Grupos de Usuarios</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {groups.map((group) => (
+                        <div key={group.id} className="border-2 border-gray-200 rounded-xl p-4 hover:border-purple-300 transition-colors">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-3 flex-1">
+                              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                                <FontAwesomeIcon icon={faUsers} size="sm" className="text-purple-600" />
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="font-black text-gray-800 text-lg">{group.name}</h3>
+                                <div className="mt-2 space-y-1">
+                                  {group.admin_username && (
+                                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                                      <FontAwesomeIcon icon={faUser} size="xs" className="text-gray-400" />
+                                      <span>Admin: {group.admin_username}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                                    <FontAwesomeIcon icon={faUsers} size="xs" className="text-gray-400" />
+                                    <span>Usuarios: {group.user_count || 0}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleEditGroup(group)}
+                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                title="Editar grupo"
+                              >
+                                <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteGroup(group.id)}
+                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Eliminar grupo"
+                              >
+                                <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        ) : null}
       </div>
     </main>
   );
