@@ -106,24 +106,24 @@ def serve_frontend(request):
                     # #endregion
                     return response
             except (IOError, OSError, PermissionError) as file_error:
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "C",
-                        "location": "frontend_views.py:9",
-                        "message": "Error opening file, trying next path",
-                        "data": {
-                            "path": str(path),
-                            "error_type": type(file_error).__name__,
-                            "error_message": str(file_error)
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
+                # #region agent log
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "C",
+                            "location": "frontend_views.py:9",
+                            "message": "Error opening file, trying next path",
+                            "data": {
+                                "path": str(path),
+                                "error_type": type(file_error).__name__,
+                                "error_message": str(file_error)
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except Exception:
+                    pass
                 # #endregion
                 continue
             except Exception as file_error:
