@@ -28,8 +28,18 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-8j#s=h1a!5m%)y+b^^x30
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 # Get allowed hosts from environment variable, default to safe values
-ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', '192.168.0.248,localhost,127.0.0.1,easypanel.clinicamaicao.com,www.clinicamaicao.com')
+# Incluir dominios de EasyPanel por defecto (incluyendo el dominio específico de EasyPanel)
+DEFAULT_HOSTS = '192.168.0.248,localhost,127.0.0.1,easypanel.clinicamaicao.com,www.clinicamaicao.com,chat-survey-app2.rhfh8t.easypanel.host'
+ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', DEFAULT_HOSTS)
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(',') if host.strip()]
+
+# Para EasyPanel: permitir cualquier subdominio de easypanel.host dinámicamente
+# Django no soporta wildcards directamente, así que usamos un middleware personalizado
+import re
+ALLOWED_HOST_PATTERNS = [
+    r'^[^.]+\.rhfh8t\.easypanel\.host$',  # Cualquier subdominio de rhfh8t.easypanel.host
+    r'^[^.]+\.easypanel\.host$',  # Cualquier subdominio de easypanel.host
+]
 
 # Para producción con proxies reversos (EasyPanel)
 USE_X_FORWARDED_HOST = True
@@ -45,12 +55,26 @@ CORS_ALLOWED_ORIGINS = [
     "http://easypanel.clinicamaicao.com", # EasyPanel production domain (HTTP fallback)
     "https://www.clinicamaicao.com", # Production domain
     "http://www.clinicamaicao.com", # Production domain (HTTP fallback)
+    "https://chat-survey-app2.rhfh8t.easypanel.host", # EasyPanel subdomain
+    "http://chat-survey-app2.rhfh8t.easypanel.host", # EasyPanel subdomain HTTP
+]
+
+# Permitir CORS desde cualquier subdominio de EasyPanel
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https?://[^.]+\.rhfh8t\.easypanel\.host$",
+    r"^https?://[^.]+\.easypanel\.host$",
 ]
 
 # Allow CORS from environment variable (comma-separated)
 CORS_EXTRA_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
 if CORS_EXTRA_ORIGINS and CORS_EXTRA_ORIGINS[0]:
     CORS_ALLOWED_ORIGINS.extend([origin.strip() for origin in CORS_EXTRA_ORIGINS if origin.strip()])
+
+# Permitir CORS desde cualquier subdominio de EasyPanel usando regex
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https?://[^.]+\.rhfh8t\.easypanel\.host$",
+    r"^https?://[^.]+\.easypanel\.host$",
+]
 
 CORS_ALLOW_CREDENTIALS = True # To allow cookies, authorization headers with CORS
 
