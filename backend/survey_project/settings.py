@@ -188,7 +188,7 @@ AUTHENTICATION_BACKENDS = [
 # Django REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'surveys.mongo_jwt_authentication.MongoJWTAuthentication',  # Usar autenticación JWT con MongoDB
     ),
     # 'DEFAULT_PERMISSION_CLASSES': (
     #     'rest_framework.permissions.IsAuthenticated', # Default to require authentication
