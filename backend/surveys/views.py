@@ -265,29 +265,27 @@ class SurveyListCreate(APIView):
                     query = deleted_condition
 
             surveys = list(surveys_collection.find(query))
-        
-        # #region agent log
-        import json
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "B",
-                    "location": "views.py:231",
-                    "message": "Surveys found in database",
-                    "data": {
-                        "count": len(surveys),
-                        "query": str(query),
-                        "survey_ids": [str(s.get('_id', s.get('id', ''))) for s in surveys[:5]]
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
+            
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:231",
+                        "message": "Surveys found in database",
+                        "data": {
+                            "count": len(surveys),
+                            "query": str(query),
+                            "survey_ids": [str(s.get('_id', s.get('id', ''))) for s in surveys[:5]]
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
             for survey in surveys:
                 # Handle both ObjectId and string _id formats
                 if '_id' in survey:
