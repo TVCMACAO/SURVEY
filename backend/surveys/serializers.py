@@ -232,6 +232,81 @@ class ResponseSerializer(serializers.Serializer):
         pass
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        # #region agent log
+        import json
+        import traceback
+        from django.contrib.auth import authenticate
+        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "B",
+                    "location": "serializers.py:234",
+                    "message": "validate() called - before authenticate",
+                    "data": {
+                        "username_field": self.username_field,
+                        "has_username": self.username_field in attrs,
+                        "has_password": "password" in attrs,
+                        "username_value": attrs.get(self.username_field, None) if self.username_field in attrs else None
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        try:
+            # Llamar al método validate del padre
+            result = super().validate(attrs)
+            
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "serializers.py:234",
+                        "message": "validate() - after super().validate()",
+                        "data": {
+                            "user_authenticated": hasattr(self, 'user') and self.user is not None,
+                            "user_id": self.user.id if hasattr(self, 'user') and self.user else None,
+                            "user_username": self.user.username if hasattr(self, 'user') and self.user else None,
+                            "user_is_active": self.user.is_active if hasattr(self, 'user') and self.user else None
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
+            return result
+        except Exception as e:
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "serializers.py:234",
+                        "message": "validate() - exception in super().validate()",
+                        "data": {
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                            "error_args": str(e.args) if hasattr(e, 'args') else None,
+                            "traceback": traceback.format_exc()
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            raise
+    
     @classmethod
     def get_token(cls, user):
         # #region agent log

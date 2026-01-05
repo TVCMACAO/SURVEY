@@ -30,19 +30,23 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     def post(self, request, *args, **kwargs):
         # #region agent log
         import json
-        import os
+        import traceback
         log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
         try:
+            request_data = request.data if hasattr(request, 'data') else {}
             with open(log_file_path, 'a') as f:
                 f.write(json.dumps({
                     "sessionId": "debug-session",
                     "runId": "run1",
                     "hypothesisId": "D",
-                    "location": "views.py:23",
+                    "location": "views.py:30",
                     "message": "Token request received",
                     "data": {
-                        "has_username": 'username' in (request.data if hasattr(request, 'data') else {}),
-                        "has_password": 'password' in (request.data if hasattr(request, 'data') else {})
+                        "has_username": 'username' in request_data,
+                        "has_password": 'password' in request_data,
+                        "username_value": request_data.get('username', None),
+                        "request_method": request.method,
+                        "content_type": request.content_type if hasattr(request, 'content_type') else None
                     },
                     "timestamp": int(__import__('time').time() * 1000)
                 }) + '\n')
@@ -72,18 +76,20 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             return response
         except Exception as e:
             # #region agent log
+            import traceback
             try:
                 with open(log_file_path, 'a') as f:
                     f.write(json.dumps({
                         "sessionId": "debug-session",
                         "runId": "run1",
                         "hypothesisId": "D",
-                        "location": "views.py:23",
+                        "location": "views.py:73",
                         "message": "Token request failed",
                         "data": {
                             "error_type": type(e).__name__,
                             "error_message": str(e),
-                            "error_args": str(e.args) if hasattr(e, 'args') else None
+                            "error_args": str(e.args) if hasattr(e, 'args') else None,
+                            "traceback": traceback.format_exc()
                         },
                         "timestamp": int(__import__('time').time() * 1000)
                     }) + '\n')
