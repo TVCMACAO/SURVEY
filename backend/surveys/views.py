@@ -9,7 +9,7 @@ from datetime import datetime
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 
-from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection
+from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection, get_mongo_collection
 from .serializers import (
     SurveyGroupSerializer, SurveySerializer, ResponseSerializer,
     CustomTokenObtainPairSerializer, UserSerializer, UserCreateSerializer, UserUpdateSerializer,
@@ -259,11 +259,31 @@ class SurveyListCreate(APIView):
 
             # Solo usuarios root pueden ver eliminadas, y solo si lo solicitan explícitamente
             user_role = None
+            user_group_id = None
             if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
                 try:
                     user_role = getattr(request.user, 'role', None)
+                    user_group_id = getattr(request.user, 'user_group_id', None)
                 except (AttributeError, TypeError):
                     user_role = None
+                    user_group_id = None
+            
+            # Si el usuario es group_admin, solo puede ver encuestas de su grupo
+            if user_role == 'group_admin' and user_group_id:
+                try:
+                    group_filter = {'group': ObjectId(user_group_id)}
+                except Exception:
+                    group_filter = {'group': user_group_id}
+                
+                if query:
+                    # Combinar con condiciones existentes
+                    if '$and' in query:
+                        query['$and'].append(group_filter)
+                    else:
+                        query = {'$and': [query, group_filter]}
+                else:
+                    query = group_filter
+            
             if not show_deleted or user_role != 'root':
                 # Excluir eliminadas: campo no existe o es False/None
                 # Usar $and para combinar con otras condiciones si existen
@@ -275,7 +295,10 @@ class SurveyListCreate(APIView):
                 }
                 if query:
                     # Combinar condiciones existentes con filtro de eliminadas
-                    query = {'$and': [query, deleted_condition]}
+                    if '$and' in query:
+                        query['$and'].append(deleted_condition)
+                    else:
+                        query = {'$and': [query, deleted_condition]}
                 else:
                     query = deleted_condition
 
@@ -378,6 +401,24 @@ class SurveyListCreate(APIView):
             surveys_collection = get_surveys_collection()
             validated_data = serializer.validated_data
             
+            # Verificar permisos: si es group_admin, solo puede crear encuestas en su grupo
+            user_role = None
+            user_group_id = None
+            if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
+                try:
+                    user_role = getattr(request.user, 'role', None)
+                    user_group_id = getattr(request.user, 'user_group_id', None)
+                except (AttributeError, TypeError):
+                    user_role = None
+                    user_group_id = None
+            
+            # Si es group_admin, forzar el grupo a su grupo
+            if user_role == 'group_admin' and user_group_id:
+                try:
+                    validated_data['group'] = ObjectId(user_group_id)
+                except Exception:
+                    validated_data['group'] = user_group_id
+            
             # Validar que el group_id existe
             groups_collection = get_survey_groups_collection()
             group_found = False
@@ -478,15 +519,75 @@ class SurveyRetrieveUpdateDestroy(APIView):
 
     def get(self, request, pk):
         survey = self.get_object(pk)
+        
+        # Verificar permisos: si es group_admin, solo puede ver encuestas de su grupo
+        user_role = None
+        user_group_id = None
+        if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
+            try:
+                user_role = getattr(request.user, 'role', None)
+                user_group_id = getattr(request.user, 'user_group_id', None)
+            except (AttributeError, TypeError):
+                user_role = None
+                user_group_id = None
+        
+        if user_role == 'group_admin' and user_group_id:
+            # Verificar que la encuesta pertenece al grupo del admin
+            survey_group = survey.get('group')
+            try:
+                if str(survey_group) != str(user_group_id) and str(survey_group) != str(ObjectId(user_group_id)):
+                    return Response(
+                        {"detail": "No tienes permisos para ver esta encuesta."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            except Exception:
+                if str(survey_group) != str(user_group_id):
+                    return Response(
+                        {"detail": "No tienes permisos para ver esta encuesta."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+        
         serializer = SurveySerializer(survey)
         return Response(serializer.data)
 
     def put(self, request, pk):
         survey = self.get_object(pk)
+        
+        # Verificar permisos: si es group_admin, solo puede actualizar encuestas de su grupo
+        user_role = None
+        user_group_id = None
+        if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
+            try:
+                user_role = getattr(request.user, 'role', None)
+                user_group_id = getattr(request.user, 'user_group_id', None)
+            except (AttributeError, TypeError):
+                user_role = None
+                user_group_id = None
+        
+        if user_role == 'group_admin' and user_group_id:
+            # Verificar que la encuesta pertenece al grupo del admin
+            survey_group = survey.get('group')
+            try:
+                if str(survey_group) != str(user_group_id) and str(survey_group) != str(ObjectId(user_group_id)):
+                    return Response(
+                        {"detail": "No tienes permisos para actualizar esta encuesta."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            except Exception:
+                if str(survey_group) != str(user_group_id):
+                    return Response(
+                        {"detail": "No tienes permisos para actualizar esta encuesta."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+        
         serializer = SurveySerializer(survey, data=request.data, partial=True)
         if serializer.is_valid():
             surveys_collection = get_surveys_collection()
             validated_data = serializer.validated_data
+            
+            # Si es group_admin, no puede cambiar el grupo
+            if user_role == 'group_admin' and 'group' in validated_data:
+                validated_data['group'] = survey.get('group')  # Mantener el grupo original
             
             # Si se intenta cambiar el grupo, validar que el nuevo grupo existe
             if 'group' in validated_data:
@@ -534,6 +635,34 @@ class SurveyRetrieveUpdateDestroy(APIView):
 
     def delete(self, request, pk):
         survey = self.get_object(pk)
+        
+        # Verificar permisos: si es group_admin, solo puede eliminar encuestas de su grupo
+        user_role = None
+        user_group_id = None
+        if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
+            try:
+                user_role = getattr(request.user, 'role', None)
+                user_group_id = getattr(request.user, 'user_group_id', None)
+            except (AttributeError, TypeError):
+                user_role = None
+                user_group_id = None
+        
+        if user_role == 'group_admin' and user_group_id:
+            # Verificar que la encuesta pertenece al grupo del admin
+            survey_group = survey.get('group')
+            try:
+                if str(survey_group) != str(user_group_id) and str(survey_group) != str(ObjectId(user_group_id)):
+                    return Response(
+                        {"detail": "No tienes permisos para eliminar esta encuesta."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            except Exception:
+                if str(survey_group) != str(user_group_id):
+                    return Response(
+                        {"detail": "No tienes permisos para eliminar esta encuesta."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+        
         surveys_collection = get_surveys_collection()
         
         # Build query - try ObjectId first, then fallback to other formats
@@ -1358,7 +1487,8 @@ class CurrentUserView(APIView):
                     'email': request.user.email,
                     'role': request.user.role,
                     'is_active': request.user.is_active,
-                    'date_joined': date_joined_value
+                    'date_joined': date_joined_value,
+                    'user_group_id': getattr(request.user, 'user_group_id', None)
                 }
                 # #region agent log
                 try:
@@ -1435,10 +1565,12 @@ class UserListCreate(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # Verificar que el usuario es 'root'
+        # Verificar que el usuario es 'root' o 'group_admin'
         try:
             user_role = getattr(request.user, 'role', None) if request.user and request.user.is_authenticated else None
-            if user_role != 'root':
+            user_group_id = getattr(request.user, 'user_group_id', None) if request.user and request.user.is_authenticated else None
+            
+            if user_role not in ['root', 'group_admin']:
                 return Response(
                     {"detail": "No tienes permisos para ver usuarios."},
                     status=status.HTTP_403_FORBIDDEN
@@ -1457,7 +1589,17 @@ class UserListCreate(APIView):
         
         try:
             users_collection = get_mongo_collection('users')
-            users_docs = list(users_collection.find().sort('date_joined', -1))
+            
+            # Si es group_admin, solo mostrar usuarios de su grupo
+            if user_role == 'group_admin' and user_group_id:
+                try:
+                    query = {'user_group_id': ObjectId(user_group_id)}
+                except Exception:
+                    query = {'user_group_id': user_group_id}
+                users_docs = list(users_collection.find(query).sort('date_joined', -1))
+            else:
+                # Root puede ver todos los usuarios
+                users_docs = list(users_collection.find().sort('date_joined', -1))
             
             # Convertir documentos de MongoDB a diccionarios para el serializer
             users_data = []
@@ -1537,10 +1679,12 @@ class UserListCreate(APIView):
             raise
 
     def post(self, request):
-        # Verificar que el usuario es 'root'
+        # Verificar que el usuario es 'root' o 'group_admin'
         try:
             user_role = getattr(request.user, 'role', None) if request.user and request.user.is_authenticated else None
-            if user_role != 'root':
+            user_group_id = getattr(request.user, 'user_group_id', None) if request.user and request.user.is_authenticated else None
+            
+            if user_role not in ['root', 'group_admin']:
                 return Response(
                     {"detail": "No tienes permisos para crear usuarios."},
                     status=status.HTTP_403_FORBIDDEN
@@ -1553,8 +1697,46 @@ class UserListCreate(APIView):
 
         serializer = UserCreateSerializer(data=request.data)
         if serializer.is_valid():
-            user = serializer.save()
-            return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+            # Si es group_admin, asignar automáticamente el grupo del usuario
+            if user_role == 'group_admin' and user_group_id:
+                # Asegurar que el usuario creado pertenece al grupo del admin
+                from .mongo_user_utils import create_user
+                user_data = serializer.validated_data
+                user_data['user_group_id'] = user_group_id
+                # Crear usuario directamente en MongoDB con el grupo asignado
+                user_doc = create_user(
+                    username=user_data['username'],
+                    password=user_data['password'],
+                    email=user_data.get('email', ''),
+                    role=user_data.get('role', 'encuestador'),
+                    first_name=user_data.get('first_name', ''),
+                    last_name=user_data.get('last_name', '')
+                )
+                # Actualizar el user_group_id
+                users_collection = get_mongo_collection('users')
+                try:
+                    users_collection.update_one(
+                        {'_id': user_doc['_id']},
+                        {'$set': {'user_group_id': ObjectId(user_group_id)}}
+                    )
+                except Exception:
+                    users_collection.update_one(
+                        {'_id': user_doc['_id']},
+                        {'$set': {'user_group_id': user_group_id}}
+                    )
+                return Response({
+                    'id': str(user_doc['_id']),
+                    'username': user_doc['username'],
+                    'email': user_doc.get('email', ''),
+                    'role': user_doc.get('role', 'encuestador'),
+                    'is_active': user_doc.get('is_active', True),
+                    'first_name': user_doc.get('first_name', ''),
+                    'last_name': user_doc.get('last_name', ''),
+                    'date_joined': user_doc.get('date_joined').isoformat() if user_doc.get('date_joined') else None
+                }, status=status.HTTP_201_CREATED)
+            else:
+                user = serializer.save()
+                return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class UserRetrieveUpdateDestroy(APIView):
@@ -1583,14 +1765,17 @@ class UserRetrieveUpdateDestroy(APIView):
             first_name=user_doc.get('first_name', ''),
             last_name=user_doc.get('last_name', ''),
             date_joined=user_doc.get('date_joined'),
+            user_group_id=user_doc.get('user_group_id'),
         )
         return user
 
     def get(self, request, pk):
-        # Verificar que el usuario es 'root'
+        # Verificar que el usuario es 'root' o 'group_admin'
         try:
             user_role = getattr(request.user, 'role', None) if request.user and request.user.is_authenticated else None
-            if user_role != 'root':
+            user_group_id = getattr(request.user, 'user_group_id', None) if request.user and request.user.is_authenticated else None
+            
+            if user_role not in ['root', 'group_admin']:
                 return Response(
                     {"detail": "No tienes permisos para ver usuarios."},
                     status=status.HTTP_403_FORBIDDEN
@@ -1602,14 +1787,36 @@ class UserRetrieveUpdateDestroy(APIView):
             )
 
         user = self.get_object(pk)
+        
+        # Si es group_admin, verificar que el usuario pertenece a su grupo
+        if user_role == 'group_admin' and user_group_id:
+            from .mongo_user_utils import get_user_by_id
+            user_doc = get_user_by_id(pk)
+            if user_doc:
+                user_doc_group_id = user_doc.get('user_group_id')
+                try:
+                    if str(user_doc_group_id) != str(user_group_id) and str(user_doc_group_id) != str(ObjectId(user_group_id)):
+                        return Response(
+                            {"detail": "No tienes permisos para ver este usuario."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                except Exception:
+                    if str(user_doc_group_id) != str(user_group_id):
+                        return Response(
+                            {"detail": "No tienes permisos para ver este usuario."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+        
         serializer = UserSerializer(user)
         return Response(serializer.data)
 
     def put(self, request, pk):
-        # Verificar que el usuario es 'root'
+        # Verificar que el usuario es 'root' o 'group_admin'
         try:
             user_role = getattr(request.user, 'role', None) if request.user and request.user.is_authenticated else None
-            if user_role != 'root':
+            user_group_id = getattr(request.user, 'user_group_id', None) if request.user and request.user.is_authenticated else None
+            
+            if user_role not in ['root', 'group_admin']:
                 return Response(
                     {"detail": "No tienes permisos para actualizar usuarios."},
                     status=status.HTTP_403_FORBIDDEN
@@ -1619,6 +1826,25 @@ class UserRetrieveUpdateDestroy(APIView):
                 {"detail": "Error al verificar permisos."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+        # Si es group_admin, verificar que el usuario pertenece a su grupo
+        if user_role == 'group_admin' and user_group_id:
+            from .mongo_user_utils import get_user_by_id
+            user_doc = get_user_by_id(pk)
+            if user_doc:
+                user_doc_group_id = user_doc.get('user_group_id')
+                try:
+                    if str(user_doc_group_id) != str(user_group_id) and str(user_doc_group_id) != str(ObjectId(user_group_id)):
+                        return Response(
+                            {"detail": "No tienes permisos para actualizar este usuario."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                except Exception:
+                    if str(user_doc_group_id) != str(user_group_id):
+                        return Response(
+                            {"detail": "No tienes permisos para actualizar este usuario."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
 
         import json
         import traceback
@@ -1667,6 +1893,19 @@ class UserRetrieveUpdateDestroy(APIView):
             
             serializer = UserUpdateSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
+                # Si es group_admin, no permitir cambiar el user_group_id
+                if user_role == 'group_admin' and user_group_id:
+                    # Asegurar que el usuario actualizado mantiene su grupo
+                    from .mongo_user_utils import get_user_by_id
+                    current_user_doc = get_user_by_id(pk)
+                    if current_user_doc and 'user_group_id' in request.data:
+                        # Remover user_group_id de los datos validados para que no se actualice
+                        validated_data = serializer.validated_data
+                        validated_data.pop('user_group_id', None)
+                        # Reasignar los datos validados sin user_group_id
+                        serializer = UserUpdateSerializer(user, data={**request.data, 'user_group_id': None}, partial=True)
+                        serializer.is_valid(raise_exception=True)
+                
                 serializer.save()
                 
                 # Obtener el usuario actualizado de MongoDB y devolverlo como diccionario
@@ -1798,10 +2037,12 @@ class UserRetrieveUpdateDestroy(APIView):
             raise
 
     def delete(self, request, pk):
-        # Verificar que el usuario es 'root'
+        # Verificar que el usuario es 'root' o 'group_admin'
         try:
             user_role = getattr(request.user, 'role', None) if request.user and request.user.is_authenticated else None
-            if user_role != 'root':
+            user_group_id = getattr(request.user, 'user_group_id', None) if request.user and request.user.is_authenticated else None
+            
+            if user_role not in ['root', 'group_admin']:
                 return Response(
                     {"detail": "No tienes permisos para eliminar usuarios."},
                     status=status.HTTP_403_FORBIDDEN
@@ -1813,6 +2054,25 @@ class UserRetrieveUpdateDestroy(APIView):
             )
 
         user = self.get_object(pk)
+        
+        # Si es group_admin, verificar que el usuario pertenece a su grupo
+        if user_role == 'group_admin' and user_group_id:
+            from .mongo_user_utils import get_user_by_id
+            user_doc = get_user_by_id(pk)
+            if user_doc:
+                user_doc_group_id = user_doc.get('user_group_id')
+                try:
+                    if str(user_doc_group_id) != str(user_group_id) and str(user_doc_group_id) != str(ObjectId(user_group_id)):
+                        return Response(
+                            {"detail": "No tienes permisos para eliminar este usuario."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                except Exception:
+                    if str(user_doc_group_id) != str(user_group_id):
+                        return Response(
+                            {"detail": "No tienes permisos para eliminar este usuario."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
         
         # No permitir que un usuario se elimine a sí mismo
         if user.id == request.user.id:

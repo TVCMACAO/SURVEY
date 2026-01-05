@@ -74,6 +74,50 @@ def update_user_password(username, new_password):
     )
 
 
+def update_user(user_id, **kwargs):
+    """
+    Actualiza un usuario en MongoDB.
+    """
+    users_collection = get_mongo_collection('users')
+    
+    # Preparar datos de actualización
+    update_data = {}
+    if 'password' in kwargs:
+        update_data['password'] = make_password(kwargs['password'])
+    if 'email' in kwargs:
+        update_data['email'] = kwargs['email']
+    if 'role' in kwargs:
+        update_data['role'] = kwargs['role']
+    if 'is_active' in kwargs:
+        update_data['is_active'] = kwargs['is_active']
+    if 'first_name' in kwargs:
+        update_data['first_name'] = kwargs['first_name']
+    if 'last_name' in kwargs:
+        update_data['last_name'] = kwargs['last_name']
+    if 'user_group_id' in kwargs:
+        update_data['user_group_id'] = kwargs['user_group_id']
+    
+    if not update_data:
+        return None
+    
+    # Buscar y actualizar
+    try:
+        users_collection.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$set': update_data}
+        )
+        return get_user_by_id(user_id)
+    except Exception:
+        try:
+            users_collection.update_one(
+                {'_id': user_id},
+                {'$set': update_data}
+            )
+            return get_user_by_id(user_id)
+        except Exception:
+            return None
+
+
 def ensure_root_user(password='root123'):
     """
     Asegura que el usuario root existe en MongoDB.
