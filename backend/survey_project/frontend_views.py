@@ -13,6 +13,7 @@ def serve_frontend(request):
     """
     import json
     import traceback
+    from django.http import HttpResponse
     log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
     
     # #region agent log
@@ -22,7 +23,7 @@ def serve_frontend(request):
                 "sessionId": "debug-session",
                 "runId": "run1",
                 "hypothesisId": "C",
-                "location": "frontend_views.py:8",
+                "location": "frontend_views.py:9",
                 "message": "serve_frontend called",
                 "data": {
                     "path": request.path,
@@ -34,34 +35,34 @@ def serve_frontend(request):
         pass
     # #endregion
     
+    # Buscar el index.html del frontend en diferentes ubicaciones posibles
+    frontend_paths = [
+        Path('/app/frontend/survey-ui/dist/index.html'),
+        Path(__file__).resolve().parent.parent.parent / 'frontend' / 'survey-ui' / 'dist' / 'index.html',
+    ]
+    
+    # #region agent log
     try:
-        # Buscar el index.html del frontend en diferentes ubicaciones posibles
-        frontend_paths = [
-            Path('/app/frontend/survey-ui/dist/index.html'),
-            Path(__file__).resolve().parent.parent.parent / 'frontend' / 'survey-ui' / 'dist' / 'index.html',
-        ]
-        
-        # #region agent log
+        with open(log_file_path, 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "C",
+                "location": "frontend_views.py:9",
+                "message": "Checking frontend paths",
+                "data": {
+                    "paths": [str(p) for p in frontend_paths],
+                    "paths_exist": [p.exists() for p in frontend_paths]
+                },
+                "timestamp": int(__import__('time').time() * 1000)
+            }) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
+    for path in frontend_paths:
         try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "C",
-                    "location": "frontend_views.py:8",
-                    "message": "Checking frontend paths",
-                    "data": {
-                        "paths": [str(p) for p in frontend_paths],
-                        "paths_exist": [p.exists() for p in frontend_paths]
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
-        for path in frontend_paths:
-            if path.exists():
+            if path.exists() and path.is_file():
                 # #region agent log
                 try:
                     with open(log_file_path, 'a') as f:
@@ -69,136 +70,107 @@ def serve_frontend(request):
                             "sessionId": "debug-session",
                             "runId": "run1",
                             "hypothesisId": "C",
-                            "location": "frontend_views.py:8",
+                            "location": "frontend_views.py:9",
                             "message": "Frontend file found, serving",
                             "data": {
                                 "path": str(path),
                                 "is_file": path.is_file(),
-                                "readable": os.access(path, os.R_OK) if hasattr(os, 'access') else "unknown"
+                                "readable": os.access(path, os.R_OK)
                             },
                             "timestamp": int(__import__('time').time() * 1000)
                         }) + '\n')
                 except Exception:
                     pass
                 # #endregion
+                
+                # Abrir el archivo y crear la respuesta
+                file_handle = open(path, 'rb')
+                response = FileResponse(file_handle, content_type='text/html')
+                # #region agent log
                 try:
-                    # Verificar que es un archivo y no un directorio
-                    if not path.is_file():
-                        continue
-                    
-                    # Abrir el archivo y crear la respuesta
-                    file_handle = open(path, 'rb')
-                    response = FileResponse(file_handle, content_type='text/html')
-                    # #region agent log
-                    try:
-                        with open(log_file_path, 'a') as f:
-                            f.write(json.dumps({
-                                "sessionId": "debug-session",
-                                "runId": "run1",
-                                "hypothesisId": "C",
-                                "location": "frontend_views.py:8",
-                                "message": "FileResponse created successfully",
-                                "data": {
-                                    "path": str(path),
-                                    "file_size": path.stat().st_size if path.exists() else 0
-                                },
-                                "timestamp": int(__import__('time').time() * 1000)
-                            }) + '\n')
-                    except Exception:
-                        pass
-                    # #endregion
-                    return response
-                except (IOError, OSError, PermissionError) as file_error:
-                    # #region agent log
-                    try:
-                        with open(log_file_path, 'a') as f:
-                            f.write(json.dumps({
-                                "sessionId": "debug-session",
-                                "runId": "run1",
-                                "hypothesisId": "C",
-                                "location": "frontend_views.py:8",
-                                "message": "Error opening file",
-                                "data": {
-                                    "path": str(path),
-                                    "error_type": type(file_error).__name__,
-                                    "error_message": str(file_error),
-                                    "path_exists": path.exists(),
-                                    "path_is_file": path.is_file() if path.exists() else False
-                                },
-                                "timestamp": int(__import__('time').time() * 1000)
-                            }) + '\n')
-                    except Exception:
-                        pass
-                    # #endregion
-                    # Continuar con el siguiente path en lugar de fallar inmediatamente
-                    continue
-                except Exception as file_error:
-                    # #region agent log
-                    try:
-                        with open(log_file_path, 'a') as f:
-                            f.write(json.dumps({
-                                "sessionId": "debug-session",
-                                "runId": "run1",
-                                "hypothesisId": "C",
-                                "location": "frontend_views.py:8",
-                                "message": "Unexpected error opening file",
-                                "data": {
-                                    "path": str(path),
-                                    "error_type": type(file_error).__name__,
-                                    "error_message": str(file_error),
-                                    "traceback": traceback.format_exc()
-                                },
-                                "timestamp": int(__import__('time').time() * 1000)
-                            }) + '\n')
-                    except Exception:
-                        pass
-                    # #endregion
-                    raise
-        
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "C",
-                    "location": "frontend_views.py:8",
-                    "message": "Frontend file not found in any path",
-                    "data": {
-                        "checked_paths": [str(p) for p in frontend_paths],
-                        "paths_exist": [p.exists() for p in frontend_paths],
-                        "paths_are_files": [p.is_file() if p.exists() else False for p in frontend_paths]
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
-        # Si no se encuentra el archivo, devolver un 404 en lugar de 500
-        error_msg = "Frontend not found. Checked paths: " + ", ".join(str(p) for p in frontend_paths)
-        raise Http404(error_msg)
-    except Exception as e:
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "C",
-                    "location": "frontend_views.py:8",
-                    "message": "serve_frontend failed",
-                    "data": {
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
-                        "traceback": traceback.format_exc()
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        raise
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "C",
+                            "location": "frontend_views.py:9",
+                            "message": "FileResponse created successfully",
+                            "data": {
+                                "path": str(path)
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+                return response
+        except (IOError, OSError, PermissionError) as file_error:
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "C",
+                        "location": "frontend_views.py:9",
+                        "message": "Error opening file, trying next path",
+                        "data": {
+                            "path": str(path),
+                            "error_type": type(file_error).__name__,
+                            "error_message": str(file_error)
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            continue
+        except Exception as file_error:
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "C",
+                        "location": "frontend_views.py:9",
+                        "message": "Unexpected error, trying next path",
+                        "data": {
+                            "path": str(path),
+                            "error_type": type(file_error).__name__,
+                            "error_message": str(file_error),
+                            "traceback": traceback.format_exc()
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            continue
+    
+    # #region agent log
+    try:
+        with open(log_file_path, 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "C",
+                "location": "frontend_views.py:9",
+                "message": "Frontend file not found in any path",
+                "data": {
+                    "checked_paths": [str(p) for p in frontend_paths],
+                    "paths_exist": [p.exists() for p in frontend_paths],
+                    "paths_are_files": [p.is_file() if p.exists() else False for p in frontend_paths]
+                },
+                "timestamp": int(__import__('time').time() * 1000)
+            }) + '\n')
+    except Exception:
+        pass
+    # #endregion
+    
+    # Si no se encuentra el archivo, devolver un 404 en lugar de 500
+    error_msg = "Frontend not found. Checked paths: " + ", ".join(str(p) for p in frontend_paths)
+    raise Http404(error_msg)
 
 
 def serve_frontend_asset(request, path):
