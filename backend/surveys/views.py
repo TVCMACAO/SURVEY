@@ -1451,29 +1451,90 @@ class UserListCreate(APIView):
 
         # Obtener usuarios de MongoDB
         from .mongo_utils import get_mongo_collection
-        users_collection = get_mongo_collection('users')
-        users_docs = list(users_collection.find().sort('date_joined', -1))
+        import json
+        import traceback
+        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
         
-        # Convertir a objetos MongoUser
-        from .mongo_user_model import MongoUser
-        users = []
-        for user_doc in users_docs:
-            user = MongoUser(
-                id=str(user_doc.get('_id', user_doc.get('id'))),
-                username=user_doc.get('username'),
-                email=user_doc.get('email', ''),
-                role=user_doc.get('role', 'encuestador'),
-                is_active=user_doc.get('is_active', True),
-                is_staff=user_doc.get('is_staff', False),
-                is_superuser=user_doc.get('is_superuser', False),
-                first_name=user_doc.get('first_name', ''),
-                last_name=user_doc.get('last_name', ''),
-                date_joined=user_doc.get('date_joined'),
-            )
-            users.append(user)
-        
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data)
+        try:
+            users_collection = get_mongo_collection('users')
+            users_docs = list(users_collection.find().sort('date_joined', -1))
+            
+            # Convertir documentos de MongoDB a diccionarios para el serializer
+            users_data = []
+            for user_doc in users_docs:
+                # Manejar date_joined correctamente
+                date_joined_value = None
+                date_joined = user_doc.get('date_joined')
+                if date_joined:
+                    if hasattr(date_joined, 'isoformat'):
+                        # Es un objeto datetime
+                        date_joined_value = date_joined.isoformat()
+                    elif isinstance(date_joined, str):
+                        # Ya es un string
+                        date_joined_value = date_joined
+                    else:
+                        # Intentar convertir a string
+                        date_joined_value = str(date_joined)
+                
+                user_data = {
+                    'id': str(user_doc.get('_id', user_doc.get('id'))),
+                    'username': user_doc.get('username'),
+                    'email': user_doc.get('email', ''),
+                    'role': user_doc.get('role', 'encuestador'),
+                    'is_active': user_doc.get('is_active', True),
+                    'first_name': user_doc.get('first_name', ''),
+                    'last_name': user_doc.get('last_name', ''),
+                    'date_joined': date_joined_value
+                }
+                users_data.append(user_data)
+            
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "G",
+                        "location": "views.py:1437",
+                        "message": "UserListCreate.get - users converted to dicts",
+                        "data": {
+                            "users_count": len(users_data)
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            
+            # Usar un serializer simple o devolver directamente los datos
+            # Como UserSerializer es ModelSerializer, devolvemos los datos directamente
+            return Response(users_data)
+        except Exception as e:
+            # #region agent log
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"UserListCreate.get failed: {type(e).__name__} - {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "G",
+                        "location": "views.py:1437",
+                        "message": "UserListCreate.get failed",
+                        "data": {
+                            "error_type": type(e).__name__,
+                            "error_message": str(e),
+                            "traceback": traceback.format_exc()
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            raise
 
     def post(self, request):
         # Verificar que el usuario es 'root'
