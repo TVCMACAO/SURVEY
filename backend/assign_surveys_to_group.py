@@ -10,11 +10,19 @@ import django
 # Intentar diferentes paths
 possible_paths = [
     '/app',  # Path en el contenedor Docker
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),  # Path local
+    os.path.dirname(os.path.abspath(__file__)),  # Path local (backend/)
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),  # Path raíz del proyecto
 ]
 for path in possible_paths:
-    if os.path.exists(path) and os.path.exists(os.path.join(path, 'manage.py')):
+    manage_py_path = os.path.join(path, 'manage.py')
+    if os.path.exists(manage_py_path):
         sys.path.insert(0, path)
+        print(f"Usando path: {path}")
+        break
+    # También verificar si manage.py está en el directorio actual
+    if os.path.exists('manage.py'):
+        sys.path.insert(0, os.getcwd())
+        print(f"Usando directorio actual: {os.getcwd()}")
         break
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'survey_project.settings')
