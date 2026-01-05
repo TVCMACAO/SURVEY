@@ -10,10 +10,16 @@ RUN npm run build
 # Stage 1b: Build Checklist App
 FROM node:20-alpine AS checklist-builder
 WORKDIR /app
+# Copiar archivos de checklist-app
 COPY frontend/checklist-app/package*.json ./
+# Instalar dependencias
 RUN npm ci
+# Copiar resto de archivos
 COPY frontend/checklist-app/ ./
+# Construir la aplicación
 RUN npm run build
+# Verificar que el build se completó
+RUN test -d dist && test -f dist/index.html || (echo "ERROR: Build de checklist-app falló - dist/index.html no encontrado" && exit 1)
 
 # Stage 2: Build Backend
 FROM python:3.10-slim-bullseye AS backend-builder
