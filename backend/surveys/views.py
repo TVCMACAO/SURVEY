@@ -434,8 +434,11 @@ class SurveyListCreate(APIView):
                     user_role = None
                     user_group_id = None
             
-            # Si el usuario es group_admin, solo puede ver encuestas de su grupo
-            if user_role == 'group_admin' and user_group_id:
+            # Filtrar encuestas por grupo del usuario
+            # - Si el usuario NO es root y tiene user_group_id: solo ver encuestas de su grupo
+            # - Si el usuario es root: ver todas las encuestas (incluyendo las sin grupo)
+            if user_role != 'root' and user_group_id:
+                # Usuario con grupo asignado: solo ver encuestas de su grupo
                 try:
                     group_filter = {'group': ObjectId(user_group_id)}
                 except Exception:
@@ -449,6 +452,13 @@ class SurveyListCreate(APIView):
                         query = {'$and': [query, group_filter]}
                 else:
                     query = group_filter
+            elif user_role == 'root':
+                # Root puede ver todas las encuestas (con o sin grupo)
+                # No agregamos filtro de grupo para root
+                pass
+            else:
+                # Usuario sin grupo asignado y no es root: no ver ninguna encuesta
+                query = {'_id': None}  # Query que no devuelve resultados
             
             if not show_deleted or user_role != 'root':
                 # Excluir eliminadas: campo no existe o es False/None
