@@ -212,6 +212,21 @@ class QuestionSerializer(serializers.Serializer):
     # Conditional logic support
     conditional_logic = serializers.JSONField(required=False, allow_null=True) # Structure: {"type": "show_if", "question_id": "...", "operator": "equals", "value": "..."}
     
+    def to_internal_value(self, data):
+        # Normalizar los datos para aceptar tanto question_text como text, y question_type como type
+        normalized_data = dict(data)
+        
+        # Si viene question_text pero no text, mapear question_text a text
+        if 'question_text' in normalized_data and 'text' not in normalized_data:
+            normalized_data['text'] = normalized_data.get('question_text', '')
+        
+        # Si viene question_type pero no type, mapear question_type a type
+        if 'question_type' in normalized_data and 'type' not in normalized_data:
+            normalized_data['type'] = normalized_data.get('question_type', '')
+        
+        # Llamar al método padre con los datos normalizados
+        return super().to_internal_value(normalized_data)
+    
     def to_representation(self, instance):
         # Normalize the data structure for output
         data = dict(instance) if isinstance(instance, dict) else instance

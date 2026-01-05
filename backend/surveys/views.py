@@ -498,6 +498,10 @@ class SurveyListCreate(APIView):
         
         if not serializer.is_valid():
             # #region agent log
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Serializer validation failed: {serializer.errors}")
+            
             try:
                 with open(log_file_path, 'a') as f:
                     f.write(json.dumps({
@@ -508,7 +512,9 @@ class SurveyListCreate(APIView):
                         "message": "Serializer validation failed",
                         "data": {
                             "errors": str(serializer.errors),
-                            "errors_dict": dict(serializer.errors)
+                            "errors_dict": dict(serializer.errors),
+                            "request_data_keys": list(request.data.keys()) if hasattr(request.data, 'keys') else None,
+                            "request_data_preview": str(request.data)[:1000] if hasattr(request.data, '__str__') else None
                         },
                         "timestamp": int(__import__('time').time() * 1000)
                     }) + '\n')
@@ -530,29 +536,163 @@ class SurveyListCreate(APIView):
             except (AttributeError, TypeError):
                 user_role = None
                 user_group_id = None
-            
-            # Si es group_admin, forzar el grupo a su grupo
-            if user_role == 'group_admin' and user_group_id:
-                try:
-                    validated_data['group'] = ObjectId(user_group_id)
-                except Exception:
-                    validated_data['group'] = user_group_id
-            
-            # Validar que el group_id existe
-            groups_collection = get_survey_groups_collection()
-            group_found = False
-            # Try ObjectId first
+        
+        # #region agent log
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "D",
+                    "location": "views.py:529",
+                    "message": "Checking user role and group",
+                    "data": {
+                        "user_role": user_role,
+                        "user_group_id": str(user_group_id) if user_group_id else None,
+                        "user_group_id_type": type(user_group_id).__name__ if user_group_id else None,
+                        "validated_data_group": str(validated_data.get('group')) if 'group' in validated_data else None
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        # Si es group_admin, forzar el grupo a su grupo
+        if user_role == 'group_admin' and user_group_id:
+            # #region agent log
             try:
-                if groups_collection.find_one({"_id": ObjectId(validated_data['group'])}):
-                    group_found = True
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "D",
+                        "location": "views.py:540",
+                        "message": "group_admin detected, forcing group",
+                        "data": {
+                            "user_group_id": str(user_group_id),
+                            "user_group_id_type": type(user_group_id).__name__
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
             except Exception:
                 pass
-            # Try as string
-            if not group_found:
-                if groups_collection.find_one({"_id": validated_data['group']}):
-                    group_found = True
-            if not group_found:
-                raise ValidationError(detail="El grupo de encuestas especificado no existe.")
+            # #endregion
+            
+            try:
+                validated_data['group'] = ObjectId(user_group_id)
+            except Exception:
+                validated_data['group'] = user_group_id
+        
+        # Validar que el group_id existe
+        groups_collection = get_survey_groups_collection()
+        group_found = False
+        group_to_check = validated_data.get('group')
+        
+        # #region agent log
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "D",
+                    "location": "views.py:547",
+                    "message": "Validating group exists",
+                    "data": {
+                        "group_to_check": str(group_to_check) if group_to_check else None,
+                        "group_to_check_type": type(group_to_check).__name__ if group_to_check else None
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        # Try ObjectId first
+        try:
+            group_obj = groups_collection.find_one({"_id": ObjectId(group_to_check)})
+            if group_obj:
+                group_found = True
+                # #region agent log
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "D",
+                            "location": "views.py:547",
+                            "message": "Group found with ObjectId",
+                            "data": {
+                                "group_id": str(group_obj.get('_id'))
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+        except Exception as e:
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "D",
+                        "location": "views.py:547",
+                        "message": "Error checking group with ObjectId",
+                        "data": {
+                            "error": str(e)
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            pass
+        
+        # Try as string
+        if not group_found:
+            group_obj = groups_collection.find_one({"_id": group_to_check})
+            if group_obj:
+                group_found = True
+                # #region agent log
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "D",
+                            "location": "views.py:547",
+                            "message": "Group found with string ID",
+                            "data": {
+                                "group_id": str(group_obj.get('_id'))
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+        
+        if not group_found:
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "D",
+                        "location": "views.py:547",
+                        "message": "Group not found",
+                        "data": {
+                            "group_to_check": str(group_to_check),
+                            "all_groups": [str(g.get('_id')) for g in groups_collection.find({}, {'_id': 1})[:10]]
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            raise ValidationError(detail="El grupo de encuestas especificado no existe.")
 
             result = surveys_collection.insert_one({
                 'title': validated_data['title'],
