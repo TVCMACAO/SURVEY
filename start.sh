@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 echo "=== Iniciando aplicación Survey App ==="
 echo "Fecha: $(date)"
@@ -15,32 +14,32 @@ fi
 
 # Verificar que las dependencias están instaladas
 echo "=== Verificando dependencias ==="
-python -c "import django; print(f'Django version: {django.get_version()}')" || {
+if ! python -c "import django; print(f'Django version: {django.get_version()}')" 2>/dev/null; then
     echo "ERROR: Django no está instalado"
     exit 1
-}
+fi
 
-python -c "import gunicorn; print('Gunicorn instalado')" || {
+if ! python -c "import gunicorn; print('Gunicorn instalado')" 2>/dev/null; then
     echo "ERROR: Gunicorn no está instalado"
     exit 1
-}
+fi
 
-# Verificar configuración de Django
+# Verificar configuración de Django (no bloquear si falla)
 echo "=== Verificando configuración de Django ==="
-python manage.py check --deploy || {
+python manage.py check --deploy 2>&1 || {
     echo "WARNING: Django check encontró problemas, pero continuando..."
 }
 
 # Collect static files (continuar aunque falle)
 echo "=== Recopilando archivos estáticos ==="
-python manage.py collectstatic --noinput || {
+if ! python manage.py collectstatic --noinput 2>&1; then
     echo "WARNING: collectstatic falló, pero continuando..."
-}
+fi
 
 # Verificar que el directorio staticfiles existe
 if [ ! -d "staticfiles" ]; then
     echo "WARNING: Directorio staticfiles no existe, creándolo..."
-    mkdir -p staticfiles
+    mkdir -p staticfiles || true
 fi
 
 # Verificar conexión a MongoDB (opcional, no bloquear inicio)
@@ -60,10 +59,11 @@ try:
 except Exception as e:
     print(f'WARNING: No se pudo conectar a MongoDB: {e}')
     print('La aplicación iniciará pero puede tener problemas de conexión')
-" || echo "WARNING: No se pudo verificar MongoDB"
+" 2>&1 || echo "WARNING: No se pudo verificar MongoDB (continuando...)"
 
-# Iniciar Gunicorn
+# Iniciar Gunicorn (usar set -e solo para Gunicorn)
 echo "=== Iniciando Gunicorn ==="
 echo "Comando: gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000"
+set -e
 exec gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000 --access-logfile - --error-logfile - --log-level info
 
