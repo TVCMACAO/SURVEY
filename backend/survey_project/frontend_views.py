@@ -10,17 +10,115 @@ def serve_frontend(request):
     Vista que sirve el index.html del frontend React para cualquier ruta
     que no sea /api/ o /admin/. Esto permite que React Router maneje el routing.
     """
-    # Buscar el index.html del frontend en diferentes ubicaciones posibles
-    frontend_paths = [
-        Path('/app/frontend/survey-ui/dist/index.html'),
-        Path(__file__).resolve().parent.parent.parent / 'frontend' / 'survey-ui' / 'dist' / 'index.html',
-    ]
+    import json
+    import traceback
+    log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
     
-    for path in frontend_paths:
-        if path.exists():
-            return FileResponse(open(path, 'rb'), content_type='text/html')
+    # #region agent log
+    try:
+        with open(log_file_path, 'a') as f:
+            f.write(json.dumps({
+                "sessionId": "debug-session",
+                "runId": "run1",
+                "hypothesisId": "C",
+                "location": "frontend_views.py:8",
+                "message": "serve_frontend called",
+                "data": {
+                    "path": request.path,
+                    "method": request.method
+                },
+                "timestamp": int(__import__('time').time() * 1000)
+            }) + '\n')
+    except Exception:
+        pass
+    # #endregion
     
-    raise Http404("Frontend not found. Checked paths: " + ", ".join(str(p) for p in frontend_paths))
+    try:
+        # Buscar el index.html del frontend en diferentes ubicaciones posibles
+        frontend_paths = [
+            Path('/app/frontend/survey-ui/dist/index.html'),
+            Path(__file__).resolve().parent.parent.parent / 'frontend' / 'survey-ui' / 'dist' / 'index.html',
+        ]
+        
+        # #region agent log
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "C",
+                    "location": "frontend_views.py:8",
+                    "message": "Checking frontend paths",
+                    "data": {
+                        "paths": [str(p) for p in frontend_paths],
+                        "paths_exist": [p.exists() for p in frontend_paths]
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
+        for path in frontend_paths:
+            if path.exists():
+                # #region agent log
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "C",
+                            "location": "frontend_views.py:8",
+                            "message": "Frontend file found, serving",
+                            "data": {
+                                "path": str(path)
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except Exception:
+                    pass
+                # #endregion
+                return FileResponse(open(path, 'rb'), content_type='text/html')
+        
+        # #region agent log
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "C",
+                    "location": "frontend_views.py:8",
+                    "message": "Frontend file not found",
+                    "data": {
+                        "checked_paths": [str(p) for p in frontend_paths]
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        raise Http404("Frontend not found. Checked paths: " + ", ".join(str(p) for p in frontend_paths))
+    except Exception as e:
+        # #region agent log
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "C",
+                    "location": "frontend_views.py:8",
+                    "message": "serve_frontend failed",
+                    "data": {
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                        "traceback": traceback.format_exc()
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        raise
 
 
 def serve_frontend_asset(request, path):
