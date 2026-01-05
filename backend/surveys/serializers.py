@@ -260,10 +260,13 @@ class SurveySerializer(serializers.Serializer):
     title = serializers.CharField(max_length=255)
     description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
     group = ObjectIdField() # Referencia al ObjectId de SurveyGroup
+    group_name = serializers.CharField(read_only=True, required=False) # Nombre del grupo
     questions = QuestionSerializer(many=True)
     sections = SectionSerializer(many=True, required=False) # Optional sections array
     is_public = serializers.BooleanField(required=False, default=False) # Indica si la encuesta es pública
     is_deleted = serializers.BooleanField(required=False, default=False) # Indica si la encuesta está eliminada (soft delete)
+    created_by = serializers.CharField(read_only=True, required=False) # ID del usuario que creó la encuesta
+    created_by_username = serializers.CharField(read_only=True, required=False) # Username del usuario que creó la encuesta
 
     def to_representation(self, instance):
         # Get base representation

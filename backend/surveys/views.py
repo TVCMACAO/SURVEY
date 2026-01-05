@@ -324,6 +324,10 @@ class SurveyListCreate(APIView):
                 pass
             # #endregion
             
+            # Enriquecer encuestas con información del grupo y usuario creador
+            groups_collection = get_survey_groups_collection()
+            users_collection = get_mongo_collection('users')
+            
             for survey in surveys:
                 # Handle both ObjectId and string _id formats
                 if '_id' in survey:
@@ -334,6 +338,55 @@ class SurveyListCreate(APIView):
                 elif 'id' not in survey:
                     # If no _id, use id field if it exists
                     survey['id'] = survey.get('id', '')
+                
+                # Obtener nombre del grupo
+                group_id = survey.get('group')
+                if group_id:
+                    try:
+                        group_obj = groups_collection.find_one({'_id': ObjectId(group_id)})
+                        if not group_obj:
+                            group_obj = groups_collection.find_one({'_id': group_id})
+                        if group_obj:
+                            survey['group_name'] = group_obj.get('name', 'Sin grupo')
+                        else:
+                            survey['group_name'] = 'Sin grupo'
+                    except Exception:
+                        try:
+                            group_obj = groups_collection.find_one({'_id': group_id})
+                            if group_obj:
+                                survey['group_name'] = group_obj.get('name', 'Sin grupo')
+                            else:
+                                survey['group_name'] = 'Sin grupo'
+                        except Exception:
+                            survey['group_name'] = 'Sin grupo'
+                else:
+                    survey['group_name'] = 'Sin grupo'
+                
+                # Obtener username del usuario creador
+                created_by = survey.get('created_by')
+                if created_by:
+                    try:
+                        user_obj = users_collection.find_one({'_id': ObjectId(created_by)})
+                        if not user_obj:
+                            user_obj = users_collection.find_one({'_id': created_by})
+                        if not user_obj:
+                            # Intentar buscar por string ID
+                            user_obj = users_collection.find_one({'id': str(created_by)})
+                        if user_obj:
+                            survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
+                        else:
+                            survey['created_by_username'] = 'Usuario desconocido'
+                    except Exception:
+                        try:
+                            user_obj = users_collection.find_one({'_id': created_by})
+                            if user_obj:
+                                survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
+                            else:
+                                survey['created_by_username'] = 'Usuario desconocido'
+                        except Exception:
+                            survey['created_by_username'] = 'Usuario desconocido'
+                else:
+                    survey['created_by_username'] = None
             
             # #region agent log
             try:
@@ -441,7 +494,8 @@ class SurveyListCreate(APIView):
                 'group': validated_data['group'],
                 'questions': validated_data['questions'],
                 'is_public': validated_data.get('is_public', False),
-                'is_deleted': False  # Por defecto no está eliminada
+                'is_deleted': False,  # Por defecto no está eliminada
+                'created_by': request.user.id if request.user and request.user.is_authenticated else None  # Usuario que creó la encuesta
             })
             new_survey = surveys_collection.find_one({'_id': result.inserted_id})
             new_survey['id'] = str(new_survey['_id'])
@@ -546,6 +600,58 @@ class SurveyRetrieveUpdateDestroy(APIView):
                         {"detail": "No tienes permisos para ver esta encuesta."},
                         status=status.HTTP_403_FORBIDDEN
                     )
+        
+        # Enriquecer con información del grupo y usuario creador
+        groups_collection = get_survey_groups_collection()
+        users_collection = get_mongo_collection('users')
+        
+        # Obtener nombre del grupo
+        group_id = survey.get('group')
+        if group_id:
+            try:
+                group_obj = groups_collection.find_one({'_id': ObjectId(group_id)})
+                if not group_obj:
+                    group_obj = groups_collection.find_one({'_id': group_id})
+                if group_obj:
+                    survey['group_name'] = group_obj.get('name', 'Sin grupo')
+                else:
+                    survey['group_name'] = 'Sin grupo'
+            except Exception:
+                try:
+                    group_obj = groups_collection.find_one({'_id': group_id})
+                    if group_obj:
+                        survey['group_name'] = group_obj.get('name', 'Sin grupo')
+                    else:
+                        survey['group_name'] = 'Sin grupo'
+                except Exception:
+                    survey['group_name'] = 'Sin grupo'
+        else:
+            survey['group_name'] = 'Sin grupo'
+        
+        # Obtener username del usuario creador
+        created_by = survey.get('created_by')
+        if created_by:
+            try:
+                user_obj = users_collection.find_one({'_id': ObjectId(created_by)})
+                if not user_obj:
+                    user_obj = users_collection.find_one({'_id': created_by})
+                if not user_obj:
+                    user_obj = users_collection.find_one({'id': str(created_by)})
+                if user_obj:
+                    survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
+                else:
+                    survey['created_by_username'] = 'Usuario desconocido'
+            except Exception:
+                try:
+                    user_obj = users_collection.find_one({'_id': created_by})
+                    if user_obj:
+                        survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
+                    else:
+                        survey['created_by_username'] = 'Usuario desconocido'
+                except Exception:
+                    survey['created_by_username'] = 'Usuario desconocido'
+        else:
+            survey['created_by_username'] = None
         
         serializer = SurveySerializer(survey)
         return Response(serializer.data)
