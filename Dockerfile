@@ -4,7 +4,13 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 COPY frontend/survey-ui/package*.json ./
 RUN test -f package.json || (echo "ERROR: package.json no encontrado en survey-ui" && exit 1)
-RUN npm ci || (echo "ERROR: npm ci falló en survey-ui" && exit 1)
+# Instalar dependencias (usar npm install si no hay package-lock.json, npm ci si existe)
+RUN if [ -f package-lock.json ]; then \
+      npm ci || (echo "ERROR: npm ci falló en survey-ui" && exit 1); \
+    else \
+      echo "package-lock.json no encontrado, usando npm install..." && \
+      npm install || (echo "ERROR: npm install falló en survey-ui" && exit 1); \
+    fi
 COPY frontend/survey-ui/ ./
 RUN npm run build || (echo "ERROR: npm run build falló en survey-ui" && exit 1)
 RUN test -d dist || (echo "ERROR: directorio dist no se creó en survey-ui" && exit 1)
@@ -16,8 +22,13 @@ WORKDIR /app
 COPY frontend/checklist-app/package*.json ./
 # Verificar que package.json existe
 RUN test -f package.json || (echo "ERROR: package.json no encontrado en checklist-app" && exit 1)
-# Instalar dependencias
-RUN npm ci || (echo "ERROR: npm ci falló en checklist-app" && exit 1)
+# Instalar dependencias (usar npm install si no hay package-lock.json, npm ci si existe)
+RUN if [ -f package-lock.json ]; then \
+      npm ci || (echo "ERROR: npm ci falló en checklist-app" && exit 1); \
+    else \
+      echo "package-lock.json no encontrado, usando npm install..." && \
+      npm install || (echo "ERROR: npm install falló en checklist-app" && exit 1); \
+    fi
 # Copiar resto de archivos
 COPY frontend/checklist-app/ ./
 # Verificar archivos críticos
