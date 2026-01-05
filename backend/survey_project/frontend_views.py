@@ -71,14 +71,40 @@ def serve_frontend(request):
                             "location": "frontend_views.py:8",
                             "message": "Frontend file found, serving",
                             "data": {
-                                "path": str(path)
+                                "path": str(path),
+                                "is_file": path.is_file(),
+                                "readable": os.access(path, os.R_OK) if hasattr(os, 'access') else "unknown"
                             },
                             "timestamp": int(__import__('time').time() * 1000)
                         }) + '\n')
                 except Exception:
                     pass
                 # #endregion
-                return FileResponse(open(path, 'rb'), content_type='text/html')
+                try:
+                    file_handle = open(path, 'rb')
+                    response = FileResponse(file_handle, content_type='text/html')
+                    return response
+                except Exception as file_error:
+                    # #region agent log
+                    try:
+                        with open(log_file_path, 'a') as f:
+                            f.write(json.dumps({
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "C",
+                                "location": "frontend_views.py:8",
+                                "message": "Error opening file",
+                                "data": {
+                                    "path": str(path),
+                                    "error_type": type(file_error).__name__,
+                                    "error_message": str(file_error)
+                                },
+                                "timestamp": int(__import__('time').time() * 1000)
+                            }) + '\n')
+                    except Exception:
+                        pass
+                    # #endregion
+                    raise
         
         # #region agent log
         try:
