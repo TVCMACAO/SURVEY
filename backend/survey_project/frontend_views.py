@@ -163,16 +163,21 @@ def serve_frontend(request):
                     "runId": "run1",
                     "hypothesisId": "C",
                     "location": "frontend_views.py:8",
-                    "message": "Frontend file not found",
+                    "message": "Frontend file not found in any path",
                     "data": {
-                        "checked_paths": [str(p) for p in frontend_paths]
+                        "checked_paths": [str(p) for p in frontend_paths],
+                        "paths_exist": [p.exists() for p in frontend_paths],
+                        "paths_are_files": [p.is_file() if p.exists() else False for p in frontend_paths]
                     },
                     "timestamp": int(__import__('time').time() * 1000)
                 }) + '\n')
         except Exception:
             pass
         # #endregion
-        raise Http404("Frontend not found. Checked paths: " + ", ".join(str(p) for p in frontend_paths))
+        
+        # Si no se encuentra el archivo, devolver un 404 en lugar de 500
+        error_msg = "Frontend not found. Checked paths: " + ", ".join(str(p) for p in frontend_paths)
+        raise Http404(error_msg)
     except Exception as e:
         # #region agent log
         try:
