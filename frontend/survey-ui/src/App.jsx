@@ -2377,6 +2377,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     password: '',
     password_confirm: '',
     role: 'encuestador',
+    user_group_id: '',
     is_active: true
   });
   const [groupFormData, setGroupFormData] = useState({
@@ -2563,10 +2564,22 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       return;
     }
 
+    // Validar que si el rol es group_admin, se haya seleccionado un grupo
+    if (formData.role === 'group_admin' && !formData.user_group_id) {
+      setFormError('Debes seleccionar un grupo para el Administrador de Grupo.');
+      return;
+    }
+
     try {
+      const userData = { ...formData };
+      // Solo enviar user_group_id si el rol es group_admin
+      if (formData.role !== 'group_admin') {
+        delete userData.user_group_id;
+      }
+      
       const response = await authenticatedFetch('/api/users/', {
         method: 'POST',
-        body: JSON.stringify(formData)
+        body: JSON.stringify(userData)
       });
 
       if (!response.ok) {
@@ -2584,6 +2597,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         password: '',
         password_confirm: '',
         role: 'encuestador',
+        user_group_id: '',
         is_active: true
       });
       alert('Usuario creado exitosamente.');
@@ -2607,11 +2621,21 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       return;
     }
 
+    // Validar que si el rol es group_admin, se haya seleccionado un grupo
+    if (formData.role === 'group_admin' && !formData.user_group_id) {
+      setFormError('Debes seleccionar un grupo para el Administrador de Grupo.');
+      return;
+    }
+
     try {
       const updateData = { ...formData };
       if (!updateData.password) {
         delete updateData.password;
         delete updateData.password_confirm;
+      }
+      // Solo enviar user_group_id si el rol es group_admin
+      if (formData.role !== 'group_admin') {
+        delete updateData.user_group_id;
       }
 
       const response = await authenticatedFetch(`/api/users/${editingUser.id}/`, {
@@ -2635,6 +2659,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         password: '',
         password_confirm: '',
         role: 'encuestador',
+        user_group_id: '',
         is_active: true
       });
       alert('Usuario actualizado exitosamente.');
@@ -2677,6 +2702,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       password: '',
       password_confirm: '',
       role: user.role || 'encuestador',
+      user_group_id: user.user_group_id || '',
       is_active: user.is_active !== undefined ? user.is_active : true
     });
     setShowUserForm(true);
@@ -2693,6 +2719,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       password: '',
       password_confirm: '',
       role: 'encuestador',
+      user_group_id: '',
       is_active: true
     });
     setShowUserForm(true);
@@ -3015,7 +3042,15 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                 </label>
                 <select
                   value={formData.role}
-                  onChange={(e) => setFormData({...formData, role: e.target.value})}
+                  onChange={(e) => {
+                    const newRole = e.target.value;
+                    setFormData({
+                      ...formData, 
+                      role: newRole,
+                      // Limpiar user_group_id si se cambia el rol a algo diferente de group_admin
+                      user_group_id: newRole === 'group_admin' ? formData.user_group_id : ''
+                    });
+                  }}
                   className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   required
                 >
@@ -3025,6 +3060,32 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                   {userRole === 'root' && <option value="root">Root</option>}
                 </select>
               </div>
+
+              {formData.role === 'group_admin' && (
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    Grupo <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.user_group_id}
+                    onChange={(e) => setFormData({...formData, user_group_id: e.target.value})}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Selecciona un grupo</option>
+                    {groups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+                  {groups.length === 0 && (
+                    <p className="mt-2 text-sm text-amber-600">
+                      No hay grupos disponibles. Crea un grupo primero en la pestaña "Grupos".
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center gap-3">
                 <input
