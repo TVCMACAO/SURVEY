@@ -449,7 +449,53 @@ class SurveyListCreate(APIView):
             raise
 
     def post(self, request):
+        # #region agent log
+        import json
+        import traceback
+        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "A",
+                    "location": "views.py:451",
+                    "message": "SurveyListCreate.post called",
+                    "data": {
+                        "request_data_keys": list(request.data.keys()) if hasattr(request.data, 'keys') else str(type(request.data)),
+                        "has_title": 'title' in request.data if hasattr(request.data, '__contains__') else False,
+                        "has_group": 'group' in request.data if hasattr(request.data, '__contains__') else False,
+                        "has_questions": 'questions' in request.data if hasattr(request.data, '__contains__') else False,
+                        "has_sections": 'sections' in request.data if hasattr(request.data, '__contains__') else False,
+                        "request_data_preview": str(request.data)[:500] if hasattr(request.data, '__str__') else str(type(request.data))
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
         serializer = SurveySerializer(data=request.data)
+        
+        # #region agent log
+        try:
+            with open(log_file_path, 'a') as f:
+                f.write(json.dumps({
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "B",
+                    "location": "views.py:451",
+                    "message": "Serializer validation result",
+                    "data": {
+                        "is_valid": serializer.is_valid(),
+                        "errors": serializer.errors if not serializer.is_valid() else None
+                    },
+                    "timestamp": int(__import__('time').time() * 1000)
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        
         if serializer.is_valid():
             surveys_collection = get_surveys_collection()
             validated_data = serializer.validated_data
