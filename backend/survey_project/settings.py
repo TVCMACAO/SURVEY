@@ -179,6 +179,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'surveys.User'
 
+# Configurar backend de autenticación personalizado para MongoDB
+AUTHENTICATION_BACKENDS = [
+    'surveys.mongo_auth_backend.MongoAuthBackend',  # Backend MongoDB primero
+    'django.contrib.auth.backends.ModelBackend',  # Fallback a SQLite si es necesario
+]
+
 # Django REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
