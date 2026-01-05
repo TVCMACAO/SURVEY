@@ -26,6 +26,7 @@ def serve_frontend(request):
 def serve_frontend_asset(request, path):
     """
     Sirve archivos estáticos del frontend (JS, CSS, imágenes, etc.)
+    Los archivos están en dist/assets/ cuando se construye con Vite
     """
     frontend_dirs = [
         Path('/app/frontend/survey-ui/dist'),
@@ -33,7 +34,12 @@ def serve_frontend_asset(request, path):
     ]
     
     for frontend_dir in frontend_dirs:
-        asset_path = frontend_dir / path
+        # Intentar primero en assets/ (estructura de Vite)
+        asset_path = frontend_dir / 'assets' / path
+        if not asset_path.exists():
+            # Si no está en assets/, intentar directamente
+            asset_path = frontend_dir / path
+        
         if asset_path.exists() and asset_path.is_file():
             # Determinar content type
             content_type = 'application/octet-stream'
@@ -51,7 +57,9 @@ def serve_frontend_asset(request, path):
                 content_type = 'image/jpeg'
             elif path.endswith('.svg'):
                 content_type = 'image/svg+xml'
+            elif path.endswith('.woff') or path.endswith('.woff2'):
+                content_type = 'font/woff2' if path.endswith('.woff2') else 'font/woff'
             
             return FileResponse(open(asset_path, 'rb'), content_type=content_type)
     
-    raise Http404(f"Asset not found: {path}")
+    raise Http404(f"Asset not found: {path}. Checked in: {[str(d / 'assets' / path) for d in frontend_dirs]}")
