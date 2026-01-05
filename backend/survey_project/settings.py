@@ -33,13 +33,10 @@ DEFAULT_HOSTS = '192.168.0.248,localhost,127.0.0.1,easypanel.clinicamaicao.com,w
 ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', DEFAULT_HOSTS)
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(',') if host.strip()]
 
-# Para EasyPanel: permitir cualquier subdominio de easypanel.host dinámicamente
-# Django no soporta wildcards directamente, así que usamos un middleware personalizado
-import re
-ALLOWED_HOST_PATTERNS = [
-    r'^[^.]+\.rhfh8t\.easypanel\.host$',  # Cualquier subdominio de rhfh8t.easypanel.host
-    r'^[^.]+\.easypanel\.host$',  # Cualquier subdominio de easypanel.host
-]
+# Asegurar que el dominio de EasyPanel siempre esté incluido
+EASYPANEL_HOST = 'chat-survey-app2.rhfh8t.easypanel.host'
+if EASYPANEL_HOST not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(EASYPANEL_HOST)
 
 # Para producción con proxies reversos (EasyPanel)
 USE_X_FORWARDED_HOST = True
@@ -97,7 +94,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'survey_project.easypanel_middleware.EasyPanelHostMiddleware',  # Validar hosts de EasyPanel dinámicamente
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware', # Must be before CommonMiddleware
     'django.middleware.common.CommonMiddleware',
