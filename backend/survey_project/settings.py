@@ -97,6 +97,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'survey_project.easypanel_middleware.EasyPanelHostMiddleware',  # Validar hosts de EasyPanel dinámicamente
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware', # Must be before CommonMiddleware
     'django.middleware.common.CommonMiddleware',
