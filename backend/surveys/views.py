@@ -940,6 +940,21 @@ class SurveyListCreate(APIView):
             # Usuario regular con grupo: usar su grupo
             request_data_copy['group'] = str(user_group_id)
         
+        # Asegurar que request_data_copy es un diccionario mutable
+        if not isinstance(request_data_copy, dict):
+            try:
+                # Si es un QueryDict u otro tipo, convertirlo a dict
+                if hasattr(request_data_copy, 'dict'):
+                    request_data_copy = request_data_copy.dict()
+                else:
+                    request_data_copy = dict(request_data_copy)
+            except Exception as convert_error:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error converting request_data_copy to dict: {convert_error}")
+                # Usar request.data original
+                request_data_copy = dict(request.data) if hasattr(request.data, '__iter__') else {}
+        
         serializer = SurveySerializer(data=request_data_copy)
         is_valid = serializer.is_valid()
         
