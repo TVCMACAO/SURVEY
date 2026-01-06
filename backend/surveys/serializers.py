@@ -358,7 +358,7 @@ class AnswerSerializer(serializers.Serializer):
 class ResponseSerializer(serializers.Serializer):
     id = ObjectIdField(read_only=True)
     survey = ObjectIdField() # Referencia al ObjectId de Survey
-    surveyor_id = serializers.IntegerField(required=False, allow_null=True) # Opcional para respuestas públicas
+    surveyor_id = serializers.CharField(max_length=50, required=False, allow_null=True, allow_blank=True) # MongoDB ObjectId como String
     device_id = serializers.CharField(max_length=255, required=False)
     answers = serializers.JSONField() # Almacena las respuestas como un campo JSON flexible
     synced = serializers.BooleanField(default=False)
@@ -576,7 +576,7 @@ class BatchResponseItemSerializer(serializers.Serializer):
     """Serializer for individual response in batch sync"""
     local_id = serializers.CharField(required=False)  # Local ID from mobile device
     survey = ObjectIdField()
-    surveyor_id = serializers.IntegerField(required=False, allow_null=True)
+    surveyor_id = serializers.CharField(max_length=50, required=False, allow_null=True, allow_blank=True)  # MongoDB ObjectId como String
     device_id = serializers.CharField(max_length=255, required=False)
     answers = serializers.JSONField()
     synced = serializers.BooleanField(default=False)
