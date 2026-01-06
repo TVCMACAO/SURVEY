@@ -1,6 +1,6 @@
 class ApiConstants {
-  // Cambiar según tu configuración
-  static const String baseUrl = 'http://192.168.0.248:8085/api';
+  // URL de producción en EasyPanel
+  static const String baseUrl = 'https://chat-survey-app.rhfh8t.easypanel.host/api';
   
   // Endpoints
   static const String login = '/token/';
