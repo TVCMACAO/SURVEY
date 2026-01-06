@@ -3577,33 +3577,6 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
   const isGroupAdmin = userRole === 'group_admin';
   const canManageUsers = isRoot || isGroupAdmin;
 
-  // #region agent log
-  React.useEffect(() => {
-    fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'App.jsx:SurveyDashboard',
-        message: 'Dashboard render - checking button visibility',
-        data: {
-          userRole: userRole,
-          userRoleType: typeof userRole,
-          isRoot: isRoot,
-          isGroupAdmin: isGroupAdmin,
-          canManageUsers: canManageUsers,
-          onViewUsers: typeof onViewUsers,
-          onViewUsersExists: !!onViewUsers,
-          shouldShowButton: canManageUsers && !!onViewUsers
-        },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'A'
-      })
-    }).catch(() => {});
-  }, [userRole, canManageUsers, onViewUsers]);
-  // #endregion
-
   return (
     <main className="flex-1 relative z-10">
         <header className="sticky top-0 z-40 px-4 py-5 md:px-12 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
