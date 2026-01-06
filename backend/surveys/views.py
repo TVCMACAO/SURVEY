@@ -750,28 +750,60 @@ class SurveyListCreate(APIView):
         import traceback
         log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
         try:
+            # Obtener información del usuario antes de validar
+            user_role = None
+            user_group_id = None
+            user_id = None
+            if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
+                try:
+                    user_role = getattr(request.user, 'role', None)
+                    user_group_id = getattr(request.user, 'user_group_id', None)
+                    user_id = getattr(request.user, 'id', None)
+                except (AttributeError, TypeError):
+                    pass
+            
             with open(log_file_path, 'a') as f:
                 f.write(json.dumps({
                     "sessionId": "debug-session",
                     "runId": "run1",
                     "hypothesisId": "A",
-                    "location": "views.py:451",
+                    "location": "views.py:747",
                     "message": "SurveyListCreate.post called",
                     "data": {
+                        "user_role": user_role,
+                        "user_group_id": str(user_group_id) if user_group_id else None,
+                        "user_group_id_type": type(user_group_id).__name__ if user_group_id else None,
+                        "user_id": str(user_id) if user_id else None,
                         "request_data_keys": list(request.data.keys()) if hasattr(request.data, 'keys') else str(type(request.data)),
                         "has_title": 'title' in request.data if hasattr(request.data, '__contains__') else False,
                         "has_group": 'group' in request.data if hasattr(request.data, '__contains__') else False,
+                        "request_group_value": str(request.data.get('group')) if hasattr(request.data, 'get') and 'group' in request.data else None,
                         "has_questions": 'questions' in request.data if hasattr(request.data, '__contains__') else False,
+                        "questions_count": len(request.data.get('questions', [])) if hasattr(request.data, 'get') else 0,
                         "has_sections": 'sections' in request.data if hasattr(request.data, '__contains__') else False,
-                        "request_data_preview": str(request.data)[:500] if hasattr(request.data, '__str__') else str(type(request.data))
+                        "sections_count": len(request.data.get('sections', [])) if hasattr(request.data, 'get') else 0,
+                        "request_data_preview": str(request.data)[:1000] if hasattr(request.data, '__str__') else str(type(request.data))
                     },
                     "timestamp": int(__import__('time').time() * 1000)
                 }) + '\n')
-        except Exception:
-            pass
+        except Exception as e:
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "A",
+                        "location": "views.py:747",
+                        "message": "Error logging entry data",
+                        "data": {"error": str(e)},
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except:
+                pass
         # #endregion
         
         serializer = SurveySerializer(data=request.data)
+        is_valid = serializer.is_valid()
         
         # #region agent log
         try:
@@ -780,19 +812,34 @@ class SurveyListCreate(APIView):
                     "sessionId": "debug-session",
                     "runId": "run1",
                     "hypothesisId": "B",
-                    "location": "views.py:451",
+                    "location": "views.py:774",
                     "message": "Serializer validation result",
                     "data": {
-                        "is_valid": serializer.is_valid(),
-                        "errors": serializer.errors if not serializer.is_valid() else None
+                        "is_valid": is_valid,
+                        "errors": dict(serializer.errors) if not is_valid else None,
+                        "errors_str": str(serializer.errors) if not is_valid else None,
+                        "validated_data_keys": list(serializer.validated_data.keys()) if is_valid else None,
+                        "request_group": str(request.data.get('group')) if hasattr(request.data, 'get') else None
                     },
                     "timestamp": int(__import__('time').time() * 1000)
                 }) + '\n')
-        except Exception:
-            pass
+        except Exception as e:
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "B",
+                        "location": "views.py:774",
+                        "message": "Error logging validation result",
+                        "data": {"error": str(e)},
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except:
+                pass
         # #endregion
         
-        if not serializer.is_valid():
+        if not is_valid:
             # #region agent log
             import logging
             logger = logging.getLogger(__name__)
@@ -804,18 +851,31 @@ class SurveyListCreate(APIView):
                         "sessionId": "debug-session",
                         "runId": "run1",
                         "hypothesisId": "C",
-                        "location": "views.py:499",
+                        "location": "views.py:795",
                         "message": "Serializer validation failed",
                         "data": {
-                            "errors": str(serializer.errors),
-                            "errors_dict": dict(serializer.errors),
+                            "errors": dict(serializer.errors),
+                            "errors_str": str(serializer.errors),
                             "request_data_keys": list(request.data.keys()) if hasattr(request.data, 'keys') else None,
+                            "request_group": str(request.data.get('group')) if hasattr(request.data, 'get') else None,
                             "request_data_preview": str(request.data)[:1000] if hasattr(request.data, '__str__') else None
                         },
                         "timestamp": int(__import__('time').time() * 1000)
                     }) + '\n')
-            except Exception:
-                pass
+            except Exception as e:
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "C",
+                            "location": "views.py:795",
+                            "message": "Error logging validation failure",
+                            "data": {"error": str(e)},
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except:
+                    pass
             # #endregion
             
             # Mejorar el mensaje de error para que sea más claro y detallado
@@ -910,11 +970,12 @@ class SurveyListCreate(APIView):
                         "sessionId": "debug-session",
                         "runId": "run1",
                         "hypothesisId": "D",
-                        "location": "views.py:540",
+                        "location": "views.py:952",
                         "message": "group_admin detected, forcing group",
                         "data": {
                             "user_group_id": str(user_group_id),
-                            "user_group_id_type": type(user_group_id).__name__
+                            "user_group_id_type": type(user_group_id).__name__,
+                            "validated_data_group_before": str(validated_data.get('group')) if 'group' in validated_data else None
                         },
                         "timestamp": int(__import__('time').time() * 1000)
                     }) + '\n')
@@ -932,7 +993,26 @@ class SurveyListCreate(APIView):
                     group_obj = groups_collection.find_one({"_id": user_group_id})
                 else:
                     group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id)})
-            except Exception:
+            except Exception as e:
+                # #region agent log
+                try:
+                    with open(log_file_path, 'a') as f:
+                        f.write(json.dumps({
+                            "sessionId": "debug-session",
+                            "runId": "run1",
+                            "hypothesisId": "D",
+                            "location": "views.py:983",
+                            "message": "Error converting user_group_id to ObjectId",
+                            "data": {
+                                "error": str(e),
+                                "user_group_id": str(user_group_id),
+                                "user_group_id_type": type(user_group_id).__name__
+                            },
+                            "timestamp": int(__import__('time').time() * 1000)
+                        }) + '\n')
+                except:
+                    pass
+                # #endregion
                 pass
             
             # Si no se encontró, intentar como string
