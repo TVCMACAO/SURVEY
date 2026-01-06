@@ -1012,46 +1012,44 @@ class SurveyListCreate(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
         
-        # Validar que el group_id existe (solo si no es group_admin, porque ya lo validamos arriba)
-        if user_role != 'group_admin':
+        # Si el usuario tiene un grupo asignado (no es root), asegurar que la encuesta use su grupo
+        if user_role and user_group_id and user_role != 'root':
+            # Usuario con grupo asignado: verificar que el grupo existe y asignarlo
             groups_collection = get_survey_groups_collection()
-            group_found = False
-            group_to_check = validated_data.get('group')
+            group_obj = None
             
-            # #region agent log
+            # Buscar el grupo del usuario
             try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "D",
-                        "location": "views.py:547",
-                        "message": "Validating group exists (non-group_admin)",
-                        "data": {
-                            "group_to_check": str(group_to_check) if group_to_check else None,
-                            "group_to_check_type": type(group_to_check).__name__ if group_to_check else None
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
+                if isinstance(user_group_id, ObjectId):
+                    group_obj = groups_collection.find_one({"_id": user_group_id})
+                else:
+                    if ObjectId.is_valid(str(user_group_id)):
+                        group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id)})
             except Exception:
                 pass
-            # #endregion
             
-            # Try ObjectId first
-            try:
-                group_obj = groups_collection.find_one({"_id": ObjectId(group_to_check)})
-                if group_obj:
-                    group_found = True
-            except Exception as e:
-                pass
+            # Si no se encontró, intentar como string
+            if not group_obj:
+                try:
+                    group_obj = groups_collection.find_one({"_id": user_group_id})
+                except Exception:
+                    pass
             
-            # Try as string
-            if not group_found:
-                group_obj = groups_collection.find_one({"_id": group_to_check})
-                if group_obj:
-                    group_found = True
+            # Si aún no se encontró, buscar todos los grupos y comparar IDs como strings
+            if not group_obj:
+                try:
+                    all_groups = list(groups_collection.find({}, {'_id': 1, 'name': 1}))
+                    user_group_id_str = str(user_group_id)
+                    for g in all_groups:
+                        if str(g.get('_id')) == user_group_id_str:
+                            group_obj = g
+                            break
+                except Exception:
+                    pass
             
-            if not group_found:
+            if group_obj:
+                # El grupo existe, forzar su uso (sobrescribir cualquier grupo que venga del frontend)
+                validated_data['group'] = group_obj['_id']
                 # #region agent log
                 try:
                     with open(log_file_path, 'a') as f:
@@ -1059,29 +1057,72 @@ class SurveyListCreate(APIView):
                             "sessionId": "debug-session",
                             "runId": "run1",
                             "hypothesisId": "D",
-                            "location": "views.py:547",
-                            "message": "Group not found (non-group_admin)",
+                            "location": "views.py:1020",
+                            "message": "User with group detected, forcing group inheritance",
                             "data": {
-                                "group_to_check": str(group_to_check),
-                                "all_groups": [str(g.get('_id')) for g in groups_collection.find({}, {'_id': 1})[:10]]
+                                "user_role": user_role,
+                                "user_group_id": str(user_group_id),
+                                "group_id": str(group_obj['_id']),
+                                "group_name": group_obj.get('name', 'N/A')
                             },
                             "timestamp": int(__import__('time').time() * 1000)
                         }) + '\n')
                 except Exception:
                     pass
                 # #endregion
-                raise ValidationError(detail="El grupo de encuestas especificado no existe.")
-        
-        # Asegurar que el grupo esté asignado (debe estar en validated_data después de las validaciones anteriores)
-        if 'group' not in validated_data or validated_data['group'] is None:
-            # Si no hay grupo y no es group_admin, esto es un error
-            if user_role != 'group_admin':
+            else:
+                # El grupo del usuario no existe, esto es un error
+                all_groups = []
+                try:
+                    all_groups = list(groups_collection.find({}, {'_id': 1, 'name': 1})[:10])
+                except Exception:
+                    pass
+                
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Group not found for user_group_id: {user_group_id} (user role: {user_role})")
+                
+                error_message = f"El grupo asociado a tu usuario (ID: {user_group_id}) no existe en el sistema."
+                if all_groups:
+                    error_message += f" Grupos disponibles: {', '.join([g.get('name', str(g.get('_id'))) for g in all_groups[:3]])}."
+                error_message += " Contacta al administrador para que asigne un grupo válido a tu usuario."
+                
                 return Response(
-                    {"detail": "El campo 'group' es requerido para crear una encuesta."},
+                    {"detail": error_message},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            # Si es group_admin y no hay grupo, debería haberse asignado arriba
-            # Si llegamos aquí, hay un problema
+        elif user_role == 'root':
+            # Root puede crear encuestas sin grupo o con cualquier grupo
+            # Validar que el grupo especificado existe (si se especificó uno)
+            group_to_check = validated_data.get('group')
+            if group_to_check:
+                groups_collection = get_survey_groups_collection()
+                group_found = False
+                
+                try:
+                    group_obj = groups_collection.find_one({"_id": ObjectId(group_to_check)})
+                    if group_obj:
+                        group_found = True
+                except Exception:
+                    pass
+                
+                if not group_found:
+                    try:
+                        group_obj = groups_collection.find_one({"_id": group_to_check})
+                        if group_obj:
+                            group_found = True
+                    except Exception:
+                        pass
+                
+                if not group_found:
+                    return Response(
+                        {"detail": "El grupo de encuestas especificado no existe."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+        
+        # Asegurar que el grupo esté asignado (debe estar en validated_data después de las validaciones anteriores)
+        # Solo requerir grupo si el usuario no es root
+        if user_role != 'root' and ('group' not in validated_data or validated_data['group'] is None):
             return Response(
                 {"detail": "Error: no se pudo asignar el grupo automáticamente. Contacta al administrador."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -2294,9 +2335,32 @@ class SurveyRetrieveUpdateDestroy(APIView):
             surveys_collection = get_surveys_collection()
             validated_data = serializer.validated_data
             
-            # Si es group_admin, no puede cambiar el grupo
-            if user_role == 'group_admin' and 'group' in validated_data:
-                validated_data['group'] = survey.get('group')  # Mantener el grupo original
+            # Si el usuario tiene un grupo asignado (no es root), forzar el uso de su grupo
+            # Esto garantiza que las encuestas siempre pertenezcan al grupo del usuario
+            if user_role and user_group_id and user_role != 'root':
+                # Verificar que el grupo existe
+                groups_collection = get_survey_groups_collection()
+                group_obj = None
+                
+                try:
+                    if isinstance(user_group_id, ObjectId):
+                        group_obj = groups_collection.find_one({"_id": user_group_id})
+                    else:
+                        if ObjectId.is_valid(str(user_group_id)):
+                            group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id)})
+                except Exception:
+                    pass
+                
+                if not group_obj:
+                    try:
+                        group_obj = groups_collection.find_one({"_id": user_group_id})
+                    except Exception:
+                        pass
+                
+                if group_obj:
+                    # Forzar el grupo del usuario (sobrescribir cualquier cambio)
+                    validated_data['group'] = group_obj['_id']
+                # Si el grupo no existe, mantener el grupo original de la encuesta
             
             # Si se intenta cambiar el grupo, validar que el nuevo grupo existe
             if 'group' in validated_data:
