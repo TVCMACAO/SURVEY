@@ -893,12 +893,14 @@ class SurveyListCreate(APIView):
             groups_collection = get_survey_groups_collection()
             group_obj = None
             
-            # Intentar buscar el grupo por ObjectId
+            # Estrategia 1: Intentar buscar el grupo por ObjectId
             try:
                 if isinstance(user_group_id, ObjectId):
                     group_obj = groups_collection.find_one({"_id": user_group_id})
                 else:
-                    group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id)})
+                    # Intentar convertir a ObjectId si es válido
+                    if ObjectId.is_valid(str(user_group_id)):
+                        group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id)})
             except Exception as e:
                 # #region agent log
                 try:
@@ -921,12 +923,26 @@ class SurveyListCreate(APIView):
                 # #endregion
                 pass
             
-            # Si no se encontró, intentar como string
+            # Estrategia 2: Si no se encontró, intentar como string directo
             if not group_obj:
                 try:
                     group_obj = groups_collection.find_one({"_id": user_group_id})
                 except Exception:
                     pass
+            
+            # Estrategia 3: Buscar todos los grupos y comparar IDs como strings (último recurso)
+            if not group_obj:
+                try:
+                    all_groups = list(groups_collection.find({}, {'_id': 1, 'name': 1}))
+                    user_group_id_str = str(user_group_id)
+                    for g in all_groups:
+                        if str(g.get('_id')) == user_group_id_str:
+                            group_obj = g
+                            break
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error searching all groups: {e}")
             
             if group_obj:
                 # El grupo existe, usar su ObjectId
@@ -951,7 +967,19 @@ class SurveyListCreate(APIView):
                 # #endregion
             else:
                 # El grupo no existe, esto es un error
+                # Obtener todos los grupos disponibles para el mensaje de error
+                all_groups = []
+                try:
+                    all_groups = list(groups_collection.find({}, {'_id': 1, 'name': 1})[:10])
+                except Exception:
+                    pass
+                
                 # #region agent log
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Group not found for user_group_id: {user_group_id}")
+                logger.error(f"Available groups: {[str(g.get('_id')) for g in all_groups]}")
+                
                 try:
                     with open(log_file_path, 'a') as f:
                         f.write(json.dumps({
@@ -962,15 +990,25 @@ class SurveyListCreate(APIView):
                             "message": "Group not found for group_admin user_group_id",
                             "data": {
                                 "user_group_id": str(user_group_id),
-                                "all_groups": [{"_id": str(g.get('_id')), "name": g.get('name')} for g in groups_collection.find({}, {'_id': 1, 'name': 1})[:10]]
+                                "user_group_id_type": type(user_group_id).__name__,
+                                "all_groups": [{"_id": str(g.get('_id')), "name": g.get('name')} for g in all_groups],
+                                "user_id": str(request.user.id) if request.user and hasattr(request.user, 'id') else None,
+                                "username": request.user.username if request.user else None
                             },
                             "timestamp": int(__import__('time').time() * 1000)
                         }) + '\n')
                 except Exception:
                     pass
                 # #endregion
+                
+                # Mensaje de error más descriptivo
+                error_message = f"El grupo asociado a tu usuario (ID: {user_group_id}) no existe en el sistema."
+                if all_groups:
+                    error_message += f" Grupos disponibles: {', '.join([g.get('name', str(g.get('_id'))) for g in all_groups[:3]])}."
+                error_message += " Contacta al administrador para que asigne un grupo válido a tu usuario."
+                
                 return Response(
-                    {"detail": f"El grupo asociado a tu usuario (ID: {user_group_id}) no existe en el sistema. Contacta al administrador."},
+                    {"detail": error_message},
                     status=status.HTTP_400_BAD_REQUEST
                 )
         
@@ -1791,12 +1829,14 @@ class SurveyListCreate(APIView):
             groups_collection = get_survey_groups_collection()
             group_obj = None
             
-            # Intentar buscar el grupo por ObjectId
+            # Estrategia 1: Intentar buscar el grupo por ObjectId
             try:
                 if isinstance(user_group_id, ObjectId):
                     group_obj = groups_collection.find_one({"_id": user_group_id})
                 else:
-                    group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id)})
+                    # Intentar convertir a ObjectId si es válido
+                    if ObjectId.is_valid(str(user_group_id)):
+                        group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id)})
             except Exception as e:
                 # #region agent log
                 try:
@@ -1819,12 +1859,26 @@ class SurveyListCreate(APIView):
                 # #endregion
                 pass
             
-            # Si no se encontró, intentar como string
+            # Estrategia 2: Si no se encontró, intentar como string directo
             if not group_obj:
                 try:
                     group_obj = groups_collection.find_one({"_id": user_group_id})
                 except Exception:
                     pass
+            
+            # Estrategia 3: Buscar todos los grupos y comparar IDs como strings (último recurso)
+            if not group_obj:
+                try:
+                    all_groups = list(groups_collection.find({}, {'_id': 1, 'name': 1}))
+                    user_group_id_str = str(user_group_id)
+                    for g in all_groups:
+                        if str(g.get('_id')) == user_group_id_str:
+                            group_obj = g
+                            break
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error searching all groups: {e}")
             
             if group_obj:
                 # El grupo existe, usar su ObjectId
@@ -1849,7 +1903,19 @@ class SurveyListCreate(APIView):
                 # #endregion
             else:
                 # El grupo no existe, esto es un error
+                # Obtener todos los grupos disponibles para el mensaje de error
+                all_groups = []
+                try:
+                    all_groups = list(groups_collection.find({}, {'_id': 1, 'name': 1})[:10])
+                except Exception:
+                    pass
+                
                 # #region agent log
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Group not found for user_group_id: {user_group_id}")
+                logger.error(f"Available groups: {[str(g.get('_id')) for g in all_groups]}")
+                
                 try:
                     with open(log_file_path, 'a') as f:
                         f.write(json.dumps({
@@ -1860,15 +1926,25 @@ class SurveyListCreate(APIView):
                             "message": "Group not found for group_admin user_group_id",
                             "data": {
                                 "user_group_id": str(user_group_id),
-                                "all_groups": [{"_id": str(g.get('_id')), "name": g.get('name')} for g in groups_collection.find({}, {'_id': 1, 'name': 1})[:10]]
+                                "user_group_id_type": type(user_group_id).__name__,
+                                "all_groups": [{"_id": str(g.get('_id')), "name": g.get('name')} for g in all_groups],
+                                "user_id": str(request.user.id) if request.user and hasattr(request.user, 'id') else None,
+                                "username": request.user.username if request.user else None
                             },
                             "timestamp": int(__import__('time').time() * 1000)
                         }) + '\n')
                 except Exception:
                     pass
                 # #endregion
+                
+                # Mensaje de error más descriptivo
+                error_message = f"El grupo asociado a tu usuario (ID: {user_group_id}) no existe en el sistema."
+                if all_groups:
+                    error_message += f" Grupos disponibles: {', '.join([g.get('name', str(g.get('_id'))) for g in all_groups[:3]])}."
+                error_message += " Contacta al administrador para que asigne un grupo válido a tu usuario."
+                
                 return Response(
-                    {"detail": f"El grupo asociado a tu usuario (ID: {user_group_id}) no existe en el sistema. Contacta al administrador."},
+                    {"detail": error_message},
                     status=status.HTTP_400_BAD_REQUEST
                 )
         
