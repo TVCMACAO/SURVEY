@@ -9,9 +9,13 @@ User = get_user_model()
 # Custom field for MongoDB ObjectId
 class ObjectIdField(serializers.Field):
     def to_internal_value(self, data):
-        # Aceptar ObjectId válido, string que puede convertirse a ObjectId, o mantener como string
+        # Aceptar None si el campo lo permite (required=False, allow_null=True)
         if data is None:
-            raise serializers.ValidationError("ObjectId cannot be None.")
+            return None
+        
+        # Si es una cadena "None", tratarla como None
+        if isinstance(data, str) and data.lower() == 'none':
+            return None
         
         data_str = str(data)
         
