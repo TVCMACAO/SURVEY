@@ -3098,6 +3098,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Nombre</th>
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Email</th>
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Rol</th>
+                        {users.some(u => u.role === 'group_admin' && u.group_name) && (
+                          <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Grupo</th>
+                        )}
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Estado</th>
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Fecha de Registro</th>
                         <th className="px-6 py-4 text-center text-xs font-black text-gray-700 uppercase tracking-wider">Acciones</th>
@@ -3119,6 +3122,18 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                               {getRoleLabel(user.role)}
                             </span>
                           </td>
+                          {users.some(u => u.role === 'group_admin' && u.group_name) && (
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              {user.role === 'group_admin' && user.group_name ? (
+                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-300">
+                                  <FontAwesomeIcon icon={faUsers} size="xs" className="fa-icon-force-current" />
+                                  {user.group_name}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-gray-400">-</span>
+                              )}
+                            </td>
+                          )}
                           <td className="px-6 py-4 whitespace-nowrap">
                             {user.is_active ? (
                               <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-300">

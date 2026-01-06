@@ -3507,6 +3507,16 @@ class UserListCreate(APIView):
                 # Root puede ver todos los usuarios
                 users_docs = list(users_collection.find().sort('date_joined', -1))
             
+            # Obtener todos los grupos para enriquecer usuarios con nombres de grupos
+            groups_collection = get_survey_groups_collection()
+            groups_dict = {}
+            try:
+                all_groups = list(groups_collection.find({}, {'_id': 1, 'name': 1}))
+                for group in all_groups:
+                    groups_dict[str(group.get('_id'))] = group.get('name', 'Sin nombre')
+            except Exception:
+                pass
+            
             # Convertir documentos de MongoDB a diccionarios para el serializer
             users_data = []
             for user_doc in users_docs:
@@ -3524,6 +3534,32 @@ class UserListCreate(APIView):
                         # Intentar convertir a string
                         date_joined_value = str(date_joined)
                 
+                # Manejar user_group_id de forma segura
+                user_group_id_value = None
+                user_group_id_raw = user_doc.get('user_group_id')
+                if user_group_id_raw:
+                    if isinstance(user_group_id_raw, ObjectId):
+                        user_group_id_value = str(user_group_id_raw)
+                    elif isinstance(user_group_id_raw, str):
+                        user_group_id_value = user_group_id_raw
+                    else:
+                        user_group_id_value = str(user_group_id_raw)
+                
+                # Obtener nombre del grupo si el usuario tiene user_group_id
+                group_name = None
+                if user_group_id_value:
+                    group_name = groups_dict.get(user_group_id_value)
+                    # Si no se encontró, intentar buscar directamente
+                    if not group_name:
+                        try:
+                            group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id_value)})
+                            if not group_obj:
+                                group_obj = groups_collection.find_one({"_id": user_group_id_value})
+                            if group_obj:
+                                group_name = group_obj.get('name', 'Sin nombre')
+                        except Exception:
+                            pass
+                
                 user_data = {
                     'id': str(user_doc.get('_id', user_doc.get('id'))),
                     'username': user_doc.get('username'),
@@ -3532,7 +3568,9 @@ class UserListCreate(APIView):
                     'is_active': user_doc.get('is_active', True),
                     'first_name': user_doc.get('first_name', ''),
                     'last_name': user_doc.get('last_name', ''),
-                    'date_joined': date_joined_value
+                    'date_joined': date_joined_value,
+                    'user_group_id': user_group_id_value,
+                    'group_name': group_name  # Nombre del grupo asociado
                 }
                 users_data.append(user_data)
             
