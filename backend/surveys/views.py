@@ -1067,6 +1067,59 @@ class SurveyListCreate(APIView):
         result = surveys_collection.insert_one(survey_doc)
         new_survey = surveys_collection.find_one({'_id': result.inserted_id})
         new_survey['id'] = str(new_survey['_id'])
+        
+        # Enriquecer con información del grupo y usuario creador
+        groups_collection = get_survey_groups_collection()
+        users_collection = get_mongo_collection('users')
+        
+        # Obtener nombre del grupo
+        group_id = new_survey.get('group')
+        if group_id:
+            try:
+                group_obj = groups_collection.find_one({'_id': ObjectId(group_id)})
+                if not group_obj:
+                    group_obj = groups_collection.find_one({'_id': group_id})
+                if group_obj:
+                    new_survey['group_name'] = group_obj.get('name', 'Sin grupo')
+                else:
+                    new_survey['group_name'] = 'Sin grupo'
+            except Exception:
+                try:
+                    group_obj = groups_collection.find_one({'_id': group_id})
+                    if group_obj:
+                        new_survey['group_name'] = group_obj.get('name', 'Sin grupo')
+                    else:
+                        new_survey['group_name'] = 'Sin grupo'
+                except Exception:
+                    new_survey['group_name'] = 'Sin grupo'
+        else:
+            new_survey['group_name'] = 'Sin grupo'
+        
+        # Obtener username del usuario creador
+        created_by = new_survey.get('created_by')
+        if created_by:
+            try:
+                user_obj = users_collection.find_one({'_id': ObjectId(created_by)})
+                if not user_obj:
+                    user_obj = users_collection.find_one({'_id': created_by})
+                if not user_obj:
+                    user_obj = users_collection.find_one({'id': str(created_by)})
+                if user_obj:
+                    new_survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
+                else:
+                    new_survey['created_by_username'] = 'Usuario desconocido'
+            except Exception:
+                try:
+                    user_obj = users_collection.find_one({'_id': created_by})
+                    if user_obj:
+                        new_survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
+                    else:
+                        new_survey['created_by_username'] = 'Usuario desconocido'
+                except Exception:
+                    new_survey['created_by_username'] = 'Usuario desconocido'
+        else:
+            new_survey['created_by_username'] = None
+        
         return Response(SurveySerializer(new_survey).data, status=status.HTTP_201_CREATED)
 
     def get(self, request):
@@ -1912,6 +1965,59 @@ class SurveyListCreate(APIView):
             result = surveys_collection.insert_one(survey_doc)
             new_survey = surveys_collection.find_one({'_id': result.inserted_id})
             new_survey['id'] = str(new_survey['_id'])
+            
+            # Enriquecer con información del grupo y usuario creador
+            groups_collection = get_survey_groups_collection()
+            users_collection = get_mongo_collection('users')
+            
+            # Obtener nombre del grupo
+            group_id = new_survey.get('group')
+            if group_id:
+                try:
+                    group_obj = groups_collection.find_one({'_id': ObjectId(group_id)})
+                    if not group_obj:
+                        group_obj = groups_collection.find_one({'_id': group_id})
+                    if group_obj:
+                        new_survey['group_name'] = group_obj.get('name', 'Sin grupo')
+                    else:
+                        new_survey['group_name'] = 'Sin grupo'
+                except Exception:
+                    try:
+                        group_obj = groups_collection.find_one({'_id': group_id})
+                        if group_obj:
+                            new_survey['group_name'] = group_obj.get('name', 'Sin grupo')
+                        else:
+                            new_survey['group_name'] = 'Sin grupo'
+                    except Exception:
+                        new_survey['group_name'] = 'Sin grupo'
+            else:
+                new_survey['group_name'] = 'Sin grupo'
+            
+            # Obtener username del usuario creador
+            created_by = new_survey.get('created_by')
+            if created_by:
+                try:
+                    user_obj = users_collection.find_one({'_id': ObjectId(created_by)})
+                    if not user_obj:
+                        user_obj = users_collection.find_one({'_id': created_by})
+                    if not user_obj:
+                        user_obj = users_collection.find_one({'id': str(created_by)})
+                    if user_obj:
+                        new_survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
+                    else:
+                        new_survey['created_by_username'] = 'Usuario desconocido'
+                except Exception:
+                    try:
+                        user_obj = users_collection.find_one({'_id': created_by})
+                        if user_obj:
+                            new_survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
+                        else:
+                            new_survey['created_by_username'] = 'Usuario desconocido'
+                    except Exception:
+                        new_survey['created_by_username'] = 'Usuario desconocido'
+            else:
+                new_survey['created_by_username'] = None
+            
             return Response(SurveySerializer(new_survey).data, status=status.HTTP_201_CREATED)
 
 class SurveyRetrieveUpdateDestroy(APIView):
