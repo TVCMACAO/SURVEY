@@ -46,11 +46,21 @@ class UserSerializer(serializers.ModelSerializer):
         ],
         required=False
     )
+    user_group_id = serializers.SerializerMethodField()  # Campo para obtener el user_group_id del objeto
     
     class Meta:
         model = User
-        fields = ('id', 'username', 'first_name', 'last_name', 'email', 'role', 'is_active', 'date_joined')
-        read_only_fields = ('id', 'date_joined')
+        fields = ('id', 'username', 'first_name', 'last_name', 'email', 'role', 'is_active', 'date_joined', 'user_group_id')
+        read_only_fields = ('id', 'date_joined', 'user_group_id')
+    
+    def get_user_group_id(self, obj):
+        """Obtener user_group_id del objeto, manejando ObjectId y None"""
+        if hasattr(obj, 'user_group_id') and obj.user_group_id:
+            from bson import ObjectId
+            if isinstance(obj.user_group_id, ObjectId):
+                return str(obj.user_group_id)
+            return str(obj.user_group_id)
+        return None
 
 class UserCreateSerializer(serializers.Serializer):
     """
