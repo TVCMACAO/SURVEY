@@ -897,7 +897,36 @@ class SurveyListCreate(APIView):
                 pass
         # #endregion
         
-        serializer = SurveySerializer(data=request.data)
+        # PRE-VALIDATION: Si es group_admin o usuario de grupo, ajustar el grupo antes de validar
+        # Esto evita que el serializer rechace el grupo incorrecto enviado por el frontend
+        request_data_copy = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        if user_role == 'group_admin' and user_group_id:
+            # Forzar el grupo del admin antes de validar
+            request_data_copy['group'] = str(user_group_id)
+            # #region agent log
+            try:
+                with open(log_file_path, 'a') as f:
+                    f.write(json.dumps({
+                        "sessionId": "debug-session",
+                        "runId": "run1",
+                        "hypothesisId": "E",
+                        "location": "views.py:900",
+                        "message": "Pre-validation: Adjusting group for group_admin",
+                        "data": {
+                            "original_group": str(request.data.get('group')) if hasattr(request.data, 'get') else None,
+                            "adjusted_group": str(user_group_id),
+                            "user_group_id": str(user_group_id)
+                        },
+                        "timestamp": int(__import__('time').time() * 1000)
+                    }) + '\n')
+            except:
+                pass
+            # #endregion
+        elif user_role and user_group_id and user_role != 'root':
+            # Usuario regular con grupo: usar su grupo
+            request_data_copy['group'] = str(user_group_id)
+        
+        serializer = SurveySerializer(data=request_data_copy)
         is_valid = serializer.is_valid()
         
         # #region agent log
