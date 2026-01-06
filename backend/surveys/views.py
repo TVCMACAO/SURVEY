@@ -19,6 +19,64 @@ from .serializers import (
 
 User = get_user_model()
 
+
+# ============================================================================
+# Funciones helper para eliminar redundancias
+# ============================================================================
+
+def get_user_role_and_group(request):
+    """
+    Obtiene el role y user_group_id del usuario autenticado.
+    Retorna (user_role, user_group_id) o (None, None) si no está autenticado.
+    """
+    if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
+        try:
+            user_role = getattr(request.user, 'role', None)
+            user_group_id = getattr(request.user, 'user_group_id', None)
+            return user_role, user_group_id
+        except (AttributeError, TypeError):
+            return None, None
+    return None, None
+
+
+def require_admin_permission(request, action_description="realizar esta acción"):
+    """
+    Verifica que el usuario tenga permisos de 'root' o 'group_admin'.
+    Retorna Response con error 403 si no tiene permisos, None si tiene permisos.
+    """
+    user_role, _ = get_user_role_and_group(request)
+    
+    if user_role not in ['root', 'group_admin']:
+        return Response(
+            {"detail": f"No tienes permisos para {action_description}."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    return None
+
+
+def check_group_admin_access(user_role, user_group_id, resource_group_id, error_message="No tienes permisos para acceder a este recurso."):
+    """
+    Verifica que un group_admin solo pueda acceder a recursos de su grupo.
+    Compara resource_group_id con user_group_id de forma segura.
+    Retorna Response con error 403 si no tiene acceso, None si tiene acceso.
+    """
+    if user_role == 'group_admin' and user_group_id:
+        try:
+            # Intentar comparar como ObjectId primero
+            if str(resource_group_id) != str(user_group_id) and str(resource_group_id) != str(ObjectId(user_group_id)):
+                return Response(
+                    {"detail": error_message},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        except Exception:
+            # Si falla la conversión, comparar como strings
+            if str(resource_group_id) != str(user_group_id):
+                return Response(
+                    {"detail": error_message},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+    return None
+
 # Vistas de autenticación
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
@@ -2074,20 +2132,11 @@ class UserListCreate(APIView):
 
     def get(self, request):
         # Verificar que el usuario es 'root' o 'group_admin'
-        try:
-            user_role = getattr(request.user, 'role', None) if request.user and request.user.is_authenticated else None
-            user_group_id = getattr(request.user, 'user_group_id', None) if request.user and request.user.is_authenticated else None
-            
-            if user_role not in ['root', 'group_admin']:
-                return Response(
-                    {"detail": "No tienes permisos para ver usuarios."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        except (AttributeError, TypeError):
-            return Response(
-                {"detail": "Error al verificar permisos."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        permission_error = require_admin_permission(request, "ver usuarios")
+        if permission_error:
+            return permission_error
+        
+        user_role, user_group_id = get_user_role_and_group(request)
 
         # Obtener usuarios de MongoDB
         from .mongo_utils import get_mongo_collection
@@ -2276,80 +2325,48 @@ class UserRetrieveUpdateDestroy(APIView):
 
     def get(self, request, pk):
         # Verificar que el usuario es 'root' o 'group_admin'
-        try:
-            user_role = getattr(request.user, 'role', None) if request.user and request.user.is_authenticated else None
-            user_group_id = getattr(request.user, 'user_group_id', None) if request.user and request.user.is_authenticated else None
-            
-            if user_role not in ['root', 'group_admin']:
-                return Response(
-                    {"detail": "No tienes permisos para ver usuarios."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        except (AttributeError, TypeError):
-            return Response(
-                {"detail": "Error al verificar permisos."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        permission_error = require_admin_permission(request, "ver usuarios")
+        if permission_error:
+            return permission_error
 
         user = self.get_object(pk)
         
         # Si es group_admin, verificar que el usuario pertenece a su grupo
+        user_role, user_group_id = get_user_role_and_group(request)
         if user_role == 'group_admin' and user_group_id:
             from .mongo_user_utils import get_user_by_id
             user_doc = get_user_by_id(pk)
             if user_doc:
                 user_doc_group_id = user_doc.get('user_group_id')
-                try:
-                    if str(user_doc_group_id) != str(user_group_id) and str(user_doc_group_id) != str(ObjectId(user_group_id)):
-                        return Response(
-                            {"detail": "No tienes permisos para ver este usuario."},
-                            status=status.HTTP_403_FORBIDDEN
-                        )
-                except Exception:
-                    if str(user_doc_group_id) != str(user_group_id):
-                        return Response(
-                            {"detail": "No tienes permisos para ver este usuario."},
-                            status=status.HTTP_403_FORBIDDEN
-                        )
+                access_check = check_group_admin_access(
+                    user_role, user_group_id, user_doc_group_id,
+                    "No tienes permisos para ver este usuario."
+                )
+                if access_check:
+                    return access_check
         
         serializer = UserSerializer(user)
         return Response(serializer.data)
 
     def put(self, request, pk):
         # Verificar que el usuario es 'root' o 'group_admin'
-        try:
-            user_role = getattr(request.user, 'role', None) if request.user and request.user.is_authenticated else None
-            user_group_id = getattr(request.user, 'user_group_id', None) if request.user and request.user.is_authenticated else None
-            
-            if user_role not in ['root', 'group_admin']:
-                return Response(
-                    {"detail": "No tienes permisos para actualizar usuarios."},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-        except (AttributeError, TypeError):
-            return Response(
-                {"detail": "Error al verificar permisos."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        permission_error = require_admin_permission(request, "actualizar usuarios")
+        if permission_error:
+            return permission_error
         
         # Si es group_admin, verificar que el usuario pertenece a su grupo
+        user_role, user_group_id = get_user_role_and_group(request)
         if user_role == 'group_admin' and user_group_id:
             from .mongo_user_utils import get_user_by_id
             user_doc = get_user_by_id(pk)
             if user_doc:
                 user_doc_group_id = user_doc.get('user_group_id')
-                try:
-                    if str(user_doc_group_id) != str(user_group_id) and str(user_doc_group_id) != str(ObjectId(user_group_id)):
-                        return Response(
-                            {"detail": "No tienes permisos para actualizar este usuario."},
-                            status=status.HTTP_403_FORBIDDEN
-                        )
-                except Exception:
-                    if str(user_doc_group_id) != str(user_group_id):
-                        return Response(
-                            {"detail": "No tienes permisos para actualizar este usuario."},
-                            status=status.HTTP_403_FORBIDDEN
-                        )
+                access_check = check_group_admin_access(
+                    user_role, user_group_id, user_doc_group_id,
+                    "No tienes permisos para actualizar este usuario."
+                )
+                if access_check:
+                    return access_check
 
         import json
         import traceback
