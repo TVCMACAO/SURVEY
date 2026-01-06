@@ -2307,8 +2307,29 @@ class UserListCreate(APIView):
                     'user_group_id': str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
                 }, status=status.HTTP_201_CREATED)
             else:
-                user = serializer.save()
-                return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+                # Si es root, crear usuario usando el serializer (que maneja MongoDB)
+                from .mongo_user_utils import create_user
+                user_data = serializer.validated_data
+                user_doc = create_user(
+                    username=user_data['username'],
+                    password=user_data['password'],
+                    email=user_data.get('email', ''),
+                    role=user_data.get('role', 'encuestador'),
+                    first_name=user_data.get('first_name', ''),
+                    last_name=user_data.get('last_name', ''),
+                    user_group_id=user_data.get('user_group_id')  # Root puede asignar cualquier grupo
+                )
+                return Response({
+                    'id': str(user_doc['_id']),
+                    'username': user_doc['username'],
+                    'email': user_doc.get('email', ''),
+                    'role': user_doc.get('role', 'encuestador'),
+                    'is_active': user_doc.get('is_active', True),
+                    'first_name': user_doc.get('first_name', ''),
+                    'last_name': user_doc.get('last_name', ''),
+                    'date_joined': user_doc.get('date_joined').isoformat() if user_doc.get('date_joined') else None,
+                    'user_group_id': str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
+                }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class UserRetrieveUpdateDestroy(APIView):
