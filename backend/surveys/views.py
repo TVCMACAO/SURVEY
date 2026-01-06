@@ -575,8 +575,13 @@ class SurveyListCreate(APIView):
             # #endregion
             
             # Enriquecer encuestas con información del grupo y usuario creador
+            # Optimización: obtener todos los grupos y usuarios de una vez en lugar de consultas individuales
             groups_collection = get_survey_groups_collection()
             users_collection = get_mongo_collection('users')
+            
+            # Recopilar todos los IDs únicos de grupos y usuarios creadores
+            group_ids = set()
+            user_ids = set()
             
             for survey in surveys:
                 # Handle both ObjectId and string _id formats
@@ -589,52 +594,93 @@ class SurveyListCreate(APIView):
                     # If no _id, use id field if it exists
                     survey['id'] = survey.get('id', '')
                 
-                # Obtener nombre del grupo
+                # Recopilar IDs de grupos
                 group_id = survey.get('group')
                 if group_id:
                     try:
-                        group_obj = groups_collection.find_one({'_id': ObjectId(group_id)})
-                        if not group_obj:
-                            group_obj = groups_collection.find_one({'_id': group_id})
-                        if group_obj:
-                            survey['group_name'] = group_obj.get('name', 'Sin grupo')
-                        else:
-                            survey['group_name'] = 'Sin grupo'
+                        # Intentar convertir a ObjectId para normalizar
+                        group_ids.add(ObjectId(group_id) if ObjectId.is_valid(str(group_id)) else group_id)
                     except Exception:
-                        try:
-                            group_obj = groups_collection.find_one({'_id': group_id})
-                            if group_obj:
-                                survey['group_name'] = group_obj.get('name', 'Sin grupo')
-                            else:
-                                survey['group_name'] = 'Sin grupo'
-                        except Exception:
-                            survey['group_name'] = 'Sin grupo'
-                else:
-                    survey['group_name'] = 'Sin grupo'
+                        group_ids.add(group_id)
                 
-                # Obtener username del usuario creador
+                # Recopilar IDs de usuarios creadores
                 created_by = survey.get('created_by')
                 if created_by:
                     try:
-                        user_obj = users_collection.find_one({'_id': ObjectId(created_by)})
-                        if not user_obj:
-                            user_obj = users_collection.find_one({'_id': created_by})
-                        if not user_obj:
-                            # Intentar buscar por string ID
-                            user_obj = users_collection.find_one({'id': str(created_by)})
-                        if user_obj:
-                            survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
-                        else:
-                            survey['created_by_username'] = 'Usuario desconocido'
+                        # Intentar convertir a ObjectId para normalizar
+                        user_ids.add(ObjectId(created_by) if ObjectId.is_valid(str(created_by)) else created_by)
                     except Exception:
-                        try:
-                            user_obj = users_collection.find_one({'_id': created_by})
-                            if user_obj:
-                                survey['created_by_username'] = user_obj.get('username', 'Usuario desconocido')
-                            else:
-                                survey['created_by_username'] = 'Usuario desconocido'
-                        except Exception:
-                            survey['created_by_username'] = 'Usuario desconocido'
+                        user_ids.add(created_by)
+            
+            # Obtener todos los grupos de una vez
+            groups_dict = {}
+            if group_ids:
+                try:
+                    # Intentar buscar como ObjectId primero
+                    objectid_groups = list(groups_collection.find({'_id': {'$in': [g for g in group_ids if isinstance(g, ObjectId)]}}))
+                    for group in objectid_groups:
+                        groups_dict[str(group['_id'])] = group.get('name', 'Sin grupo')
+                    
+                    # Buscar los que no se encontraron como ObjectId (pueden ser strings)
+                    remaining_ids = [g for g in group_ids if str(g) not in groups_dict]
+                    if remaining_ids:
+                        # Intentar buscar como strings
+                        for gid in remaining_ids:
+                            try:
+                                group = groups_collection.find_one({'_id': ObjectId(gid)})
+                                if group:
+                                    groups_dict[str(gid)] = group.get('name', 'Sin grupo')
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            
+            # Obtener todos los usuarios de una vez
+            users_dict = {}
+            if user_ids:
+                try:
+                    # Intentar buscar como ObjectId primero
+                    objectid_users = list(users_collection.find({'_id': {'$in': [u for u in user_ids if isinstance(u, ObjectId)]}}))
+                    for user in objectid_users:
+                        users_dict[str(user['_id'])] = user.get('username', 'Usuario desconocido')
+                    
+                    # Buscar los que no se encontraron como ObjectId (pueden ser strings)
+                    remaining_ids = [u for u in user_ids if str(u) not in users_dict]
+                    if remaining_ids:
+                        # Intentar buscar como strings
+                        for uid in remaining_ids:
+                            try:
+                                user = users_collection.find_one({'_id': ObjectId(uid)})
+                                if user:
+                                    users_dict[str(uid)] = user.get('username', 'Usuario desconocido')
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            
+            # Asignar información a cada encuesta
+            for survey in surveys:
+                # Asignar nombre del grupo
+                group_id = survey.get('group')
+                if group_id:
+                    try:
+                        # Intentar normalizar el ID para la búsqueda
+                        group_key = str(ObjectId(group_id)) if ObjectId.is_valid(str(group_id)) else str(group_id)
+                        survey['group_name'] = groups_dict.get(group_key, 'Sin grupo')
+                    except Exception:
+                        survey['group_name'] = groups_dict.get(str(group_id), 'Sin grupo')
+                else:
+                    survey['group_name'] = 'Sin grupo'
+                
+                # Asignar username del usuario creador
+                created_by = survey.get('created_by')
+                if created_by:
+                    try:
+                        # Intentar normalizar el ID para la búsqueda
+                        user_key = str(ObjectId(created_by)) if ObjectId.is_valid(str(created_by)) else str(created_by)
+                        survey['created_by_username'] = users_dict.get(user_key, 'Usuario desconocido')
+                    except Exception:
+                        survey['created_by_username'] = users_dict.get(str(created_by), 'Usuario desconocido')
                 else:
                     survey['created_by_username'] = None
             
