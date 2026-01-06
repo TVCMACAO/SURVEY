@@ -21,7 +21,7 @@ class StorageKeys {
 
 class DatabaseConstants {
   static const String databaseName = 'survey_mobile.db';
-  static const int databaseVersion = 2;
+  static const int databaseVersion = 3;  // v3: surveyor_id es TEXT (MongoDB ObjectId)
   
   // Tablas
   static const String tableSurveys = 'surveys';
