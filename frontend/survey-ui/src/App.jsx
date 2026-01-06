@@ -2472,16 +2472,21 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       return;
     }
 
-    // Validar que si el rol es group_admin, se haya seleccionado un grupo
-    if (formData.role === 'group_admin' && !formData.user_group_id) {
+    // Validar que si el rol es group_admin, se haya seleccionado un grupo (solo para root)
+    if (formData.role === 'group_admin' && userRole === 'root' && !formData.user_group_id) {
       setFormError('Debes seleccionar un grupo para el Administrador de Grupo.');
       return;
     }
 
     try {
       const userData = { ...formData };
-      // Solo enviar user_group_id si el rol es group_admin
-      if (formData.role !== 'group_admin') {
+      // Si es group_admin creando usuario, NO enviar user_group_id (el backend lo asigna automáticamente)
+      // Solo root puede asignar user_group_id manualmente cuando crea un group_admin
+      if (userRole === 'group_admin') {
+        // group_admin siempre asigna su grupo automáticamente, no enviar user_group_id
+        delete userData.user_group_id;
+      } else if (userRole === 'root' && formData.role !== 'group_admin') {
+        // root solo envía user_group_id si está creando un group_admin
         delete userData.user_group_id;
       }
       
@@ -2992,6 +2997,23 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                       No hay grupos disponibles. Crea un grupo primero en la pestaña "Grupos".
                     </p>
                   )}
+                </div>
+              )}
+
+              {userRole === 'group_admin' && (
+                <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm text-blue-700">
+                        <strong>Nota:</strong> Los usuarios que crees heredarán automáticamente tu grupo. Solo puedes crear usuarios con rol <strong>Encuestador</strong> o <strong>Analista</strong>.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
