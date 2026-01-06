@@ -899,7 +899,21 @@ class SurveyListCreate(APIView):
         
         # PRE-VALIDATION: Si es group_admin o usuario de grupo, ajustar el grupo antes de validar
         # Esto evita que el serializer rechace el grupo incorrecto enviado por el frontend
-        request_data_copy = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        # Crear una copia mutable de request.data
+        try:
+            if hasattr(request.data, 'copy'):
+                request_data_copy = request.data.copy()
+            elif hasattr(request.data, '__dict__'):
+                request_data_copy = dict(request.data.__dict__)
+            else:
+                request_data_copy = dict(request.data)
+        except Exception as copy_error:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error copying request.data: {copy_error}")
+            # Fallback: usar request.data directamente
+            request_data_copy = request.data
+        
         if user_role == 'group_admin' and user_group_id:
             # Forzar el grupo del admin antes de validar
             request_data_copy['group'] = str(user_group_id)
@@ -1031,6 +1045,11 @@ class SurveyListCreate(APIView):
                 error_detail += f" ... y {len(error_messages) - 5} error(es) más."
             
             logger.error(f"Survey creation validation failed: {serializer.errors}")
+            logger.error(f"Request data type: {type(request.data)}")
+            logger.error(f"Request data keys: {list(request.data.keys()) if hasattr(request.data, 'keys') else 'N/A'}")
+            logger.error(f"User role: {user_role}, User group_id: {user_group_id}")
+            logger.error(f"Request group value: {request.data.get('group') if hasattr(request.data, 'get') else 'N/A'}")
+            logger.error(f"Adjusted group value: {request_data_copy.get('group') if hasattr(request_data_copy, 'get') else 'N/A'}")
             
             # Asegurar que los errores se serialicen correctamente
             try:
@@ -2463,28 +2482,58 @@ class CurrentUserView(APIView):
                 except Exception:
                     pass
                 # #endregion
-                return Response(user_data)
+                # Validar que user_data se puede serializar
+                try:
+                    json.dumps(user_data)
+                    return Response(user_data)
+                except Exception as json_error:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error serializing user_data in CurrentUserView: {json_error}")
+                    logger.error(f"user_data: {user_data}")
+                    # Intentar crear una versión simplificada
+                    safe_user_data = {
+                        'id': str(request.user.id) if request.user.id else None,
+                        'username': str(request.user.username) if request.user.username else '',
+                        'email': str(request.user.email) if request.user.email else '',
+                        'role': str(request.user.role) if request.user.role else 'encuestador',
+                        'is_active': True,
+                        'user_group_id': None  # Omitir si causa problemas
+                    }
+                    return Response(safe_user_data)
             else:
                 # Si es un modelo de Django normal, usar el serializer
-                serializer = UserSerializer(request.user)
-                # #region agent log
                 try:
-                    with open(log_file_path, 'a') as f:
-                        f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "A",
-                            "location": "views.py:1288",
-                            "message": "UserSerializer created successfully",
-                            "data": {
-                                "serializer_data_keys": list(serializer.data.keys()) if serializer.data else []
-                            },
-                            "timestamp": int(__import__('time').time() * 1000)
-                        }) + '\n')
-                except Exception:
-                    pass
-                # #endregion
-                return Response(serializer.data)
+                    serializer = UserSerializer(request.user)
+                    # #region agent log
+                    try:
+                        with open(log_file_path, 'a') as f:
+                            f.write(json.dumps({
+                                "sessionId": "debug-session",
+                                "runId": "run1",
+                                "hypothesisId": "A",
+                                "location": "views.py:2469",
+                                "message": "UserSerializer created successfully",
+                                "data": {
+                                    "serializer_data_keys": list(serializer.data.keys()) if serializer.data else []
+                                },
+                                "timestamp": int(__import__('time').time() * 1000)
+                            }) + '\n')
+                    except Exception:
+                        pass
+                    # #endregion
+                    return Response(serializer.data)
+                except Exception as serializer_error:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error with UserSerializer in CurrentUserView: {serializer_error}")
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    # Devolver datos mínimos
+                    return Response({
+                        'id': str(request.user.id) if request.user and hasattr(request.user, 'id') else None,
+                        'username': str(request.user.username) if request.user and hasattr(request.user, 'username') else '',
+                        'role': 'encuestador'
+                    })
         except Exception as e:
             # #region agent log
             import logging
@@ -2512,10 +2561,23 @@ class CurrentUserView(APIView):
             # #endregion
             
             # Devolver error JSON en lugar de dejar que Django devuelva HTML
-            return Response(
-                {"detail": f"Error al obtener información del usuario: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            # Asegurar que el mensaje sea serializable
+            try:
+                error_message = str(e)[:500]  # Limitar tamaño
+                error_response = {
+                    "detail": f"Error al obtener información del usuario: {error_message}",
+                    "error_type": type(e).__name__
+                }
+                # Validar que se puede serializar
+                json.dumps(error_response)
+                return Response(error_response, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            except Exception as final_error:
+                # Fallback absoluto
+                logger.error(f"Error creating error response: {final_error}")
+                return Response(
+                    {"detail": "Error interno del servidor al obtener información del usuario."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
 
 class UserListCreate(APIView):
     """
