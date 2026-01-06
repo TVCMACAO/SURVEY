@@ -28,15 +28,19 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-8j#s=h1a!5m%)y+b^^x30
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 # Get allowed hosts from environment variable, default to safe values
-# Incluir dominios de EasyPanel por defecto (incluyendo el dominio específico de EasyPanel)
-DEFAULT_HOSTS = '192.168.0.248,localhost,127.0.0.1,easypanel.clinicamaicao.com,www.clinicamaicao.com,chat-survey-app2.rhfh8t.easypanel.host'
+# Incluir dominios de EasyPanel por defecto (incluyendo ambos dominios de EasyPanel)
+DEFAULT_HOSTS = '192.168.0.248,localhost,127.0.0.1,easypanel.clinicamaicao.com,www.clinicamaicao.com,chat-survey-app.rhfh8t.easypanel.host,chat-survey-app2.rhfh8t.easypanel.host'
 ALLOWED_HOSTS_STR = os.environ.get('ALLOWED_HOSTS', DEFAULT_HOSTS)
 ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_STR.split(',') if host.strip()]
 
-# Asegurar que el dominio de EasyPanel siempre esté incluido
-EASYPANEL_HOST = 'chat-survey-app2.rhfh8t.easypanel.host'
-if EASYPANEL_HOST not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(EASYPANEL_HOST)
+# Asegurar que ambos dominios de EasyPanel siempre estén incluidos
+EASYPANEL_HOSTS = [
+    'chat-survey-app.rhfh8t.easypanel.host',
+    'chat-survey-app2.rhfh8t.easypanel.host',
+]
+for host in EASYPANEL_HOSTS:
+    if host not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(host)
 
 # Para producción con proxies reversos (EasyPanel)
 USE_X_FORWARDED_HOST = True
@@ -52,8 +56,10 @@ CORS_ALLOWED_ORIGINS = [
     "http://easypanel.clinicamaicao.com", # EasyPanel production domain (HTTP fallback)
     "https://www.clinicamaicao.com", # Production domain
     "http://www.clinicamaicao.com", # Production domain (HTTP fallback)
-    "https://chat-survey-app2.rhfh8t.easypanel.host", # EasyPanel subdomain
-    "http://chat-survey-app2.rhfh8t.easypanel.host", # EasyPanel subdomain HTTP
+    "https://chat-survey-app.rhfh8t.easypanel.host", # EasyPanel subdomain 1
+    "http://chat-survey-app.rhfh8t.easypanel.host", # EasyPanel subdomain 1 HTTP
+    "https://chat-survey-app2.rhfh8t.easypanel.host", # EasyPanel subdomain 2
+    "http://chat-survey-app2.rhfh8t.easypanel.host", # EasyPanel subdomain 2 HTTP
 ]
 
 # Permitir CORS desde cualquier subdominio de EasyPanel
