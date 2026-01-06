@@ -2942,6 +2942,40 @@ class CurrentUserView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        """
+        Wrapper para capturar excepciones no manejadas y asegurar respuestas JSON válidas.
+        """
+        try:
+            return self._get_impl(request)
+        except Exception as e:
+            import logging
+            import traceback
+            logger = logging.getLogger(__name__)
+            logger.error("=" * 60)
+            logger.error("UNHANDLED EXCEPTION in CurrentUserView.get")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            logger.error("=" * 60)
+            
+            # Devolver respuesta JSON válida
+            try:
+                return Response(
+                    {
+                        "detail": f"Error inesperado al obtener información del usuario: {str(e)[:200]}",
+                        "error_type": type(e).__name__
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            except Exception as response_error:
+                logger.error(f"Error creating error response: {response_error}")
+                # Fallback absoluto
+                return Response(
+                    {"detail": "Error interno del servidor."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+    
+    def _get_impl(self, request):
         # #region agent log
         import json
         import traceback
@@ -3036,17 +3070,48 @@ class CurrentUserView(APIView):
                     else:
                         user_group_id_value = str(user_group_id_raw)
                 
-                user_data = {
-                    'id': str(request.user.id) if request.user.id else None,
-                    'username': str(request.user.username) if request.user.username else '',
-                    'first_name': str(request.user.first_name) if request.user.first_name else '',
-                    'last_name': str(request.user.last_name) if request.user.last_name else '',
-                    'email': str(request.user.email) if request.user.email else '',
-                    'role': str(request.user.role) if request.user.role else 'encuestador',
-                    'is_active': bool(request.user.is_active) if hasattr(request.user, 'is_active') else True,
-                    'date_joined': date_joined_value,
-                    'user_group_id': user_group_id_value
-                }
+                # Construir user_data de forma segura, manejando todos los posibles errores
+                user_data = {}
+                try:
+                    user_data['id'] = str(request.user.id) if hasattr(request.user, 'id') and request.user.id else None
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error getting user.id: {e}")
+                    user_data['id'] = None
+                
+                try:
+                    user_data['username'] = str(request.user.username) if hasattr(request.user, 'username') and request.user.username else ''
+                except Exception as e:
+                    user_data['username'] = ''
+                
+                try:
+                    user_data['first_name'] = str(request.user.first_name) if hasattr(request.user, 'first_name') and request.user.first_name else ''
+                except Exception as e:
+                    user_data['first_name'] = ''
+                
+                try:
+                    user_data['last_name'] = str(request.user.last_name) if hasattr(request.user, 'last_name') and request.user.last_name else ''
+                except Exception as e:
+                    user_data['last_name'] = ''
+                
+                try:
+                    user_data['email'] = str(request.user.email) if hasattr(request.user, 'email') and request.user.email else ''
+                except Exception as e:
+                    user_data['email'] = ''
+                
+                try:
+                    user_data['role'] = str(request.user.role) if hasattr(request.user, 'role') and request.user.role else 'encuestador'
+                except Exception as e:
+                    user_data['role'] = 'encuestador'
+                
+                try:
+                    user_data['is_active'] = bool(request.user.is_active) if hasattr(request.user, 'is_active') else True
+                except Exception as e:
+                    user_data['is_active'] = True
+                
+                user_data['date_joined'] = date_joined_value
+                user_data['user_group_id'] = user_group_id_value
                 # #region agent log
                 try:
                     with open(log_file_path, 'a') as f:
