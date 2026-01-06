@@ -85,6 +85,7 @@ class UserCreateSerializer(serializers.Serializer):
         default='encuestador'
     )
     is_active = serializers.BooleanField(required=False, default=True)
+    user_group_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)  # Campo para asignar grupo
     
     def validate(self, attrs):
         if attrs.get('password') != attrs.get('password_confirm'):

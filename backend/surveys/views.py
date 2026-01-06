@@ -3679,6 +3679,20 @@ class UserListCreate(APIView):
                             else:
                                 date_joined_value = str(date_joined)
                         
+                        # Obtener el nombre del grupo
+                        user_group_id_str = str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
+                        group_name = None
+                        if user_group_id_str:
+                            try:
+                                groups_collection = get_survey_groups_collection()
+                                group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id_str)})
+                                if not group_obj:
+                                    group_obj = groups_collection.find_one({"_id": user_group_id_str})
+                                if group_obj:
+                                    group_name = group_obj.get('name', 'Sin nombre')
+                            except Exception:
+                                pass
+                        
                         return Response({
                             'id': str(user_doc.get('_id', user_doc.get('id', ''))),
                             'username': user_doc.get('username', ''),
@@ -3688,7 +3702,8 @@ class UserListCreate(APIView):
                             'first_name': user_doc.get('first_name', ''),
                             'last_name': user_doc.get('last_name', ''),
                             'date_joined': date_joined_value,
-                            'user_group_id': str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
+                            'user_group_id': user_group_id_str,
+                            'group_name': group_name
                         }, status=status.HTTP_201_CREATED)
                     except ValueError as e:
                         # Usuario ya existe
@@ -3712,6 +3727,18 @@ class UserListCreate(APIView):
                     from .mongo_user_utils import create_user
                     user_data = serializer.validated_data
                     try:
+                        # Convertir user_group_id a ObjectId si es un string válido
+                        user_group_id_input = user_data.get('user_group_id')
+                        user_group_id_to_save = None
+                        if user_group_id_input and user_group_id_input != '':
+                            try:
+                                if ObjectId.is_valid(str(user_group_id_input)):
+                                    user_group_id_to_save = ObjectId(user_group_id_input)
+                                else:
+                                    user_group_id_to_save = str(user_group_id_input)
+                            except Exception:
+                                user_group_id_to_save = str(user_group_id_input)
+                        
                         user_doc = create_user(
                             username=user_data['username'],
                             password=user_data['password'],
@@ -3719,7 +3746,7 @@ class UserListCreate(APIView):
                             role=user_data.get('role', 'encuestador'),
                             first_name=user_data.get('first_name', ''),
                             last_name=user_data.get('last_name', ''),
-                            user_group_id=user_data.get('user_group_id')  # Root puede asignar cualquier grupo
+                            user_group_id=user_group_id_to_save  # Root puede asignar cualquier grupo
                         )
                         # Manejar date_joined de forma segura
                         date_joined_value = None
@@ -3732,6 +3759,20 @@ class UserListCreate(APIView):
                             else:
                                 date_joined_value = str(date_joined)
                         
+                        # Obtener el nombre del grupo
+                        user_group_id_str = str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
+                        group_name = None
+                        if user_group_id_str:
+                            try:
+                                groups_collection = get_survey_groups_collection()
+                                group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id_str)})
+                                if not group_obj:
+                                    group_obj = groups_collection.find_one({"_id": user_group_id_str})
+                                if group_obj:
+                                    group_name = group_obj.get('name', 'Sin nombre')
+                            except Exception:
+                                pass
+                        
                         return Response({
                             'id': str(user_doc.get('_id', user_doc.get('id', ''))),
                             'username': user_doc.get('username', ''),
@@ -3741,7 +3782,8 @@ class UserListCreate(APIView):
                             'first_name': user_doc.get('first_name', ''),
                             'last_name': user_doc.get('last_name', ''),
                             'date_joined': date_joined_value,
-                            'user_group_id': str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
+                            'user_group_id': user_group_id_str,
+                            'group_name': group_name
                         }, status=status.HTTP_201_CREATED)
                     except ValueError as e:
                         # Usuario ya existe
@@ -3937,6 +3979,19 @@ class UserRetrieveUpdateDestroy(APIView):
                         else:
                             user_group_id_value = str(user_group_id_raw)
                     
+                    # Obtener el nombre del grupo si el usuario tiene uno asignado
+                    group_name = None
+                    if user_group_id_value:
+                        try:
+                            groups_collection = get_survey_groups_collection()
+                            group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id_value)})
+                            if not group_obj:
+                                group_obj = groups_collection.find_one({"_id": user_group_id_value})
+                            if group_obj:
+                                group_name = group_obj.get('name', 'Sin nombre')
+                        except Exception:
+                            pass
+                    
                     user_data = {
                         'id': str(updated_user_doc.get('_id', updated_user_doc.get('id'))),
                         'username': updated_user_doc.get('username'),
@@ -3946,7 +4001,8 @@ class UserRetrieveUpdateDestroy(APIView):
                         'first_name': updated_user_doc.get('first_name', ''),
                         'last_name': updated_user_doc.get('last_name', ''),
                         'date_joined': date_joined_value,
-                        'user_group_id': user_group_id_value
+                        'user_group_id': user_group_id_value,
+                        'group_name': group_name
                     }
                     
                     # #region agent log

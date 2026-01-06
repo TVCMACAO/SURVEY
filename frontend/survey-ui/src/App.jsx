@@ -2481,13 +2481,15 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     try {
       const userData = { ...formData };
       // Si es group_admin creando usuario, NO enviar user_group_id (el backend lo asigna automáticamente)
-      // Solo root puede asignar user_group_id manualmente cuando crea un group_admin
       if (userRole === 'group_admin') {
         // group_admin siempre asigna su grupo automáticamente, no enviar user_group_id
         delete userData.user_group_id;
-      } else if (userRole === 'root' && formData.role !== 'group_admin') {
-        // root solo envía user_group_id si está creando un group_admin
-        delete userData.user_group_id;
+      } else if (userRole === 'root') {
+        // root puede asignar user_group_id a cualquier usuario
+        // Solo eliminar si no hay valor
+        if (!userData.user_group_id) {
+          delete userData.user_group_id;
+        }
       }
       
       const response = await authenticatedFetch('/api/users/', {
@@ -2546,8 +2548,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         delete updateData.password;
         delete updateData.password_confirm;
       }
-      // Solo enviar user_group_id si el rol es group_admin
-      if (formData.role !== 'group_admin') {
+      // Siempre enviar user_group_id si está seleccionado (para cualquier rol)
+      // Solo eliminar si no hay valor
+      if (!updateData.user_group_id) {
         delete updateData.user_group_id;
       }
 
@@ -2966,9 +2969,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                     const newRole = e.target.value;
                     setFormData({
                       ...formData, 
-                      role: newRole,
-                      // Limpiar user_group_id si se cambia el rol a algo diferente de group_admin
-                      user_group_id: newRole === 'group_admin' ? formData.user_group_id : ''
+                      role: newRole
+                      // Mantener user_group_id al cambiar rol
                     });
                   }}
                   className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
@@ -2981,16 +2983,18 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                 </select>
               </div>
 
-              {formData.role === 'group_admin' && userRole === 'root' && (
+              {/* Mostrar selector de grupo para todos los roles excepto root, solo cuando el usuario actual es root */}
+              {userRole === 'root' && formData.role !== 'root' && (
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
-                    Grupo <span className="text-red-500">*</span>
+                    Grupo {formData.role === 'group_admin' && <span className="text-red-500">*</span>}
+                    {formData.role !== 'group_admin' && <span className="text-gray-400 text-xs ml-1">(opcional)</span>}
                   </label>
                   <select
                     value={formData.user_group_id}
                     onChange={(e) => setFormData({...formData, user_group_id: e.target.value})}
                     className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    required
+                    required={formData.role === 'group_admin'}
                   >
                     <option value="">Selecciona un grupo</option>
                     {(() => {
@@ -3015,6 +3019,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                   {groups.length === 0 && (
                     <p className="mt-2 text-sm text-amber-600">
                       No hay grupos disponibles. Crea un grupo primero en la pestaña "Grupos".
+                    </p>
+                  )}
+                  {formData.role !== 'group_admin' && (
+                    <p className="mt-2 text-sm text-gray-500">
+                      Asignar un grupo permite que las encuestas del usuario se asocien automáticamente al grupo.
                     </p>
                   )}
                 </div>
@@ -3098,7 +3107,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Nombre</th>
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Email</th>
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Rol</th>
-                        {users.some(u => u.role === 'group_admin' && u.group_name) && (
+                        {users.some(u => u.group_name || u.user_group_id) && (
                           <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Grupo</th>
                         )}
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Estado</th>
@@ -3122,9 +3131,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                               {getRoleLabel(user.role)}
                             </span>
                           </td>
-                          {users.some(u => u.role === 'group_admin' && u.group_name) && (
+                          {users.some(u => u.group_name || u.user_group_id) && (
                             <td className="px-6 py-4 whitespace-nowrap">
-                              {user.role === 'group_admin' && user.group_name ? (
+                              {user.group_name ? (
                                 <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-300">
                                   <FontAwesomeIcon icon={faUsers} size="xs" className="fa-icon-force-current" />
                                   {user.group_name}
