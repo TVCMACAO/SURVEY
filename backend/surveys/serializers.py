@@ -48,9 +48,17 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('id', 'username', 'first_name', 'last_name', 'email', 'role', 'is_active', 'date_joined')
         read_only_fields = ('id', 'date_joined')
 
-class UserCreateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'})
-    password_confirm = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'})
+class UserCreateSerializer(serializers.Serializer):
+    """
+    Serializer para crear usuarios en MongoDB.
+    Usa Serializer en lugar de ModelSerializer para evitar acceso a tablas SQL.
+    """
+    username = serializers.CharField(max_length=150, required=True)
+    password = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'}, required=True)
+    password_confirm = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'}, required=True)
+    email = serializers.EmailField(required=False, allow_blank=True, default='')
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default='')
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default='')
     # Campo role personalizado que acepta todos los roles válidos incluyendo group_admin
     role = serializers.ChoiceField(
         choices=[
@@ -62,24 +70,17 @@ class UserCreateSerializer(serializers.ModelSerializer):
         required=False,
         default='encuestador'
     )
-    
-    class Meta:
-        model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'password_confirm', 'role', 'is_active')
-        extra_kwargs = {
-            'password': {'write_only': True},
-            'password_confirm': {'write_only': True},
-        }
+    is_active = serializers.BooleanField(required=False, default=True)
     
     def validate(self, attrs):
-        if attrs['password'] != attrs['password_confirm']:
+        if attrs.get('password') != attrs.get('password_confirm'):
             raise serializers.ValidationError({"password_confirm": "Las contraseñas no coinciden."})
         return attrs
     
     def create(self, validated_data):
         from .mongo_user_utils import create_user
         
-        validated_data.pop('password_confirm')
+        validated_data.pop('password_confirm', None)
         password = validated_data.pop('password')
         
         # Crear usuario en MongoDB
