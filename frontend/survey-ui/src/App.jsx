@@ -2964,12 +2964,12 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                 >
                   <option value="encuestador">Encuestador</option>
                   <option value="analista">Analista</option>
-                  <option value="group_admin">Administrador de Grupo</option>
+                  {userRole === 'root' && <option value="group_admin">Administrador de Grupo</option>}
                   {userRole === 'root' && <option value="root">Root</option>}
                 </select>
               </div>
 
-              {formData.role === 'group_admin' && (
+              {formData.role === 'group_admin' && userRole === 'root' && (
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
                     Grupo <span className="text-red-500">*</span>

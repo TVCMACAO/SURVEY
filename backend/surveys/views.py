@@ -2288,12 +2288,18 @@ class UserListCreate(APIView):
                 
                 from .mongo_user_utils import create_user
                 user_data = serializer.validated_data
-                # Crear usuario directamente en MongoDB con el grupo asignado
+                # Asegurar que el rol sea válido para group_admin (solo encuestador o analista)
+                if requested_role not in ['encuestador', 'analista']:
+                    return Response(
+                        {"detail": "Solo puedes crear usuarios con rol 'Encuestador' o 'Analista'."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                # Crear usuario directamente en MongoDB con el grupo asignado automáticamente
                 user_doc = create_user(
                     username=user_data['username'],
                     password=user_data['password'],
                     email=user_data.get('email', ''),
-                    role=requested_role,  # Usar el role validado (no puede ser root)
+                    role=requested_role,  # Solo puede ser 'encuestador' o 'analista'
                     first_name=user_data.get('first_name', ''),
                     last_name=user_data.get('last_name', ''),
                     user_group_id=user_group_id  # Asignar automáticamente al grupo del admin
