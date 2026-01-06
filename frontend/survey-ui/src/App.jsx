@@ -2607,6 +2607,13 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 
   const handleEditUser = (user) => {
     setEditingUser(user);
+    // Asegurar que user_group_id sea un string para que coincida con los valores del select
+    let userGroupId = '';
+    if (user.user_group_id) {
+      // Convertir a string si es necesario
+      userGroupId = String(user.user_group_id);
+    }
+    
     setFormData({
       username: user.username,
       first_name: user.first_name || '',
@@ -2615,7 +2622,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       password: '',
       password_confirm: '',
       role: user.role || 'encuestador',
-      user_group_id: user.user_group_id || '',
+      user_group_id: userGroupId,
       is_active: user.is_active !== undefined ? user.is_active : true
     });
     setShowUserForm(true);
@@ -2986,11 +2993,24 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                     required
                   >
                     <option value="">Selecciona un grupo</option>
-                    {groups.map((group) => (
-                      <option key={group.id} value={group.id}>
-                        {group.name}
-                      </option>
-                    ))}
+                    {(() => {
+                      // Ordenar grupos: primero el grupo seleccionado (si existe), luego los demás
+                      const sortedGroups = [...groups].sort((a, b) => {
+                        const aId = String(a.id);
+                        const bId = String(b.id);
+                        const selectedId = String(formData.user_group_id);
+                        
+                        if (aId === selectedId) return -1;
+                        if (bId === selectedId) return 1;
+                        return a.name.localeCompare(b.name);
+                      });
+                      
+                      return sortedGroups.map((group) => (
+                        <option key={group.id} value={String(group.id)}>
+                          {group.name}
+                        </option>
+                      ));
+                    })()}
                   </select>
                   {groups.length === 0 && (
                     <p className="mt-2 text-sm text-amber-600">
