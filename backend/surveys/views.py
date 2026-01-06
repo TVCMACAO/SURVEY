@@ -89,7 +89,26 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         # #region agent log
         import json
         import traceback
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        import os
+        # Detectar la ruta correcta del log (desarrollo vs producción)
+        base_paths = [
+            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
+            '/app/.cursor/debug.log',  # Producción Docker
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
+        ]
+        log_file_path = None
+        for path in base_paths:
+            log_dir = os.path.dirname(path)
+            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
+                log_file_path = path
+                # Crear directorio si no existe
+                try:
+                    os.makedirs(log_dir, exist_ok=True)
+                except:
+                    pass
+                break
+        if not log_file_path:
+            log_file_path = '/tmp/survey_debug.log'  # Fallback final
         try:
             request_data = request.data if hasattr(request, 'data') else {}
             with open(log_file_path, 'a') as f:
@@ -178,7 +197,26 @@ class SurveyGroupListCreate(APIView):
         # #region agent log
         import json
         import traceback
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        import os
+        # Detectar la ruta correcta del log (desarrollo vs producción)
+        base_paths = [
+            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
+            '/app/.cursor/debug.log',  # Producción Docker
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
+        ]
+        log_file_path = None
+        for path in base_paths:
+            log_dir = os.path.dirname(path)
+            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
+                log_file_path = path
+                # Crear directorio si no existe
+                try:
+                    os.makedirs(log_dir, exist_ok=True)
+                except:
+                    pass
+                break
+        if not log_file_path:
+            log_file_path = '/tmp/survey_debug.log'  # Fallback final
         try:
             user_role = getattr(request.user, 'role', None) if request.user else None
             user_group_id = getattr(request.user, 'user_group_id', None) if request.user else None
@@ -282,7 +320,26 @@ class SurveyGroupListCreate(APIView):
         # #region agent log
         import json
         import traceback
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        import os
+        # Detectar la ruta correcta del log (desarrollo vs producción)
+        base_paths = [
+            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
+            '/app/.cursor/debug.log',  # Producción Docker
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
+        ]
+        log_file_path = None
+        for path in base_paths:
+            log_dir = os.path.dirname(path)
+            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
+                log_file_path = path
+                # Crear directorio si no existe
+                try:
+                    os.makedirs(log_dir, exist_ok=True)
+                except:
+                    pass
+                break
+        if not log_file_path:
+            log_file_path = '/tmp/survey_debug.log'  # Fallback final
         try:
             with open(log_file_path, 'a') as f:
                 f.write(json.dumps({
@@ -449,7 +506,26 @@ class SurveyListCreate(APIView):
         # #region agent log
         import json
         import traceback
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        import os
+        # Detectar la ruta correcta del log (desarrollo vs producción)
+        base_paths = [
+            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
+            '/app/.cursor/debug.log',  # Producción Docker
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
+        ]
+        log_file_path = None
+        for path in base_paths:
+            log_dir = os.path.dirname(path)
+            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
+                log_file_path = path
+                # Crear directorio si no existe
+                try:
+                    os.makedirs(log_dir, exist_ok=True)
+                except:
+                    pass
+                break
+        if not log_file_path:
+            log_file_path = '/tmp/survey_debug.log'  # Fallback final
         try:
             with open(log_file_path, 'a') as f:
                 f.write(json.dumps({
@@ -748,7 +824,26 @@ class SurveyListCreate(APIView):
         # #region agent log
         import json
         import traceback
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        import os
+        # Detectar la ruta correcta del log (desarrollo vs producción)
+        base_paths = [
+            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
+            '/app/.cursor/debug.log',  # Producción Docker
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
+        ]
+        log_file_path = None
+        for path in base_paths:
+            log_dir = os.path.dirname(path)
+            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
+                log_file_path = path
+                # Crear directorio si no existe
+                try:
+                    os.makedirs(log_dir, exist_ok=True)
+                except:
+                    pass
+                break
+        if not log_file_path:
+            log_file_path = '/tmp/survey_debug.log'  # Fallback final
         try:
             # Obtener información del usuario antes de validar
             user_role = None
@@ -843,7 +938,15 @@ class SurveyListCreate(APIView):
             # #region agent log
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Serializer validation failed: {serializer.errors}")
+            # Log detallado a stderr (visible en Gunicorn logs)
+            logger.error("=" * 60)
+            logger.error("SURVEY CREATION VALIDATION FAILED")
+            logger.error(f"User role: {user_role}")
+            logger.error(f"User group_id: {user_group_id} (type: {type(user_group_id).__name__ if user_group_id else None})")
+            logger.error(f"Request data keys: {list(request.data.keys()) if hasattr(request.data, 'keys') else 'N/A'}")
+            logger.error(f"Request group value: {request.data.get('group') if hasattr(request.data, 'get') else 'N/A'}")
+            logger.error(f"Serializer errors: {serializer.errors}")
+            logger.error("=" * 60)
             
             try:
                 with open(log_file_path, 'a') as f:
@@ -2194,7 +2297,26 @@ class CurrentUserView(APIView):
         # #region agent log
         import json
         import traceback
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
+        import os
+        # Detectar la ruta correcta del log (desarrollo vs producción)
+        base_paths = [
+            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
+            '/app/.cursor/debug.log',  # Producción Docker
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
+        ]
+        log_file_path = None
+        for path in base_paths:
+            log_dir = os.path.dirname(path)
+            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
+                log_file_path = path
+                # Crear directorio si no existe
+                try:
+                    os.makedirs(log_dir, exist_ok=True)
+                except:
+                    pass
+                break
+        if not log_file_path:
+            log_file_path = '/tmp/survey_debug.log'  # Fallback final
         try:
             with open(log_file_path, 'a') as f:
                 f.write(json.dumps({
