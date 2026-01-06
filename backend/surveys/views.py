@@ -818,9 +818,30 @@ class SurveyListCreate(APIView):
                 pass
             # #endregion
             
-            # Mejorar el mensaje de error para que sea más claro
+            # Mejorar el mensaje de error para que sea más claro y detallado
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            # Crear un mensaje de error más descriptivo
+            error_messages = []
+            for field, errors in serializer.errors.items():
+                if isinstance(errors, list):
+                    for error in errors:
+                        if isinstance(error, dict):
+                            error_messages.append(f"{field}: {error}")
+                        else:
+                            error_messages.append(f"{field}: {error}")
+                else:
+                    error_messages.append(f"{field}: {errors}")
+            
+            error_detail = "Error de validación al crear la encuesta. " + "; ".join(error_messages[:5])  # Limitar a 5 errores
+            if len(error_messages) > 5:
+                error_detail += f" ... y {len(error_messages) - 5} error(es) más."
+            
+            logger.error(f"Survey creation validation failed: {serializer.errors}")
+            
             error_response = {
-                "detail": "Error de validación al crear la encuesta.",
+                "detail": error_detail,
                 "errors": serializer.errors
             }
             return Response(error_response, status=status.HTTP_400_BAD_REQUEST)

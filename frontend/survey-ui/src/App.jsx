@@ -3926,7 +3926,26 @@ export default function App() {
           method: method, 
           body: JSON.stringify(surveyPayload) 
         });
-        if (!response.ok) throw new Error('El servidor respondió con un error.');
+        if (!response.ok) {
+          // Intentar obtener el mensaje de error del servidor
+          let errorMessage = 'El servidor respondió con un error.';
+          try {
+            const errorData = await response.json();
+            if (errorData.detail) {
+              errorMessage = errorData.detail;
+            } else if (errorData.errors) {
+              // Formatear errores de validación
+              const errorList = Object.entries(errorData.errors)
+                .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
+                .join('; ');
+              errorMessage = `Error de validación: ${errorList}`;
+            }
+          } catch (e) {
+            // Si no se puede parsear el error, usar el mensaje por defecto
+            console.error("Error parsing error response:", e);
+          }
+          throw new Error(errorMessage);
+        }
         alert("¡Encuesta guardada con éxito!");
         fetchSurveys(); // Recargar la lista de encuestas
         setView('dashboard'); // Volver al dashboard

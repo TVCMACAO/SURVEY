@@ -201,15 +201,15 @@ class SurveyGroupSerializer(serializers.Serializer):
 
 class QuestionSerializer(serializers.Serializer):
     # Support both formats: 'text'/'type' (from MongoDB) and 'question_text'/'question_type' (from API)
-    text = serializers.CharField(max_length=500, required=False, allow_blank=True)
-    question_text = serializers.CharField(max_length=500, required=False, allow_blank=True, source='text')
-    type = serializers.CharField(max_length=50, required=False)
-    question_type = serializers.CharField(max_length=50, required=False, source='type') # e.g., 'text', 'radio', 'checkbox'
-    options = serializers.ListField(child=serializers.CharField(max_length=200), required=False)
-    description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    text = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
+    question_text = serializers.CharField(max_length=500, required=False, allow_blank=True, source='text', default='')
+    type = serializers.CharField(max_length=50, required=False, allow_blank=True, default='short_text')
+    question_type = serializers.CharField(max_length=50, required=False, allow_blank=True, source='type', default='short_text') # e.g., 'text', 'radio', 'checkbox'
+    options = serializers.ListField(child=serializers.CharField(max_length=200), required=False, allow_empty=True, default=list)
+    description = serializers.CharField(max_length=1000, required=False, allow_blank=True, default='')
     required = serializers.BooleanField(required=False, default=False)
     # Section support
-    section_id = serializers.CharField(max_length=255, required=False, allow_null=True) # ID of the section this question belongs to
+    section_id = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True) # ID of the section this question belongs to
     # Conditional logic support
     conditional_logic = serializers.JSONField(required=False, allow_null=True) # Structure: {"type": "show_if", "question_id": "...", "operator": "equals", "value": "..."}
     
