@@ -817,7 +817,13 @@ class SurveyListCreate(APIView):
             except Exception:
                 pass
             # #endregion
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Mejorar el mensaje de error para que sea más claro
+            error_response = {
+                "detail": "Error de validación al crear la encuesta.",
+                "errors": serializer.errors
+            }
+            return Response(error_response, status=status.HTTP_400_BAD_REQUEST)
         
         surveys_collection = get_surveys_collection()
         validated_data = serializer.validated_data
@@ -1001,19 +1007,40 @@ class SurveyListCreate(APIView):
                 # #endregion
                 raise ValidationError(detail="El grupo de encuestas especificado no existe.")
 
-            result = surveys_collection.insert_one({
+            # Asegurar que el grupo esté asignado (debe estar en validated_data después de las validaciones anteriores)
+            if 'group' not in validated_data or validated_data['group'] is None:
+                # Si no hay grupo y no es group_admin, esto es un error
+                if user_role != 'group_admin':
+                    return Response(
+                        {"detail": "El campo 'group' es requerido para crear una encuesta."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                # Si es group_admin y no hay grupo, debería haberse asignado arriba
+                # Si llegamos aquí, hay un problema
+                return Response(
+                    {"detail": "Error: no se pudo asignar el grupo automáticamente. Contacta al administrador."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Preparar datos para insertar
+            survey_doc = {
                 'title': validated_data['title'],
                 'description': validated_data.get('description', ''),
                 'group': validated_data['group'],
-                'questions': validated_data['questions'],
+                'questions': validated_data.get('questions', []),
                 'is_public': validated_data.get('is_public', False),
                 'is_deleted': False,  # Por defecto no está eliminada
-                'created_by': request.user.id if request.user and request.user.is_authenticated else None  # Usuario que creó la encuesta
-            })
+                'created_by': str(request.user.id) if request.user and request.user.is_authenticated and hasattr(request.user, 'id') else None  # Usuario que creó la encuesta
+            }
+            
+            # Agregar sections si existen
+            if 'sections' in validated_data:
+                survey_doc['sections'] = validated_data['sections']
+            
+            result = surveys_collection.insert_one(survey_doc)
             new_survey = surveys_collection.find_one({'_id': result.inserted_id})
             new_survey['id'] = str(new_survey['_id'])
             return Response(SurveySerializer(new_survey).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class SurveyRetrieveUpdateDestroy(APIView):
     """
