@@ -840,10 +840,30 @@ class SurveyListCreate(APIView):
             
             logger.error(f"Survey creation validation failed: {serializer.errors}")
             
-            error_response = {
-                "detail": error_detail,
-                "errors": serializer.errors
-            }
+            # Asegurar que los errores se serialicen correctamente
+            try:
+                # Convertir errores a formato serializable
+                serializable_errors = {}
+                for field, errors in serializer.errors.items():
+                    if isinstance(errors, list):
+                        serializable_errors[field] = [str(e) for e in errors]
+                    elif isinstance(errors, dict):
+                        serializable_errors[field] = {k: str(v) for k, v in errors.items()}
+                    else:
+                        serializable_errors[field] = str(errors)
+                
+                error_response = {
+                    "detail": error_detail,
+                    "errors": serializable_errors
+                }
+            except Exception as e:
+                # Si hay un error al serializar, devolver un mensaje simple
+                logger.error(f"Error serializing error response: {e}")
+                error_response = {
+                    "detail": "Error de validación al crear la encuesta. Por favor, verifica los datos enviados.",
+                    "errors": {"general": ["Error al procesar los errores de validación"]}
+                }
+            
             return Response(error_response, status=status.HTTP_400_BAD_REQUEST)
         
         surveys_collection = get_surveys_collection()
@@ -2223,15 +2243,19 @@ class CurrentUserView(APIView):
                         "data": {
                             "error_type": type(e).__name__,
                             "error_message": str(e),
-                            "traceback": traceback.format_exc(),
-                            "user_type": type(request.user).__name__ if request.user else None
+                            "traceback": traceback.format_exc()[:500]
                         },
                         "timestamp": int(__import__('time').time() * 1000)
                     }) + '\n')
             except Exception:
                 pass
             # #endregion
-            raise
+            
+            # Devolver error JSON en lugar de dejar que Django devuelva HTML
+            return Response(
+                {"detail": f"Error al obtener información del usuario: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class UserListCreate(APIView):
     """
