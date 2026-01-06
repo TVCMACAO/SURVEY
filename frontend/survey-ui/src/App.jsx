@@ -3570,6 +3570,8 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
   const totalQuestions = activeSurveys.reduce((sum, s) => sum + (s.questions?.length || 0), 0);
   
   const isRoot = userRole === 'root';
+  const isGroupAdmin = userRole === 'group_admin';
+  const canManageUsers = isRoot || isGroupAdmin;
 
   return (
     <main className="flex-1 relative z-10">
@@ -3582,7 +3584,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                  <p className="text-sm text-gray-600 font-medium">Gestiona y crea tus formularios de manera eficiente.</p>
                </div>
                <div className="flex gap-3">
-                 {isRoot && onViewUsers && (
+                 {canManageUsers && onViewUsers && (
                    <button 
                      onClick={onViewUsers} 
                      className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
