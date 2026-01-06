@@ -2298,99 +2298,155 @@ class UserListCreate(APIView):
             raise
 
     def post(self, request):
-        # Verificar que el usuario es 'root' o 'group_admin'
-        permission_error = require_admin_permission(request, "crear usuarios")
-        if permission_error:
-            return permission_error
-        
-        user_role, user_group_id = get_user_role_and_group(request)
+        try:
+            # Verificar que el usuario es 'root' o 'group_admin'
+            permission_error = require_admin_permission(request, "crear usuarios")
+            if permission_error:
+                return permission_error
+            
+            user_role, user_group_id = get_user_role_and_group(request)
 
-        serializer = UserCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            # Si es group_admin, asignar automáticamente el grupo del usuario
-            if user_role == 'group_admin' and user_group_id:
-                # Asegurar que el usuario creado pertenece al grupo del admin
-                # Verificar que el role no sea 'root' ni 'group_admin' (solo root puede crear estos roles)
-                requested_role = serializer.validated_data.get('role', 'encuestador')
-                if requested_role == 'root':
-                    return Response(
-                        {"detail": "No tienes permisos para crear usuarios con rol 'root'."},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-                if requested_role == 'group_admin':
-                    return Response(
-                        {"detail": "No tienes permisos para crear usuarios con rol 'Administrador de Grupo'. Solo puedes crear 'Encuestador' o 'Analista'."},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-                
-                from .mongo_user_utils import create_user
-                user_data = serializer.validated_data
-                # Asegurar que el rol sea válido para group_admin (solo encuestador o analista)
-                if requested_role not in ['encuestador', 'analista']:
-                    return Response(
-                        {"detail": "Solo puedes crear usuarios con rol 'Encuestador' o 'Analista'."},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-                # Crear usuario directamente en MongoDB con el grupo asignado automáticamente
-                try:
-                    user_doc = create_user(
-                        username=user_data['username'],
-                        password=user_data['password'],
-                        email=user_data.get('email', ''),
-                        role=requested_role,  # Solo puede ser 'encuestador' o 'analista'
-                        first_name=user_data.get('first_name', ''),
-                        last_name=user_data.get('last_name', ''),
-                        user_group_id=user_group_id  # Asignar automáticamente al grupo del admin
-                    )
-                    return Response({
-                        'id': str(user_doc['_id']),
-                        'username': user_doc['username'],
-                        'email': user_doc.get('email', ''),
-                        'role': user_doc.get('role', 'encuestador'),
-                        'is_active': user_doc.get('is_active', True),
-                        'first_name': user_doc.get('first_name', ''),
-                        'last_name': user_doc.get('last_name', ''),
-                        'date_joined': user_doc.get('date_joined').isoformat() if user_doc.get('date_joined') else None,
-                        'user_group_id': str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
-                    }, status=status.HTTP_201_CREATED)
-                except ValueError as e:
-                    # Usuario ya existe
-                    return Response(
-                        {"detail": str(e), "username": ["Un usuario con este nombre de usuario ya existe."]},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-            else:
-                # Si es root, crear usuario usando el serializer (que maneja MongoDB)
-                from .mongo_user_utils import create_user
-                user_data = serializer.validated_data
-                try:
-                    user_doc = create_user(
-                        username=user_data['username'],
-                        password=user_data['password'],
-                        email=user_data.get('email', ''),
-                        role=user_data.get('role', 'encuestador'),
-                        first_name=user_data.get('first_name', ''),
-                        last_name=user_data.get('last_name', ''),
-                        user_group_id=user_data.get('user_group_id')  # Root puede asignar cualquier grupo
-                    )
-                    return Response({
-                        'id': str(user_doc['_id']),
-                        'username': user_doc['username'],
-                        'email': user_doc.get('email', ''),
-                        'role': user_doc.get('role', 'encuestador'),
-                        'is_active': user_doc.get('is_active', True),
-                        'first_name': user_doc.get('first_name', ''),
-                        'last_name': user_doc.get('last_name', ''),
-                        'date_joined': user_doc.get('date_joined').isoformat() if user_doc.get('date_joined') else None,
-                        'user_group_id': str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
-                    }, status=status.HTTP_201_CREATED)
-                except ValueError as e:
-                    # Usuario ya existe
-                    return Response(
-                        {"detail": str(e), "username": ["Un usuario con este nombre de usuario ya existe."]},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            serializer = UserCreateSerializer(data=request.data)
+            if serializer.is_valid():
+                # Si es group_admin, asignar automáticamente el grupo del usuario
+                if user_role == 'group_admin' and user_group_id:
+                    # Asegurar que el usuario creado pertenece al grupo del admin
+                    # Verificar que el role no sea 'root' ni 'group_admin' (solo root puede crear estos roles)
+                    requested_role = serializer.validated_data.get('role', 'encuestador')
+                    if requested_role == 'root':
+                        return Response(
+                            {"detail": "No tienes permisos para crear usuarios con rol 'root'."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                    if requested_role == 'group_admin':
+                        return Response(
+                            {"detail": "No tienes permisos para crear usuarios con rol 'Administrador de Grupo'. Solo puedes crear 'Encuestador' o 'Analista'."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                    
+                    from .mongo_user_utils import create_user
+                    user_data = serializer.validated_data
+                    # Asegurar que el rol sea válido para group_admin (solo encuestador o analista)
+                    if requested_role not in ['encuestador', 'analista']:
+                        return Response(
+                            {"detail": "Solo puedes crear usuarios con rol 'Encuestador' o 'Analista'."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                    # Crear usuario directamente en MongoDB con el grupo asignado automáticamente
+                    try:
+                        user_doc = create_user(
+                            username=user_data['username'],
+                            password=user_data['password'],
+                            email=user_data.get('email', ''),
+                            role=requested_role,  # Solo puede ser 'encuestador' o 'analista'
+                            first_name=user_data.get('first_name', ''),
+                            last_name=user_data.get('last_name', ''),
+                            user_group_id=user_group_id  # Asignar automáticamente al grupo del admin
+                        )
+                        # Manejar date_joined de forma segura
+                        date_joined_value = None
+                        if user_doc.get('date_joined'):
+                            date_joined = user_doc.get('date_joined')
+                            if hasattr(date_joined, 'isoformat'):
+                                date_joined_value = date_joined.isoformat()
+                            elif isinstance(date_joined, str):
+                                date_joined_value = date_joined
+                            else:
+                                date_joined_value = str(date_joined)
+                        
+                        return Response({
+                            'id': str(user_doc.get('_id', user_doc.get('id', ''))),
+                            'username': user_doc.get('username', ''),
+                            'email': user_doc.get('email', ''),
+                            'role': user_doc.get('role', 'encuestador'),
+                            'is_active': user_doc.get('is_active', True),
+                            'first_name': user_doc.get('first_name', ''),
+                            'last_name': user_doc.get('last_name', ''),
+                            'date_joined': date_joined_value,
+                            'user_group_id': str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
+                        }, status=status.HTTP_201_CREATED)
+                    except ValueError as e:
+                        # Usuario ya existe
+                        return Response(
+                            {"detail": str(e), "username": ["Un usuario con este nombre de usuario ya existe."]},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    except Exception as e:
+                        # Cualquier otro error
+                        import traceback
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Error creating user (group_admin): {type(e).__name__} - {str(e)}")
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        return Response(
+                            {"detail": f"Error al crear usuario: {str(e)}"},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                        )
+                else:
+                    # Si es root, crear usuario usando el serializer (que maneja MongoDB)
+                    from .mongo_user_utils import create_user
+                    user_data = serializer.validated_data
+                    try:
+                        user_doc = create_user(
+                            username=user_data['username'],
+                            password=user_data['password'],
+                            email=user_data.get('email', ''),
+                            role=user_data.get('role', 'encuestador'),
+                            first_name=user_data.get('first_name', ''),
+                            last_name=user_data.get('last_name', ''),
+                            user_group_id=user_data.get('user_group_id')  # Root puede asignar cualquier grupo
+                        )
+                        # Manejar date_joined de forma segura
+                        date_joined_value = None
+                        if user_doc.get('date_joined'):
+                            date_joined = user_doc.get('date_joined')
+                            if hasattr(date_joined, 'isoformat'):
+                                date_joined_value = date_joined.isoformat()
+                            elif isinstance(date_joined, str):
+                                date_joined_value = date_joined
+                            else:
+                                date_joined_value = str(date_joined)
+                        
+                        return Response({
+                            'id': str(user_doc.get('_id', user_doc.get('id', ''))),
+                            'username': user_doc.get('username', ''),
+                            'email': user_doc.get('email', ''),
+                            'role': user_doc.get('role', 'encuestador'),
+                            'is_active': user_doc.get('is_active', True),
+                            'first_name': user_doc.get('first_name', ''),
+                            'last_name': user_doc.get('last_name', ''),
+                            'date_joined': date_joined_value,
+                            'user_group_id': str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
+                        }, status=status.HTTP_201_CREATED)
+                    except ValueError as e:
+                        # Usuario ya existe
+                        return Response(
+                            {"detail": str(e), "username": ["Un usuario con este nombre de usuario ya existe."]},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    except Exception as e:
+                        # Cualquier otro error
+                        import traceback
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Error creating user (root): {type(e).__name__} - {str(e)}")
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                        return Response(
+                            {"detail": f"Error al crear usuario: {str(e)}"},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                        )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            # Capturar cualquier excepción no manejada y devolver JSON en lugar de HTML
+            import traceback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Unexpected error in UserListCreate.post: {type(e).__name__} - {str(e)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response(
+                {"detail": f"Error inesperado al crear usuario: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class UserRetrieveUpdateDestroy(APIView):
     """
