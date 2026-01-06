@@ -3223,20 +3223,24 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleEditGroup(group)}
-                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                title="Editar grupo"
-                              >
-                                <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteGroup(group.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Eliminar grupo"
-                              >
-                                <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
-                              </button>
+                              {userRole === 'root' && (
+                                <>
+                                  <button
+                                    onClick={() => handleEditGroup(group)}
+                                    className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                    title="Editar grupo"
+                                  >
+                                    <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteGroup(group.id)}
+                                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Eliminar grupo"
+                                  >
+                                    <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -3573,6 +3577,33 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
   const isGroupAdmin = userRole === 'group_admin';
   const canManageUsers = isRoot || isGroupAdmin;
 
+  // #region agent log
+  React.useEffect(() => {
+    fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        location: 'App.jsx:SurveyDashboard',
+        message: 'Dashboard render - checking button visibility',
+        data: {
+          userRole: userRole,
+          userRoleType: typeof userRole,
+          isRoot: isRoot,
+          isGroupAdmin: isGroupAdmin,
+          canManageUsers: canManageUsers,
+          onViewUsers: typeof onViewUsers,
+          onViewUsersExists: !!onViewUsers,
+          shouldShowButton: canManageUsers && !!onViewUsers
+        },
+        timestamp: Date.now(),
+        sessionId: 'debug-session',
+        runId: 'run1',
+        hypothesisId: 'A'
+      })
+    }).catch(() => {});
+  }, [userRole, canManageUsers, onViewUsers]);
+  // #endregion
+
   return (
     <main className="flex-1 relative z-10">
         <header className="sticky top-0 z-40 px-4 py-5 md:px-12 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
@@ -3826,6 +3857,26 @@ export default function App() {
       const response = await authenticatedFetch('/api/me/');
       if (response.ok) {
         const userData = await response.json();
+        // #region agent log
+        fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            location: 'App.jsx:fetchCurrentUser',
+            message: 'Current user fetched',
+            data: {
+              userData: userData,
+              role: userData?.role,
+              roleType: typeof userData?.role,
+              roleValue: JSON.stringify(userData?.role)
+            },
+            timestamp: Date.now(),
+            sessionId: 'debug-session',
+            runId: 'run1',
+            hypothesisId: 'B'
+          })
+        }).catch(() => {});
+        // #endregion
         setCurrentUser(userData);
       }
     } catch (error) {

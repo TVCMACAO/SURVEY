@@ -392,6 +392,14 @@ class SurveyGroupRetrieveUpdateDestroy(APIView):
         return Response(serializer.data)
 
     def put(self, request, pk):
+        # Verificar permisos: solo root puede editar grupos
+        user_role, user_group_id = get_user_role_and_group(request)
+        if user_role != 'root':
+            return Response(
+                {"detail": "Solo los usuarios con rol 'root' pueden editar grupos."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         group = self.get_object(pk)
         serializer = SurveyGroupSerializer(group, data=request.data, partial=True)
         if serializer.is_valid():
@@ -406,6 +414,14 @@ class SurveyGroupRetrieveUpdateDestroy(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
+        # Verificar permisos: solo root puede eliminar grupos
+        user_role, user_group_id = get_user_role_and_group(request)
+        if user_role != 'root':
+            return Response(
+                {"detail": "Solo los usuarios con rol 'root' pueden eliminar grupos."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
         group = self.get_object(pk) # Esto también verifica si existe y convierte el ID
         groups_collection = get_survey_groups_collection()
         
@@ -2257,11 +2273,16 @@ class UserListCreate(APIView):
             # Si es group_admin, asignar automáticamente el grupo del usuario
             if user_role == 'group_admin' and user_group_id:
                 # Asegurar que el usuario creado pertenece al grupo del admin
-                # Verificar que el role no sea 'root' (solo root puede crear root)
+                # Verificar que el role no sea 'root' ni 'group_admin' (solo root puede crear estos roles)
                 requested_role = serializer.validated_data.get('role', 'encuestador')
                 if requested_role == 'root':
                     return Response(
                         {"detail": "No tienes permisos para crear usuarios con rol 'root'."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                if requested_role == 'group_admin':
+                    return Response(
+                        {"detail": "No tienes permisos para crear usuarios con rol 'Administrador de Grupo'. Solo puedes crear 'Encuestador' o 'Analista'."},
                         status=status.HTTP_403_FORBIDDEN
                     )
                 
