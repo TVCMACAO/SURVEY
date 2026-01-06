@@ -1037,26 +1037,44 @@ class SurveyListCreate(APIView):
                 # Convertir errores a formato serializable
                 serializable_errors = {}
                 for field, errors in serializer.errors.items():
-                    if isinstance(errors, list):
-                        serializable_errors[field] = [str(e) for e in errors]
-                    elif isinstance(errors, dict):
-                        serializable_errors[field] = {k: str(v) for k, v in errors.items()}
-                    else:
-                        serializable_errors[field] = str(errors)
+                    try:
+                        if isinstance(errors, list):
+                            serializable_errors[field] = [str(e) if not isinstance(e, (dict, list)) else json.dumps(e) for e in errors]
+                        elif isinstance(errors, dict):
+                            serializable_errors[field] = {str(k): str(v) if not isinstance(v, (dict, list)) else json.dumps(v) for k, v in errors.items()}
+                        else:
+                            serializable_errors[field] = str(errors)
+                    except Exception as field_error:
+                        logger.error(f"Error serializing field {field}: {field_error}")
+                        serializable_errors[field] = ["Error al procesar este campo"]
                 
                 error_response = {
-                    "detail": error_detail,
+                    "detail": error_detail[:500] if len(error_detail) > 500 else error_detail,  # Limitar tamaño
                     "errors": serializable_errors
                 }
+                
+                # Validar que la respuesta se puede serializar a JSON
+                json.dumps(error_response)
+                logger.error(f"Error response prepared: {error_response}")
             except Exception as e:
                 # Si hay un error al serializar, devolver un mensaje simple
                 logger.error(f"Error serializing error response: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 error_response = {
                     "detail": "Error de validación al crear la encuesta. Por favor, verifica los datos enviados.",
                     "errors": {"general": ["Error al procesar los errores de validación"]}
                 }
             
-            return Response(error_response, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                return Response(error_response, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                logger.error(f"Error creating Response object: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                # Fallback: respuesta mínima
+                return Response(
+                    {"detail": "Error de validación al crear la encuesta."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         surveys_collection = get_surveys_collection()
         validated_data = serializer.validated_data
@@ -2406,16 +2424,27 @@ class CurrentUserView(APIView):
                         # Intentar convertir a string
                         date_joined_value = str(request.user.date_joined)
                 
+                # Manejar user_group_id de forma segura (puede ser ObjectId, string, o None)
+                user_group_id_value = None
+                user_group_id_raw = getattr(request.user, 'user_group_id', None)
+                if user_group_id_raw:
+                    if isinstance(user_group_id_raw, ObjectId):
+                        user_group_id_value = str(user_group_id_raw)
+                    elif isinstance(user_group_id_raw, str):
+                        user_group_id_value = user_group_id_raw
+                    else:
+                        user_group_id_value = str(user_group_id_raw)
+                
                 user_data = {
-                    'id': request.user.id,
-                    'username': request.user.username,
-                    'first_name': request.user.first_name,
-                    'last_name': request.user.last_name,
-                    'email': request.user.email,
-                    'role': request.user.role,
-                    'is_active': request.user.is_active,
+                    'id': str(request.user.id) if request.user.id else None,
+                    'username': str(request.user.username) if request.user.username else '',
+                    'first_name': str(request.user.first_name) if request.user.first_name else '',
+                    'last_name': str(request.user.last_name) if request.user.last_name else '',
+                    'email': str(request.user.email) if request.user.email else '',
+                    'role': str(request.user.role) if request.user.role else 'encuestador',
+                    'is_active': bool(request.user.is_active) if hasattr(request.user, 'is_active') else True,
                     'date_joined': date_joined_value,
-                    'user_group_id': getattr(request.user, 'user_group_id', None)
+                    'user_group_id': user_group_id_value
                 }
                 # #region agent log
                 try:
