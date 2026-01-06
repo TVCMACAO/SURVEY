@@ -8,7 +8,7 @@ from bson import ObjectId
 
 
 def create_user(username, password, email='', role='encuestador', 
-                is_staff=False, is_superuser=False, first_name='', last_name=''):
+                is_staff=False, is_superuser=False, first_name='', last_name='', user_group_id=None):
     """
     Crea un nuevo usuario en MongoDB.
     """
@@ -32,6 +32,13 @@ def create_user(username, password, email='', role='encuestador',
         'last_name': last_name,
         'date_joined': datetime.utcnow(),
     }
+    
+    # Agregar user_group_id si se proporciona
+    if user_group_id is not None:
+        try:
+            user_doc['user_group_id'] = ObjectId(user_group_id)
+        except Exception:
+            user_doc['user_group_id'] = user_group_id
     
     # Insertar en MongoDB
     result = users_collection.insert_one(user_doc)

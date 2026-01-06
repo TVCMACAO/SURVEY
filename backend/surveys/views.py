@@ -2208,30 +2208,26 @@ class UserListCreate(APIView):
             # Si es group_admin, asignar automáticamente el grupo del usuario
             if user_role == 'group_admin' and user_group_id:
                 # Asegurar que el usuario creado pertenece al grupo del admin
+                # Verificar que el role no sea 'root' (solo root puede crear root)
+                requested_role = serializer.validated_data.get('role', 'encuestador')
+                if requested_role == 'root':
+                    return Response(
+                        {"detail": "No tienes permisos para crear usuarios con rol 'root'."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                
                 from .mongo_user_utils import create_user
                 user_data = serializer.validated_data
-                user_data['user_group_id'] = user_group_id
                 # Crear usuario directamente en MongoDB con el grupo asignado
                 user_doc = create_user(
                     username=user_data['username'],
                     password=user_data['password'],
                     email=user_data.get('email', ''),
-                    role=user_data.get('role', 'encuestador'),
+                    role=requested_role,  # Usar el role validado (no puede ser root)
                     first_name=user_data.get('first_name', ''),
-                    last_name=user_data.get('last_name', '')
+                    last_name=user_data.get('last_name', ''),
+                    user_group_id=user_group_id  # Asignar automáticamente al grupo del admin
                 )
-                # Actualizar el user_group_id
-                users_collection = get_mongo_collection('users')
-                try:
-                    users_collection.update_one(
-                        {'_id': user_doc['_id']},
-                        {'$set': {'user_group_id': ObjectId(user_group_id)}}
-                    )
-                except Exception:
-                    users_collection.update_one(
-                        {'_id': user_doc['_id']},
-                        {'$set': {'user_group_id': user_group_id}}
-                    )
                 return Response({
                     'id': str(user_doc['_id']),
                     'username': user_doc['username'],
@@ -2240,7 +2236,8 @@ class UserListCreate(APIView):
                     'is_active': user_doc.get('is_active', True),
                     'first_name': user_doc.get('first_name', ''),
                     'last_name': user_doc.get('last_name', ''),
-                    'date_joined': user_doc.get('date_joined').isoformat() if user_doc.get('date_joined') else None
+                    'date_joined': user_doc.get('date_joined').isoformat() if user_doc.get('date_joined') else None,
+                    'user_group_id': str(user_doc.get('user_group_id')) if user_doc.get('user_group_id') else None
                 }, status=status.HTTP_201_CREATED)
             else:
                 user = serializer.save()
