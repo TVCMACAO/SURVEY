@@ -3830,26 +3830,6 @@ export default function App() {
       const response = await authenticatedFetch('/api/me/');
       if (response.ok) {
         const userData = await response.json();
-        // #region agent log
-        fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'App.jsx:fetchCurrentUser',
-            message: 'Current user fetched',
-            data: {
-              userData: userData,
-              role: userData?.role,
-              roleType: typeof userData?.role,
-              roleValue: JSON.stringify(userData?.role)
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'B'
-          })
-        }).catch(() => {});
-        // #endregion
         setCurrentUser(userData);
       }
     } catch (error) {
