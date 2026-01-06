@@ -3748,6 +3748,17 @@ class UserRetrieveUpdateDestroy(APIView):
                         else:
                             date_joined_value = str(date_joined)
                     
+                    # Manejar user_group_id de forma segura (puede ser ObjectId, string, o None)
+                    user_group_id_value = None
+                    user_group_id_raw = updated_user_doc.get('user_group_id')
+                    if user_group_id_raw:
+                        if isinstance(user_group_id_raw, ObjectId):
+                            user_group_id_value = str(user_group_id_raw)
+                        elif isinstance(user_group_id_raw, str):
+                            user_group_id_value = user_group_id_raw
+                        else:
+                            user_group_id_value = str(user_group_id_raw)
+                    
                     user_data = {
                         'id': str(updated_user_doc.get('_id', updated_user_doc.get('id'))),
                         'username': updated_user_doc.get('username'),
@@ -3756,7 +3767,8 @@ class UserRetrieveUpdateDestroy(APIView):
                         'is_active': updated_user_doc.get('is_active', True),
                         'first_name': updated_user_doc.get('first_name', ''),
                         'last_name': updated_user_doc.get('last_name', ''),
-                        'date_joined': date_joined_value
+                        'date_joined': date_joined_value,
+                        'user_group_id': user_group_id_value
                     }
                     
                     # #region agent log
@@ -3780,6 +3792,14 @@ class UserRetrieveUpdateDestroy(APIView):
                     return Response(user_data)
                 else:
                     # Si no se encuentra, devolver los datos del objeto user actualizado
+                    # Obtener user_group_id del objeto user si está disponible
+                    user_group_id_value = None
+                    if hasattr(user, 'user_group_id') and user.user_group_id:
+                        if isinstance(user.user_group_id, ObjectId):
+                            user_group_id_value = str(user.user_group_id)
+                        else:
+                            user_group_id_value = str(user.user_group_id)
+                    
                     user_data = {
                         'id': str(user.id),
                         'username': user.username,
@@ -3788,7 +3808,8 @@ class UserRetrieveUpdateDestroy(APIView):
                         'is_active': user.is_active,
                         'first_name': user.first_name,
                         'last_name': user.last_name,
-                        'date_joined': user.date_joined.isoformat() if user.date_joined and hasattr(user.date_joined, 'isoformat') else (str(user.date_joined) if user.date_joined else None)
+                        'date_joined': user.date_joined.isoformat() if user.date_joined and hasattr(user.date_joined, 'isoformat') else (str(user.date_joined) if user.date_joined else None),
+                        'user_group_id': user_group_id_value
                     }
                     return Response(user_data)
             else:

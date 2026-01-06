@@ -129,10 +129,11 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         ],
         required=False
     )
+    user_group_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)  # Campo para asignar grupo
     
     class Meta:
         model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'password_confirm', 'role', 'is_active')
+        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'password_confirm', 'role', 'is_active', 'user_group_id')
         extra_kwargs = {
             'username': {'read_only': True},  # No permitir cambiar username
             'password': {'write_only': True, 'required': False},
@@ -157,6 +158,22 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         validated_data.pop('password_confirm', None)
         
+        # Manejar user_group_id: convertir string a ObjectId si es necesario
+        user_group_id = validated_data.pop('user_group_id', None)
+        if user_group_id:
+            # Si viene como string vacío, establecer como None
+            if user_group_id == '':
+                user_group_id = None
+            else:
+                # Intentar convertir a ObjectId si es un string válido
+                try:
+                    if ObjectId.is_valid(str(user_group_id)):
+                        user_group_id = ObjectId(user_group_id)
+                    else:
+                        user_group_id = str(user_group_id)
+                except Exception:
+                    user_group_id = str(user_group_id)
+        
         # Actualizar en MongoDB
         users_collection = get_mongo_collection('users')
         user_id = instance.id if hasattr(instance, 'id') else instance.pk
@@ -171,6 +188,9 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         for attr, value in validated_data.items():
             update_data[attr] = value
         
+        # Agregar user_group_id al update_data (puede ser None para limpiar el grupo)
+        update_data['user_group_id'] = user_group_id
+        
         if password:
             update_data['password'] = make_password(password)
         
@@ -183,6 +203,10 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         # Actualizar el objeto instance con los nuevos valores
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        
+        # Actualizar user_group_id en el instance
+        if hasattr(instance, 'user_group_id'):
+            instance.user_group_id = user_group_id
         
         if password:
             # No podemos usar set_password en MongoUser, pero ya lo actualizamos en MongoDB
