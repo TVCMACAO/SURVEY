@@ -199,6 +199,10 @@ REST_FRAMEWORK = {
     # 'DEFAULT_PERMISSION_CLASSES': (
     #     'rest_framework.permissions.IsAuthenticated', # Default to require authentication
     # ),
+    'EXCEPTION_HANDLER': 'surveys.exception_handlers.custom_exception_handler',
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',
+    ),
 }
 
 # Simple JWT settings
