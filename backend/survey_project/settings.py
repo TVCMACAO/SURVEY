@@ -99,6 +99,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'surveys.json_error_middleware.JSONErrorMiddleware',  # FIRST - Catch ALL errors as JSON
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware', # Must be before CommonMiddleware
