@@ -322,6 +322,9 @@ class SurveySerializer(serializers.Serializer):
     is_deleted = serializers.BooleanField(required=False, default=False) # Indica si la encuesta está eliminada (soft delete)
     created_by = serializers.CharField(read_only=True, required=False) # ID del usuario que creó la encuesta
     created_by_username = serializers.CharField(read_only=True, required=False) # Username del usuario que creó la encuesta
+    # Campos para configurar texto legal del consentimiento de firma (Ley 1581/2012 Colombia)
+    consent_responsible = serializers.CharField(max_length=500, required=False, allow_blank=True, default='') # Nombre del responsable del tratamiento de datos
+    consent_purpose = serializers.CharField(max_length=1000, required=False, allow_blank=True, default='') # Finalidad del tratamiento de la firma
 
     def to_representation(self, instance):
         # Get base representation
@@ -363,6 +366,7 @@ class ResponseSerializer(serializers.Serializer):
     answers = serializers.JSONField() # Almacena las respuestas como un campo JSON flexible
     synced = serializers.BooleanField(default=False)
     created_at = serializers.DateTimeField(read_only=True, required=False) # Fecha de creación
+    signature_consent_at = serializers.DateTimeField(required=False, allow_null=True) # Timestamp del consentimiento de firma (Ley 1581/2012 Colombia)
 
     def create(self, validated_data):
         pass

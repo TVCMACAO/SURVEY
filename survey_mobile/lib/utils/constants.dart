@@ -21,7 +21,7 @@ class StorageKeys {
 
 class DatabaseConstants {
   static const String databaseName = 'survey_mobile.db';
-  static const int databaseVersion = 3;  // v3: surveyor_id es TEXT (MongoDB ObjectId)
+  static const int databaseVersion = 4;  // v4: signature_consent_at para Ley 1581/2012 Colombia
   
   // Tablas
   static const String tableSurveys = 'surveys';
