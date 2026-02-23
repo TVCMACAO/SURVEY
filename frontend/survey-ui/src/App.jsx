@@ -5,7 +5,7 @@ import {
   faShareNodes, faTrash, faXmark, faBars, faEllipsisVertical, faChevronLeft, 
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
   faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus, faUser,
-  faSignature, faEraser, faEnvelope, faHeading
+  faSignature, faEraser, faEnvelope, faHeading, faCopy
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
 import * as XLSX from 'xlsx';
@@ -166,9 +166,21 @@ const ToolButton = ({ icon, label, onClick, color }) => (
 
 // --- VISTA: EDITOR DE ENCUESTAS ---
 
-const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection }) => {
+const CONDITION_OPERATORS = [
+  { value: 'equals', label: 'es igual a' },
+  { value: 'not_equals', label: 'no es igual a' },
+  { value: 'contains', label: 'contiene' },
+  { value: 'greater_than', label: 'es mayor que' },
+  { value: 'less_than', label: 'es menor que' },
+  { value: 'greater_than_or_equal', label: 'es mayor o igual que' },
+  { value: 'less_than_or_equal', label: 'es menor o igual que' },
+];
+
+const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection, allQuestions = [] }) => {
   const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(data.type);
   const fileInputRef = React.useRef(null);
+  const otherQuestions = (allQuestions || []).filter(q => q.id && q.id !== data.id);
+  const hasCondition = !!(data.conditional_logic && data.conditional_logic.question_id);
 
   const handleExcelImport = (e) => {
     const file = e.target.files?.[0];
@@ -349,6 +361,57 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                  </div>
                )}
              </div>
+             {data.type !== 'Título' && otherQuestions.length > 0 && (
+               <div className="flex flex-col gap-2 pt-2 border-t border-gray-200" onClick={(e) => e.stopPropagation()}>
+                 <label className="flex items-center gap-2 cursor-pointer">
+                   <input
+                     type="checkbox"
+                     checked={hasCondition}
+                     onChange={(e) => onUpdate({ ...data, conditional_logic: e.target.checked ? { type: 'show_if', question_id: otherQuestions[0]?.id || '', operator: 'equals', value: '' } : null })}
+                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                   />
+                   <span className="text-gray-600 font-medium">Mostrar solo si…</span>
+                 </label>
+                 {hasCondition && (
+                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-5">
+                     <div>
+                       <span className="block text-[10px] text-gray-400 mb-0.5">Pregunta</span>
+                       <select
+                         value={data.conditional_logic?.question_id || ''}
+                         onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: e.target.value, operator: data.conditional_logic?.operator || 'equals', value: data.conditional_logic?.value ?? '' } })}
+                         className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500"
+                       >
+                         {otherQuestions.map(q => (
+                           <option key={q.id} value={q.id}>{(q.text || q.question_text || '').slice(0, 40)}{(q.text || q.question_text || '').length > 40 ? '…' : ''}</option>
+                         ))}
+                       </select>
+                     </div>
+                     <div>
+                       <span className="block text-[10px] text-gray-400 mb-0.5">Operador</span>
+                       <select
+                         value={data.conditional_logic?.operator || 'equals'}
+                         onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: data.conditional_logic?.question_id || '', operator: e.target.value, value: data.conditional_logic?.value ?? '' } })}
+                         className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500"
+                       >
+                         {CONDITION_OPERATORS.map(op => (
+                           <option key={op.value} value={op.value}>{op.label}</option>
+                         ))}
+                       </select>
+                     </div>
+                     <div>
+                       <span className="block text-[10px] text-gray-400 mb-0.5">Valor</span>
+                       <input
+                         type="text"
+                         value={data.conditional_logic?.value ?? ''}
+                         onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: data.conditional_logic?.question_id || '', operator: data.conditional_logic?.operator || 'equals', value: e.target.value } })}
+                         placeholder="Valor"
+                         className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500"
+                       />
+                     </div>
+                   </div>
+                 )}
+               </div>
+             )}
              <span className="text-indigo-400 flex items-center gap-1 text-xs">
                <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"/> 
                <span className="hidden sm:inline">Editando</span>
@@ -1584,6 +1647,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                    onUpdate={(newData) => updateQuestion(q.id, newData)}
                    sections={surveyData.sections || []}
                    onAssignSection={(sectionId) => assignQuestionToSection(q.id, sectionId)}
+                   allQuestions={surveyData.questions}
                  />
                ))
              )}
@@ -3597,7 +3661,7 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
 );
 };
 
-const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus }) => {
+const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus, onDuplicate }) => {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const titleRef = React.useRef(null);
@@ -3708,6 +3772,15 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
               >
                 <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
               </button>
+              {onDuplicate && (
+              <button 
+                onClick={onDuplicate} 
+                className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-amber-50 hover:to-orange-50 text-gray-500 hover:text-amber-600 transition-all duration-200 hover:scale-110 active:scale-95" 
+                title="Duplicar encuesta"
+              >
+                <FontAwesomeIcon icon={faCopy} size="sm" className="fa-icon-force-current" />
+              </button>
+              )}
               <button 
                 onClick={onDelete} 
                 className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-red-50 hover:to-rose-50 text-gray-500 hover:text-red-600 transition-all duration-200 hover:scale-110 active:scale-95" 
@@ -3723,7 +3796,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
   );
 };
 
-const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers }) => {
+const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onDuplicateSurvey }) => {
   const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
   
   // Filtrar encuestas activas y eliminadas
@@ -3900,6 +3973,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                         onDelete={() => onDeleteSurvey(s.id || s._id)} 
                         onViewResponses={() => onViewResponses(s)} 
                         onUpdatePublicStatus={onUpdatePublicStatus}
+                        onDuplicate={onDuplicateSurvey ? () => onDuplicateSurvey(s) : undefined}
                       />)}
                   </div>
                 </>
@@ -4143,6 +4217,40 @@ export default function App() {
       }
   }
 
+  const handleDuplicateSurvey = async (survey) => {
+    const surveyId = survey?.id || survey?._id;
+    if (!surveyId) {
+      alert('Error: La encuesta no tiene un ID válido');
+      return;
+    }
+    try {
+      const res = await authenticatedFetch(`/api/surveys/${surveyId}/`);
+      if (!res.ok) throw new Error('Error al cargar la encuesta');
+      const data = await res.json();
+      const payload = {
+        title: (data.title || 'Encuesta') + ' (copia)',
+        description: data.description || '',
+        group: data.group || null,
+        questions: data.questions || [],
+        sections: data.sections || [],
+        is_public: false,
+      };
+      const createRes = await authenticatedFetch('/api/surveys/', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!createRes.ok) {
+        const errData = await createRes.json().catch(() => ({}));
+        throw new Error(errData.detail || errData.title?.[0] || 'Error al crear la copia');
+      }
+      alert('Encuesta duplicada correctamente.');
+      await fetchSurveys();
+    } catch (error) {
+      console.error('Error duplicating survey:', error);
+      alert(error.message || 'No se pudo duplicar la encuesta.');
+    }
+  };
+
   const handleRestoreSurvey = async (id) => {
       if (!window.confirm("¿Estás seguro de que quieres restaurar esta encuesta?")) return;
       
@@ -4339,6 +4447,7 @@ export default function App() {
               onDeleteSurvey={handleDeleteSurvey}
               onRestoreSurvey={handleRestoreSurvey}
               onPermanentDeleteSurvey={handlePermanentDeleteSurvey}
+              onDuplicateSurvey={handleDuplicateSurvey}
               onEditSurvey={(survey) => {
                 const surveyId = survey.id || survey._id;
                 if (!surveyId) {
