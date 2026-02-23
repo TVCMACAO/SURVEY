@@ -1752,6 +1752,27 @@ class SurveyRetrieveUpdateDestroy(APIView):
             surveys_collection = get_surveys_collection()
             validated_data = serializer.validated_data
             
+            # Si el cuerpo solo actualiza is_public, no tocar preguntas ni otros campos (evita corrupción si el front envía solo is_public)
+            request_keys = set(request.data.keys()) if hasattr(request.data, 'keys') else set()
+            # #region agent log
+            try:
+                import json as _json
+                with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as _f:
+                    _f.write(_json.dumps({"location":"surveys/views.py:PUT","message":"PUT survey body keys","data":{"request_keys": list(request_keys), "only_is_public_path": request_keys <= {'is_public', 'id'} or request_keys == {'is_public'},"hypothesisId":"PUT_keys"}, "timestamp": int(__import__('time').time()*1000)}) + '\n')
+            except Exception:
+                pass
+            # #endregion
+            if request_keys <= {'is_public', 'id'} or request_keys == {'is_public'}:
+                try:
+                    surveys_collection.update_one(
+                        {"_id": ObjectId(pk)},
+                        {"$set": {"is_public": validated_data.get('is_public', survey.get('is_public', False))}}
+                    )
+                    updated_survey = self.get_object(pk)
+                    return Response(SurveySerializer(updated_survey).data)
+                except Exception:
+                    pass  # fallback to full update below
+            
             # Si el usuario tiene un grupo asignado (no es root), forzar el uso de su grupo
             # Esto garantiza que las encuestas siempre pertenezcan al grupo del usuario
             if user_role and user_group_id and user_role != 'root':
