@@ -3701,20 +3701,10 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
       const newIsPublic = linkType === 'public';
       const surveyId = survey.id || survey._id;
       
-      // Obtener los datos completos de la encuesta primero
-      const surveyResponse = await authenticatedFetch(`/api/surveys/${surveyId}/`);
-      if (!surveyResponse.ok) {
-        throw new Error('Error al obtener los datos de la encuesta');
-      }
-      const surveyData = await surveyResponse.json();
-      
-      // Actualizar el estado en el backend
+      // Solo enviar is_public para no sobrescribir preguntas ni tipos (evita corrupción al publicar)
       const response = await authenticatedFetch(`/api/surveys/${surveyId}/`, {
         method: 'PUT',
-        body: JSON.stringify({
-          ...surveyData,
-          is_public: newIsPublic
-        })
+        body: JSON.stringify({ is_public: newIsPublic })
       });
       
       if (!response.ok) {
