@@ -146,6 +146,19 @@ const SignaturePad = ({ value, onChange }) => {
 
 // --- SUB-COMPONENTES REUTILIZABLES ---
 
+const TOOL_BUTTON_COLORS = {
+  blue: 'bg-blue-500 group-hover:shadow-blue-500/40',
+  gray: 'bg-gray-500 group-hover:shadow-gray-500/40',
+  purple: 'bg-purple-500 group-hover:shadow-purple-500/40',
+  green: 'bg-green-500 group-hover:shadow-green-500/40',
+  orange: 'bg-orange-500 group-hover:shadow-orange-500/40',
+  yellow: 'bg-yellow-500 group-hover:shadow-yellow-500/40',
+  pink: 'bg-pink-500 group-hover:shadow-pink-500/40',
+  red: 'bg-red-500 group-hover:shadow-red-500/40',
+  indigo: 'bg-indigo-500 group-hover:shadow-indigo-500/40',
+  teal: 'bg-teal-500 group-hover:shadow-teal-500/40',
+};
+
 const ToolButton = ({ icon, label, onClick, color }) => (
   <button 
     onClick={onClick}
@@ -157,7 +170,7 @@ const ToolButton = ({ icon, label, onClick, color }) => (
       flexShrink: 0
     }}
   >
-    <div className={`tool-button-icon-container w-8 h-8 sm:w-9 sm:h-9 md:w-9 md:h-9 rounded-lg sm:rounded-xl md:rounded-xl flex items-center justify-center shadow-md md:shadow-lg text-white flex-shrink-0 ${color ? `bg-${color}-500 group-hover:shadow-${color}-500/40` : 'bg-gray-500'}`}>
+    <div className={`tool-button-icon-container w-8 h-8 sm:w-9 sm:h-9 md:w-9 md:h-9 rounded-lg sm:rounded-xl md:rounded-xl flex items-center justify-center shadow-md md:shadow-lg text-white flex-shrink-0 ${TOOL_BUTTON_COLORS[color] || 'bg-gray-500 group-hover:shadow-gray-500/40'}`}>
       <FontAwesomeIcon icon={icon} size="xs" className="fa-icon-force-white text-xs sm:text-sm" />
     </div>
     <span className="text-[9px] sm:text-[10px] md:text-[10px] font-bold text-gray-500 uppercase tracking-wider group-hover:text-gray-800 hidden md:block text-center leading-tight" style={{ wordBreak: 'break-word', overflowWrap: 'break-word', whiteSpace: 'normal', maxWidth: '100%' }}>{label}</span>
@@ -341,7 +354,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                 {data.type === 'Texto Corto' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario escribirá su respuesta aquí...</div>}
                 {data.type === 'Párrafo' && <div className="h-20 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario escribirá un párrafo aquí...</div>}
                 {data.type === 'Número' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario introducirá un número aquí...</div>}
-                {data.type === 'Fecha' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario seleccionará una fecha aquí...</div>}
+                {data.type === 'Fecha' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">{data.date_include_time ? 'El usuario seleccionará fecha y hora aquí...' : 'El usuario seleccionará una fecha aquí...'}</div>}
                 {data.type === 'Correo Electrónico' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario ingresará su correo electrónico aquí...</div>}
                 {data.type === 'Firma' && <div className="h-32 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-2 shadow-inner">
                   <FontAwesomeIcon icon={faSignature} size="2x" className="text-gray-400 fa-icon-force-current" />
@@ -400,6 +413,12 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                  <div className={`w-3 h-3 rounded border ${data.required ? 'bg-indigo-500 border-indigo-500' : 'border-gray-400'}`} />
                  <span>Obligatorio</span>
                </div>
+               )}
+               {data.type === 'Fecha' && (
+                 <div onClick={() => onUpdate({...data, date_include_time: !data.date_include_time})} className={`flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-gray-200 transition-colors ${data.date_include_time ? 'text-indigo-600' : 'text-gray-400'}`}>
+                   <div className={`w-3 h-3 rounded border ${data.date_include_time ? 'bg-indigo-500 border-indigo-500' : 'border-gray-400'}`} />
+                   <span>Incluir hora</span>
+                 </div>
                )}
                {sections.length > 0 && (
                  <div className="flex items-center gap-2">
@@ -550,7 +569,7 @@ const SurveyPreview = ({ surveyData, onBack }) => {
 
           {question.type === 'Fecha' && (
             <input
-              type="date"
+              type={question.date_include_time ? 'datetime-local' : 'date'}
               value={answers[questionId] || ''}
               onChange={(e) => handleAnswerChange(questionId, e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
@@ -793,8 +812,13 @@ const PublicSurveyView = ({ surveyId }) => {
         setLoading(true);
         const response = await fetch(`/api/public/surveys/${surveyId}/`);
         if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error('Encuesta no encontrada');
+          let message = 'Encuesta no encontrada';
+          try {
+            const err = await response.json();
+            if (response.status === 403 && err.detail) message = err.detail;
+            else if (err.detail) message = typeof err.detail === 'string' ? err.detail : message;
+          } catch (_) {}
+          throw new Error(message);
         }
         const data = await response.json();
         
@@ -1096,7 +1120,7 @@ const PublicSurveyView = ({ surveyId }) => {
       return (
         <div key={questionId} className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 group">
           <div className="min-w-0">
-            <h3 className="text-xl md:text-2xl font-black text-gray-900 mb-3 leading-tight">
+            <h3 className="text-xl md:text-2xl font-black text-gray-800 mb-3 leading-tight">
               {question.text || question.question_text}
             </h3>
             {question.description && (
@@ -1112,11 +1136,11 @@ const PublicSurveyView = ({ surveyId }) => {
         {/* Header de la pregunta */}
         <div className="mb-6 pb-4 border-b border-gray-200/60">
           <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-lg">
+            <div className="flex-shrink-0 w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-lg">
               {index + 1}
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-xl md:text-2xl font-black text-gray-900 mb-2 leading-tight">
+              <h3 className="text-xl md:text-2xl font-black text-gray-800 mb-2 leading-tight">
                 {question.text || question.question_text}
                 {question.required && <span className="text-red-500 ml-2 text-2xl">*</span>}
               </h3>
@@ -1160,7 +1184,7 @@ const PublicSurveyView = ({ surveyId }) => {
 
           {question.type === 'Fecha' && (
             <input
-              type="date"
+              type={question.date_include_time ? 'datetime-local' : 'date'}
               value={answers[questionId] || ''}
               onChange={(e) => handleAnswerChange(questionId, e.target.value)}
               className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white"
@@ -1328,9 +1352,9 @@ const PublicSurveyView = ({ surveyId }) => {
         {/* Título y descripción del formulario */}
         <div className="mb-12">
           <div className="rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
-            <div className="h-2 bg-purple-600 rounded-t-xl" aria-hidden="true" />
-            <div className="border-l-4 border-l-blue-500 px-6 py-6 md:px-8 md:py-8 text-center">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-gray-900 leading-tight">
+            <div className="h-2 bg-indigo-600 rounded-t-xl" aria-hidden="true" />
+            <div className="border-l-4 border-l-indigo-600 px-6 py-6 md:px-8 md:py-8 text-center">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-gray-800 leading-tight">
                 {surveyData.title || 'Formulario sin título'}
               </h1>
               <p className="mt-3 md:mt-4 text-lg md:text-xl text-gray-600 leading-relaxed max-w-3xl mx-auto">
@@ -3961,7 +3985,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
   );
 };
 
-const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, onViewUsers, onDuplicateSurvey }) => {
+const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, currentUser, onViewUsers, onDuplicateSurvey }) => {
   const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
   
   // Filtrar encuestas activas y eliminadas
@@ -3977,17 +4001,27 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
   const isGroupAdmin = userRole === 'group_admin';
   const canManageUsers = isRoot || isGroupAdmin;
 
+  const displayName = currentUser ? [currentUser.first_name, currentUser.last_name].filter(Boolean).join(' ').trim() || currentUser.username : '';
+  const roleLabel = (currentUser?.role && { root: 'Administrador', group_admin: 'Administrador de grupo', encuestador: 'Encuestador' }[currentUser.role]) || currentUser?.role || '';
+
   return (
     <main className="flex-1 relative z-10">
         <header className="sticky top-0 z-40 px-4 py-5 md:px-12 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
            <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-               <div>
+               <div className="min-w-0 flex-1">
                  <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
                    Mis Encuestas
                  </h1>
                  <p className="text-sm text-gray-600 font-medium">Gestiona y crea tus formularios de manera eficiente.</p>
+                 {currentUser && (
+                   <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs sm:text-sm text-gray-500">
+                     <span className="font-semibold text-gray-700">{displayName || currentUser.username}</span>
+                     {currentUser.email && <span>{currentUser.email}</span>}
+                     {roleLabel && <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-medium">{roleLabel}</span>}
+                   </div>
+                 )}
                </div>
-               <div className="flex gap-3">
+               <div className="flex gap-3 flex-shrink-0">
                  {canManageUsers && onViewUsers && (
                    <button 
                      onClick={onViewUsers} 
@@ -4631,6 +4665,7 @@ export default function App() {
               onLogout={handleLogout}
               onUpdatePublicStatus={handleUpdatePublicStatus}
               userRole={currentUser?.role}
+              currentUser={currentUser}
               onViewUsers={() => setView('users')}
           />
       ) : view === 'users' ? (
@@ -4660,6 +4695,9 @@ export default function App() {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fadeIn { animation: fadeIn 0.5s ease-in-out forwards; }
       `}</style>
+    </div>
+  );
+}/style>
     </div>
   );
 }

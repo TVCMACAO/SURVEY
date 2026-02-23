@@ -2051,12 +2051,15 @@ class PublicSurveyView(APIView):
                     f.write(json.dumps(log_data) + '\n')
             except: pass
             if not is_public:
-                log_data = {"location": "views.py:381", "message": "Survey is not public, raising ValidationError", "data": {"survey_id": str(survey.get('_id', 'N/A'))}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
+                log_data = {"location": "views.py:381", "message": "Survey is not public, returning 403", "data": {"survey_id": str(survey.get('_id', 'N/A'))}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
                 try:
                     with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
                         f.write(json.dumps(log_data) + '\n')
                 except: pass
-                raise ValidationError(detail="Esta encuesta no es pública. Se requiere autenticación para acceder.")
+                return Response(
+                    {"detail": "Esta encuesta no es pública. Se requiere autenticación para acceder."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
             
             # Ensure 'id' field exists for serialization
             if '_id' in survey:

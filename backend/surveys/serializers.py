@@ -256,6 +256,7 @@ class QuestionSerializer(serializers.Serializer):
     # Evaluation table: items (rows) and columns (e.g. CUMPLE, NO CUMPLE, OBSERVACIONES)
     evaluation_items = serializers.JSONField(required=False, allow_null=True)  # [{"id": "...", "label": "Item1"}, ...]
     evaluation_columns = serializers.JSONField(required=False, allow_null=True)  # [{"id": "...", "label": "CUMPLE", "inputType": "checkbox"}, {"id": "...", "label": "OBSERVACIONES", "inputType": "text"}, ...]
+    date_include_time = serializers.BooleanField(required=False, default=False)  # For type date: if True, show datetime picker
     
     def to_internal_value(self, data):
         # Normalizar los datos para aceptar tanto question_text como text, y question_type como type
@@ -310,6 +311,8 @@ class QuestionSerializer(serializers.Serializer):
             result['evaluation_items'] = data['evaluation_items']
         if 'evaluation_columns' in data:
             result['evaluation_columns'] = data['evaluation_columns']
+        if 'date_include_time' in data:
+            result['date_include_time'] = data['date_include_time']
         return result
 
 class SectionSerializer(serializers.Serializer):
