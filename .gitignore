@@ -57,6 +57,7 @@ frontend/survey-ui/dist/
 .env
 .env.local
 .env.*.local
+.github_token
 
 # Backups
 backups/
