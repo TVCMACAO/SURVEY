@@ -1782,21 +1782,29 @@ class SurveyRetrieveUpdateDestroy(APIView):
             # Solo validar que el grupo existe cuando se está cambiando (evitar 400 si se reenvía el mismo grupo)
             current_group = survey.get('group')
             new_group = validated_data.get('group')
-            group_changed = new_group is not None and (
-                current_group != new_group and str(current_group) != str(new_group)
-            )
+            # Normalizar a string para comparar (ObjectId vs string del request)
+            current_group_str = str(current_group) if current_group is not None else None
+            new_group_str = str(new_group).strip() if new_group is not None else None
+            if new_group_str in (None, ''):
+                new_group_str = None
+            group_changed = new_group_str is not None and current_group_str != new_group_str
             if group_changed:
                 groups_collection = get_survey_groups_collection()
                 group_found = False
                 try:
-                    if groups_collection.find_one({"_id": ObjectId(new_group)}):
+                    if ObjectId.is_valid(new_group_str) and groups_collection.find_one({"_id": ObjectId(new_group_str)}):
                         group_found = True
                 except Exception:
                     pass
-                if not group_found and groups_collection.find_one({"_id": new_group}):
-                    group_found = True
+                if not group_found and new_group_str:
+                    try:
+                        if groups_collection.find_one({"_id": new_group}):
+                            group_found = True
+                    except Exception:
+                        pass
                 if not group_found:
-                    raise ValidationError(detail="El nuevo grupo de encuestas especificado no existe.")
+                    # No romper el guardado: mantener el grupo actual si el indicado no existe
+                    validated_data['group'] = survey.get('group')
 
             update_fields = {
                 'title': validated_data.get('title', survey['title']),
@@ -1825,14 +1833,6 @@ class SurveyRetrieveUpdateDestroy(APIView):
             )
             updated_survey = self.get_object(pk)
             return Response(SurveySerializer(updated_survey).data)
-        # #region agent log
-        try:
-            import json
-            with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps({"location": "views.py:SurveyRetrieveUpdateDestroy.put", "message": "survey PUT validation failed", "data": {"errors": serializer.errors, "request_keys": list(request.data.keys()) if request.data else []}, "timestamp": datetime.now().isoformat(), "hypothesisId": "400"}) + "\n")
-        except Exception:
-            pass
-        # #endregion
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
