@@ -1391,6 +1391,26 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     { label: 'Correo Electrónico', icon: faEnvelope, color: 'blue', type: 'Correo Electrónico' },
   ];
 
+  // #region agent log
+  useEffect(() => {
+    if (showPreview) return;
+    const labels = questionTools.map(t => t.label);
+    const payload1 = { location: 'App.jsx:SurveyEditor', message: 'questionTools at render', data: { labels, count: labels.length, hasTitulo: labels.includes('Título') }, timestamp: Date.now(), hypothesisId: 'H1' };
+    console.log('[DEBUG SurveyEditor]', JSON.stringify(payload1));
+    fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload1) }).catch(() => {});
+    const t = setTimeout(() => {
+      const nav = document.querySelector('nav.fixed.z-50');
+      if (nav) {
+        const buttons = nav.querySelectorAll('button');
+        const payload2 = { location: 'App.jsx:SurveyEditor', message: 'toolbar DOM', data: { navScrollWidth: nav.scrollWidth, navClientWidth: nav.clientWidth, buttonCount: buttons.length }, timestamp: Date.now(), hypothesisId: 'H3' };
+        console.log('[DEBUG SurveyEditor]', JSON.stringify(payload2));
+        fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload2) }).catch(() => {});
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [showPreview]);
+  // #endregion
+
   const addQuestion = (type) => {
     const newQ = { 
       id: generateId(), 
@@ -4161,21 +4181,25 @@ export default function App() {
           body: JSON.stringify(surveyPayload) 
         });
         if (!response.ok) {
-          // Intentar obtener el mensaje de error del servidor
+          // Intentar obtener el mensaje de error del servidor (DRF devuelve serializer.errors con claves por campo)
           let errorMessage = 'El servidor respondió con un error.';
           try {
             const errorData = await response.json();
+            console.error('[DEBUG] Survey save error response:', errorData);
+            // #region agent log
+            fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'App.jsx:handleSaveSurvey', message: 'survey save 400 response', data: { status: response.status, errorData }, timestamp: Date.now(), hypothesisId: '400' }) }).catch(() => {});
+            // #endregion
             if (errorData.detail) {
-              errorMessage = errorData.detail;
-            } else if (errorData.errors) {
-              // Formatear errores de validación
-              const errorList = Object.entries(errorData.errors)
-                .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
-                .join('; ');
-              errorMessage = `Error de validación: ${errorList}`;
+              errorMessage = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
+            } else if (errorData && typeof errorData === 'object' && !Array.isArray(errorData)) {
+              // DRF validation: body es { field: ["msg"] } o { field: [{ ... }] }
+              const parts = Object.entries(errorData).map(([field, val]) => {
+                if (Array.isArray(val)) return `${field}: ${val.map(v => typeof v === 'object' ? JSON.stringify(v) : v).join('; ')}`;
+                return `${field}: ${String(val)}`;
+              });
+              errorMessage = parts.length ? `Error de validación: ${parts.join(' | ')}` : errorMessage;
             }
           } catch (e) {
-            // Si no se puede parsear el error, usar el mensaje por defecto
             console.error("Error parsing error response:", e);
           }
           throw new Error(errorMessage);

@@ -308,7 +308,7 @@ class QuestionSerializer(serializers.Serializer):
 class SectionSerializer(serializers.Serializer):
     """Serializer for survey sections"""
     id = serializers.CharField(max_length=255, required=False) # Section ID (generated if not provided)
-    title = serializers.CharField(max_length=255)
+    title = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
     order = serializers.IntegerField(required=False, default=0) # Order of the section
 

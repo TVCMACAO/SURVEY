@@ -1779,20 +1779,22 @@ class SurveyRetrieveUpdateDestroy(APIView):
                     validated_data['group'] = group_obj['_id']
                 # Si el grupo no existe, mantener el grupo original de la encuesta
             
-            # Si se intenta cambiar el grupo, validar que el nuevo grupo existe
-            if 'group' in validated_data:
+            # Solo validar que el grupo existe cuando se está cambiando (evitar 400 si se reenvía el mismo grupo)
+            current_group = survey.get('group')
+            new_group = validated_data.get('group')
+            group_changed = new_group is not None and (
+                current_group != new_group and str(current_group) != str(new_group)
+            )
+            if group_changed:
                 groups_collection = get_survey_groups_collection()
                 group_found = False
-                # Try ObjectId first
                 try:
-                    if groups_collection.find_one({"_id": ObjectId(validated_data['group'])}):
+                    if groups_collection.find_one({"_id": ObjectId(new_group)}):
                         group_found = True
                 except Exception:
                     pass
-                # Try as string
-                if not group_found:
-                    if groups_collection.find_one({"_id": validated_data['group']}):
-                        group_found = True
+                if not group_found and groups_collection.find_one({"_id": new_group}):
+                    group_found = True
                 if not group_found:
                     raise ValidationError(detail="El nuevo grupo de encuestas especificado no existe.")
 
@@ -1803,6 +1805,8 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 'questions': validated_data.get('questions', survey['questions']),
                 'is_public': validated_data.get('is_public', survey.get('is_public', False))
             }
+            if 'sections' in validated_data:
+                update_fields['sections'] = validated_data['sections']
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
@@ -1821,6 +1825,14 @@ class SurveyRetrieveUpdateDestroy(APIView):
             )
             updated_survey = self.get_object(pk)
             return Response(SurveySerializer(updated_survey).data)
+        # #region agent log
+        try:
+            import json
+            with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
+                f.write(json.dumps({"location": "views.py:SurveyRetrieveUpdateDestroy.put", "message": "survey PUT validation failed", "data": {"errors": serializer.errors, "request_keys": list(request.data.keys()) if request.data else []}, "timestamp": datetime.now().isoformat(), "hypothesisId": "400"}) + "\n")
+        except Exception:
+            pass
+        # #endregion
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
