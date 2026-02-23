@@ -1827,11 +1827,23 @@ class SurveyRetrieveUpdateDestroy(APIView):
                     # No romper el guardado: mantener el grupo actual si el indicado no existe
                     validated_data['group'] = survey.get('group')
 
+            questions_to_save = validated_data.get('questions', survey.get('questions'))
+            if not isinstance(questions_to_save, list):
+                questions_to_save = survey.get('questions') or []
+            if isinstance(questions_to_save, list):
+                questions_to_save = [
+                    dict(
+                        q if isinstance(q, dict) else {},
+                        text=(q.get('text') or q.get('question_text') or '') if isinstance(q, dict) else '',
+                        type=(q.get('type') or q.get('question_type') or 'short_text') if isinstance(q, dict) else 'short_text',
+                    )
+                    for q in questions_to_save
+                ]
             update_fields = {
                 'title': validated_data.get('title', survey['title']),
                 'description': validated_data.get('description', survey.get('description', '')),
                 'group': validated_data.get('group', survey['group']),
-                'questions': validated_data.get('questions', survey['questions']),
+                'questions': questions_to_save,
                 'is_public': validated_data.get('is_public', survey.get('is_public', False))
             }
             if 'sections' in validated_data:

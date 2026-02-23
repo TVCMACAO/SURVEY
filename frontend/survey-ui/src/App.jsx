@@ -4335,13 +4335,26 @@ export default function App() {
       title: surveyData.title, 
       description: surveyData.description || '', 
       group: DEFAULT_GROUP_ID, 
-      questions: surveyData.questions.map(({ id, ...q }) => ({
-        ...q, 
-        type: typeMapping[q.type] || 'short_text',
-        required: (q.type === 'Título') ? false : (q.required || false),
-        section_id: q.section_id || null,
-        conditional_logic: q.conditional_logic || null
-      })),
+      questions: surveyData.questions.map((q, index) => {
+        const questionText = q.question_text ?? q.text ?? '';
+        const displayType = q.type || q.question_type;
+        const backendType = typeMapping[displayType] ?? displayType ?? 'short_text';
+        return {
+          id: q.id || `q_${index}`,
+          text: questionText,
+          question_text: questionText,
+          type: backendType,
+          question_type: backendType,
+          options: q.options ?? [],
+          description: q.description ?? '',
+          required: (displayType === 'Título') ? false : Boolean(q.required),
+          section_id: q.section_id ?? null,
+          conditional_logic: q.conditional_logic ?? null,
+          evaluation_items: q.evaluation_items ?? [],
+          evaluation_columns: q.evaluation_columns ?? [],
+          date_include_time: Boolean(q.date_include_time)
+        };
+      }),
       sections: (surveyData.sections || []).map(({ id, ...s }) => ({
         ...s,
         order: s.order || 0
