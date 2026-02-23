@@ -235,6 +235,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                 />
               ) : data.type === 'Título' ? (
                 <div className="space-y-3">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Contenido informativo (no se pide respuesta)</p>
                   <input
                     type="text"
                     value={data.text}
@@ -245,7 +246,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                   <textarea
                     value={data.description || ''}
                     onChange={(e) => onUpdate({...data, description: e.target.value})}
-                    placeholder="Texto informativo (sin esperar respuesta)..."
+                    placeholder="Párrafo informativo (ej: Realizar seguimiento continuo al comportamiento laboral...)"
                     className="w-full text-sm sm:text-base bg-transparent border-none focus:ring-0 p-0 text-gray-600 placeholder-gray-400 leading-relaxed min-h-[80px] resize-none"
                   />
                 </div>
@@ -438,7 +439,9 @@ const SurveyPreview = ({ surveyData, onBack }) => {
       return (
         <div key={questionId} className="mb-8 bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
           <h3 className="text-lg font-bold text-gray-800 mb-2">{question.text || question.question_text || 'Título'}</h3>
-          {question.description && <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{question.description}</p>}
+          {question.description && (
+            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{question.description}</p>
+          )}
         </div>
       );
     }
@@ -1021,20 +1024,13 @@ const PublicSurveyView = ({ surveyId }) => {
     if (question.type === 'Título') {
       return (
         <div key={questionId} className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 group">
-          <div className="mb-0 pb-0 border-none">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-slate-500 to-slate-600 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-lg">
-                {index + 1}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-xl md:text-2xl font-black text-gray-900 mb-2 leading-tight">
-                  {question.text || question.question_text}
-                </h3>
-                {question.description && (
-                  <p className="text-sm md:text-base text-gray-600 leading-relaxed mt-2 whitespace-pre-wrap">{question.description}</p>
-                )}
-              </div>
-            </div>
+          <div className="min-w-0">
+            <h3 className="text-xl md:text-2xl font-black text-gray-900 mb-3 leading-tight">
+              {question.text || question.question_text}
+            </h3>
+            {question.description && (
+              <p className="text-sm md:text-base text-gray-700 leading-relaxed whitespace-pre-wrap">{question.description}</p>
+            )}
           </div>
         </div>
       );
@@ -1384,6 +1380,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   const questionTools = [
     { label: 'Texto Corto', icon: faFont, color: 'blue', type: 'Texto Corto' },
     { label: 'Párrafo', icon: faAlignLeft, color: 'gray', type: 'Párrafo' },
+    { label: 'Título', icon: faHeading, color: 'gray', type: 'Título' },
     { label: 'Opción Única', icon: faListUl, color: 'purple', type: 'Opción Única' },
     { label: 'Casillas', icon: faSquareCheck, color: 'green', type: 'Casillas' },
     { label: 'Desplegable', icon: faListUl, color: 'orange', type: 'Desplegable' },
@@ -1392,7 +1389,6 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     { label: 'Puntuación', icon: faStar, color: 'red', type: 'Puntuación' },
     { label: 'Firma', icon: faSignature, color: 'indigo', type: 'Firma' },
     { label: 'Correo Electrónico', icon: faEnvelope, color: 'blue', type: 'Correo Electrónico' },
-    { label: 'Título', icon: faHeading, color: 'gray', type: 'Título' },
   ];
 
   const addQuestion = (type) => {
