@@ -5,7 +5,7 @@ import {
   faShareNodes, faTrash, faXmark, faBars, faEllipsisVertical, faChevronLeft, 
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
   faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus, faUser,
-  faSignature, faEraser, faEnvelope
+  faSignature, faEraser, faEnvelope, faHeading
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
 import * as XLSX from 'xlsx';
@@ -168,6 +168,33 @@ const ToolButton = ({ icon, label, onClick, color }) => (
 
 const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection }) => {
   const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(data.type);
+  const fileInputRef = React.useRef(null);
+
+  const handleExcelImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const buf = new Uint8Array(ev.target.result);
+        const workbook = XLSX.read(buf, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[firstSheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        const MAX_LEN = 200;
+        const options = rows
+          .map(row => (row && row[0] != null ? String(row[0]).trim() : ''))
+          .filter(s => s.length > 0)
+          .map(s => s.length > MAX_LEN ? s.slice(0, MAX_LEN) : s);
+        onUpdate({ ...data, options });
+      } catch (err) {
+        console.error(err);
+        alert('No se pudo leer el archivo Excel.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
 
   return (
     <div 
@@ -194,6 +221,22 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                   placeholder="Escribe tu pregunta de párrafo aquí..."
                   className="w-full text-lg sm:text-xl md:text-2xl font-bold bg-transparent border-none focus:ring-0 p-0 text-gray-800 placeholder-gray-300 leading-tight h-20 resize-none"
                 />
+              ) : data.type === 'Título' ? (
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    value={data.text}
+                    onChange={(e) => onUpdate({...data, text: e.target.value})}
+                    placeholder="Ej: 1. OBJETIVO DE LA RONDA"
+                    className="w-full text-lg sm:text-xl md:text-2xl font-bold bg-transparent border-none focus:ring-0 p-0 text-gray-800 placeholder-gray-300 leading-tight"
+                  />
+                  <textarea
+                    value={data.description || ''}
+                    onChange={(e) => onUpdate({...data, description: e.target.value})}
+                    placeholder="Texto informativo (sin esperar respuesta)..."
+                    className="w-full text-sm sm:text-base bg-transparent border-none focus:ring-0 p-0 text-gray-600 placeholder-gray-400 leading-relaxed min-h-[80px] resize-none"
+                  />
+                </div>
               ) : (
                 <input 
                   autoFocus 
@@ -205,7 +248,9 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                 />
               )}
               
+              {data.type !== 'Título' && (
               <input type="text" value={data.description || ''} onChange={(e) => onUpdate({...data, description: e.target.value})} placeholder="Añade una descripción (opcional)" className="w-full text-xs sm:text-sm md:text-base mt-2 md:mt-3 bg-transparent border-none focus:ring-0 p-0 text-gray-500 placeholder-gray-400" />
+              )}
               
               <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-100/50">
                 {isOptionType && (
@@ -217,13 +262,18 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                          {data.type === 'Desplegable' && <span className="text-gray-400 text-xs sm:text-sm flex-shrink-0">{idx + 1}.</span>}
 
                          <input value={opt} onChange={(e) => { const newOpts = [...data.options]; newOpts[idx] = e.target.value; onUpdate({...data, options: newOpts}); }} className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" />
-                         <button onClick={() => { const newOpts = data.options.filter((_, i) => i !== idx); onUpdate({...data, options: newOpts}); }} className="flex-shrink-0 p-1"><FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" /></button>
+                         <button type="button" onClick={(ev) => { ev.stopPropagation(); const newOpts = data.options.filter((_, i) => i !== idx); onUpdate({...data, options: newOpts}); }} className="flex-shrink-0 p-1"><FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" /></button>
                        </div>
                      ))}
-                     <button onClick={() => onUpdate({...data, options: [...(data.options || []), `Opción ${data.options?.length + 1}`]})} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 mt-2 sm:mt-3 pl-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-indigo-50 rounded-lg w-fit transition-colors"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /></button>
+                     <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-3">
+                       <button type="button" onClick={(ev) => { ev.stopPropagation(); onUpdate({...data, options: [...(data.options || []), `Opción ${data.options?.length + 1}`]}); }} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 pl-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-indigo-50 rounded-lg w-fit transition-colors"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /> Añadir opción</button>
+                       <input type="file" ref={fileInputRef} accept=".xlsx,.xls" className="hidden" onChange={(ev) => { ev.stopPropagation(); handleExcelImport(ev); }} />
+                       <button type="button" onClick={(ev) => { ev.stopPropagation(); fileInputRef.current?.click(); }} className="text-xs font-bold text-gray-600 hover:text-gray-800 flex items-center gap-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-gray-100 rounded-lg w-fit transition-colors border border-gray-200"><FontAwesomeIcon icon={faFileExcel} size="sm" className="fa-icon-force-current" /> Importar desde Excel</button>
+                     </div>
                   </div>
                 )}
                 {data.type === 'Puntuación' && <div className="flex gap-4 justify-center py-6 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">{[1,2,3,4,5].map(i => <FontAwesomeIcon key={i} icon={faStar} size="lg" className="text-gray-300 fa-icon-force-current" />)}</div>}
+                {data.type === 'Título' && <div className="py-4 px-4 bg-slate-50/80 rounded-xl border border-dashed border-slate-200 text-slate-500 text-sm italic">Solo texto informativo. No se espera respuesta.</div>}
                 {data.type === 'Texto Corto' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario escribirá su respuesta aquí...</div>}
                 {data.type === 'Párrafo' && <div className="h-20 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario escribirá un párrafo aquí...</div>}
                 {data.type === 'Número' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario introducirá un número aquí...</div>}
@@ -237,9 +287,10 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
             </div>
           ) : (
             <div className="md:pr-10">
-              <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-700 mb-2 break-words">{data.text || 'Sin pregunta definida'}</h3>
+              <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-700 mb-2 break-words">{data.text || (data.type === 'Título' ? 'Título sin texto' : 'Sin pregunta definida')}</h3>
               {data.description && <p className="text-xs sm:text-sm text-gray-400 mb-3 sm:mb-4 break-words">{data.description}</p>}
               
+              {data.type !== 'Título' && (
               <div className="opacity-60 pointer-events-none grayscale-[0.5]">
                  {isOptionType && (
                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -263,6 +314,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                  </div>}
                  {data.type === 'Puntuación' && <div className="flex gap-2"><FontAwesomeIcon icon={faStar} size="sm" className="text-gray-300 fa-icon-force-current" /><FontAwesomeIcon icon={faStar} size="sm" className="text-gray-300 fa-icon-force-current" /><FontAwesomeIcon icon={faStar} size="sm" className="text-gray-300 fa-icon-force-current" /></div>}
               </div>
+              )}
             </div>
           )}
         </div>
@@ -271,10 +323,12 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
           <div className="bg-gray-50/90 backdrop-blur px-4 sm:px-6 py-2 sm:py-3 border-t border-gray-200 flex flex-col gap-3 text-xs font-medium text-gray-500">
              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
                <span className="uppercase tracking-wider font-bold text-gray-400 text-[10px]">Configuración</span>
+               {data.type !== 'Título' && (
                <div onClick={() => onUpdate({...data, required: !data.required})} className={`flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-gray-200 transition-colors ${data.required ? 'text-indigo-600' : 'text-gray-400'}`}>
                  <div className={`w-3 h-3 rounded border ${data.required ? 'bg-indigo-500 border-indigo-500' : 'border-gray-400'}`} />
                  <span>Obligatorio</span>
                </div>
+               )}
                {sections.length > 0 && (
                  <div className="flex items-center gap-2">
                    <span className="text-gray-400">Sección:</span>
@@ -317,6 +371,14 @@ const SurveyPreview = ({ surveyData, onBack }) => {
 
   const renderQuestion = (question) => {
     const questionId = question.id;
+    if (question.type === 'Título') {
+      return (
+        <div key={questionId} className="mb-8 bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+          <h3 className="text-lg font-bold text-gray-800 mb-2">{question.text || question.question_text || 'Título'}</h3>
+          {question.description && <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{question.description}</p>}
+        </div>
+      );
+    }
     const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(question.type);
 
     return (
@@ -488,11 +550,16 @@ const SurveyPreview = ({ surveyData, onBack }) => {
       </header>
 
       <div className="w-full max-w-3xl mx-auto px-4 py-8 md:py-12">
-        <div className="mb-10">
-          <h1 className="text-4xl md:text-5xl font-black text-gray-900 mb-3">{surveyData.title || 'Sin título'}</h1>
-          {surveyData.description && (
-            <p className="text-lg text-gray-500">{surveyData.description}</p>
-          )}
+        <div className="mb-10 rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
+          <div className="h-2 bg-purple-600 rounded-t-xl" aria-hidden="true" />
+          <div className="border-l-4 border-l-blue-500 px-4 py-4 md:px-5 md:py-5">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-gray-900">
+              {surveyData.title || 'Formulario sin título'}
+            </h1>
+            <p className="mt-2 md:mt-3 text-base md:text-lg text-gray-500">
+              {surveyData.description || 'Descripción del formulario'}
+            </p>
+          </div>
         </div>
 
         {surveyData.questions && surveyData.questions.length > 0 ? (
@@ -608,7 +675,8 @@ const PublicSurveyView = ({ surveyId }) => {
           'date': 'Fecha',
           'rating': 'Puntuación',
           'signature': 'Firma',
-          'email': 'Correo Electrónico'
+          'email': 'Correo Electrónico',
+          'titulo': 'Título'
         };
         
         const questionsWithIds = (data.questions || []).map((q, index) => ({
@@ -887,6 +955,28 @@ const PublicSurveyView = ({ surveyId }) => {
       return null;
     }
 
+    if (question.type === 'Título') {
+      return (
+        <div key={questionId} className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 group">
+          <div className="mb-0 pb-0 border-none">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-slate-500 to-slate-600 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-lg">
+                {index + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xl md:text-2xl font-black text-gray-900 mb-2 leading-tight">
+                  {question.text || question.question_text}
+                </h3>
+                {question.description && (
+                  <p className="text-sm md:text-base text-gray-600 leading-relaxed mt-2 whitespace-pre-wrap">{question.description}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div key={questionId} className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 group">
         {/* Header de la pregunta */}
@@ -1050,22 +1140,23 @@ const PublicSurveyView = ({ surveyId }) => {
       </div>
 
       <div className="relative z-10 w-full max-w-4xl mx-auto px-4 py-8 md:py-12">
-        {/* Header mejorado */}
-        <div className="mb-12 text-center">
-          <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 md:p-12 shadow-xl border border-white/60 mb-8">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-4 leading-tight">
-              {surveyData.title || 'Encuesta'}
-            </h1>
-            {surveyData.description && (
-              <p className="text-lg md:text-xl text-gray-700 leading-relaxed max-w-3xl mx-auto">
-                {surveyData.description}
+        {/* Título y descripción del formulario */}
+        <div className="mb-12">
+          <div className="rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
+            <div className="h-2 bg-purple-600 rounded-t-xl" aria-hidden="true" />
+            <div className="border-l-4 border-l-blue-500 px-6 py-6 md:px-8 md:py-8 text-center">
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-gray-900 leading-tight">
+                {surveyData.title || 'Formulario sin título'}
+              </h1>
+              <p className="mt-3 md:mt-4 text-lg md:text-xl text-gray-600 leading-relaxed max-w-3xl mx-auto">
+                {surveyData.description || 'Descripción del formulario'}
               </p>
-            )}
-            <div className="mt-6 flex items-center justify-center gap-4 text-sm text-gray-500">
-              <span className="flex items-center gap-2">
-                <FontAwesomeIcon icon={faListUl} size="sm" className="fa-icon-force-current" />
-                {surveyData.questions?.length || 0} {surveyData.questions?.length === 1 ? 'Pregunta' : 'Preguntas'}
-              </span>
+              <div className="mt-6 flex items-center justify-center gap-4 text-sm text-gray-500">
+                <span className="flex items-center gap-2">
+                  <FontAwesomeIcon icon={faListUl} size="sm" className="fa-icon-force-current" />
+                  {surveyData.questions?.length || 0} {surveyData.questions?.length === 1 ? 'Pregunta' : 'Preguntas'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -1177,7 +1268,8 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         'number': 'Número',
         'date': 'Fecha',
         'rating': 'Puntuación',
-        'email': 'Correo Electrónico'
+        'email': 'Correo Electrónico',
+        'titulo': 'Título'
       };
       
       // Ensure all questions have unique IDs and proper format
@@ -1237,6 +1329,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     { label: 'Puntuación', icon: faStar, color: 'red', type: 'Puntuación' },
     { label: 'Firma', icon: faSignature, color: 'indigo', type: 'Firma' },
     { label: 'Correo Electrónico', icon: faEnvelope, color: 'blue', type: 'Correo Electrónico' },
+    { label: 'Título', icon: faHeading, color: 'gray', type: 'Título' },
   ];
 
   const addQuestion = (type) => {
@@ -1385,7 +1478,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
           className="w-full max-w-3xl mx-auto px-4 py-6 md:py-8 lg:py-12"
         >
            <div 
-             className="mb-6 md:mb-10 group"
+             className="mb-6 md:mb-10 rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm"
              style={{
                minWidth: 0,
                width: '100%',
@@ -1394,42 +1487,43 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                overflow: 'visible'
              }}
            >
-             <textarea
-               value={surveyData.title} 
-               onChange={(e) => {
-                 const newTitle = e.target.value;
-                 const titleInput = e.target;
-                 // Auto-resize textarea
-                 titleInput.style.height = 'auto';
-                 titleInput.style.height = `${titleInput.scrollHeight}px`;
-                 setSurveyData({...surveyData, title: newTitle});
-               }}
-               onInput={(e) => {
-                 // Auto-resize on input
-                 e.target.style.height = 'auto';
-                 e.target.style.height = `${e.target.scrollHeight}px`;
-               }}
-               className="w-full text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-300 resize-none overflow-hidden" 
-               placeholder="Título de la Encuesta"
-               rows={1}
-               style={{
-                 wordBreak: 'break-word',
-                 overflowWrap: 'break-word',
-                 whiteSpace: 'pre-wrap',
-                 overflow: 'hidden',
-                 textOverflow: 'clip',
-                 minWidth: 0,
-                 maxWidth: '100%',
-                 boxSizing: 'border-box',
-                 lineHeight: '1.2'
-               }}
-             />
-             <input 
-               value={surveyData.description} 
-               onChange={(e) => setSurveyData({...surveyData, description: e.target.value})} 
-               className="w-full mt-2 md:mt-3 text-base md:text-lg text-gray-500 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-400" 
-               placeholder="Describe brevemente el propósito de este formulario..." 
-             />
+             <div className="h-2 bg-purple-600 rounded-t-xl" aria-hidden="true" />
+             <div className="border-l-4 border-l-blue-500 px-4 py-4 md:px-5 md:py-5">
+               <textarea
+                 value={surveyData.title} 
+                 onChange={(e) => {
+                   const newTitle = e.target.value;
+                   const titleInput = e.target;
+                   titleInput.style.height = 'auto';
+                   titleInput.style.height = `${titleInput.scrollHeight}px`;
+                   setSurveyData({...surveyData, title: newTitle});
+                 }}
+                 onInput={(e) => {
+                   e.target.style.height = 'auto';
+                   e.target.style.height = `${e.target.scrollHeight}px`;
+                 }}
+                 className="w-full text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-300 resize-none overflow-hidden border-b border-gray-200 pb-1 focus:outline-none" 
+                 placeholder="Formulario sin título"
+                 rows={1}
+                 style={{
+                   wordBreak: 'break-word',
+                   overflowWrap: 'break-word',
+                   whiteSpace: 'pre-wrap',
+                   overflow: 'hidden',
+                   textOverflow: 'clip',
+                   minWidth: 0,
+                   maxWidth: '100%',
+                   boxSizing: 'border-box',
+                   lineHeight: '1.2'
+                 }}
+               />
+               <input 
+                 value={surveyData.description} 
+                 onChange={(e) => setSurveyData({...surveyData, description: e.target.value})} 
+                 className="w-full mt-3 md:mt-4 text-base md:text-lg text-gray-500 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-400 border-b border-gray-100 pb-1 focus:outline-none" 
+                 placeholder="Descripción del formulario" 
+               />
+             </div>
            </div>
            {/* Section Manager */}
            {showSectionManager && (
@@ -1552,6 +1646,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
   };
 
   const formatAnswer = (answer, questionType) => {
+    if (questionType === 'titulo' || questionType === 'Título') return '—';
     // Handle email type
     if (questionType === 'Correo Electrónico' || questionType === 'email') {
       return answer || '-';
@@ -1609,6 +1704,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
       const questionText = q.text || q.question_text;
       
       if (!questionId) return;
+      if (questionType === 'titulo' || questionType === 'Título') return;
       
       const answers = responses
         .map(r => r.answers && r.answers[questionId])
@@ -3943,7 +4039,8 @@ export default function App() {
       'Fecha': 'date', 
       'Puntuación': 'rating',
       'Firma': 'signature',
-      'Correo Electrónico': 'email'
+      'Correo Electrónico': 'email',
+      'Título': 'titulo'
     };
     const DEFAULT_GROUP_ID = '693ad3cccced5113d39dc29d';
     
@@ -3977,6 +4074,7 @@ export default function App() {
       questions: surveyData.questions.map(({ id, ...q }) => ({
         ...q, 
         type: typeMapping[q.type] || 'short_text',
+        required: (q.type === 'Título') ? false : (q.required || false),
         section_id: q.section_id || null,
         conditional_logic: q.conditional_logic || null
       })),
