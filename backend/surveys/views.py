@@ -1127,6 +1127,37 @@ class SurveyListCreate(APIView):
                 {"detail": "Error: no se pudo asignar el grupo automáticamente. Contacta al administrador."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+        # Root-only: permitir crear encuestas “en nombre de” otro usuario.
+        # Inputs aceptados en el body:
+        # - created_by_username: username del usuario creador deseado
+        # - created_by: id del usuario creador deseado (ObjectId hex o string id)
+        created_by_override = None
+        try:
+            if user_role == 'root' and isinstance(request_data_copy, dict):
+                users_collection = get_mongo_collection('users')
+
+                created_by_username = request_data_copy.get('created_by_username')
+                created_by_id = request_data_copy.get('created_by')
+
+                user_obj = None
+                if created_by_username:
+                    user_obj = users_collection.find_one({'username': str(created_by_username)})
+                elif created_by_id:
+                    try:
+                        if ObjectId.is_valid(str(created_by_id)):
+                            user_obj = users_collection.find_one({'_id': ObjectId(str(created_by_id))})
+                    except Exception:
+                        user_obj = None
+                    if not user_obj:
+                        user_obj = users_collection.find_one({'_id': str(created_by_id)})
+                    if not user_obj:
+                        user_obj = users_collection.find_one({'id': str(created_by_id)})
+
+                if user_obj:
+                    created_by_override = str(user_obj.get('_id', user_obj.get('id')))
+        except Exception:
+            created_by_override = None
         
         # Preparar datos para insertar
         survey_doc = {
@@ -1136,7 +1167,11 @@ class SurveyListCreate(APIView):
             'questions': validated_data.get('questions', []),
             'is_public': validated_data.get('is_public', False),
             'is_deleted': False,  # Por defecto no está eliminada
-            'created_by': str(request.user.id) if request.user and request.user.is_authenticated and hasattr(request.user, 'id') else None  # Usuario que creó la encuesta
+            'created_by': (
+                created_by_override
+                if created_by_override
+                else (str(request.user.id) if request.user and request.user.is_authenticated and hasattr(request.user, 'id') else None)
+            )  # Usuario que creó la encuesta (root puede sobreescribir)
         }
         
         # Agregar sections si existen

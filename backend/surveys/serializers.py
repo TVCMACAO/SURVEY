@@ -240,6 +240,8 @@ class SurveyGroupSerializer(serializers.Serializer):
 
 class QuestionSerializer(serializers.Serializer):
     # Support both formats: 'text'/'type' (from MongoDB) and 'question_text'/'question_type' (from API)
+    # IMPORTANT: allow explicit question IDs so conditional_logic can reference stable IDs.
+    id = serializers.CharField(max_length=255, required=False, allow_blank=True)
     text = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
     question_text = serializers.CharField(max_length=500, required=False, allow_blank=True, source='text', default='')
     type = serializers.CharField(max_length=50, required=False, allow_blank=True, default='short_text')
