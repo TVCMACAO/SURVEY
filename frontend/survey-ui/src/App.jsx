@@ -178,6 +178,7 @@ const CONDITION_OPERATORS = [
 
 const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection, allQuestions = [] }) => {
   const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(data.type);
+  const isEvaluationType = data.type === 'Evaluación';
   const fileInputRef = React.useRef(null);
   const otherQuestions = (allQuestions || []).filter(q => q.id && q.id !== data.id);
   const hasCondition = !!(data.conditional_logic && data.conditional_logic.question_id);
@@ -283,6 +284,56 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                        <input type="file" ref={fileInputRef} accept=".xlsx,.xls" className="hidden" onChange={(ev) => { ev.stopPropagation(); handleExcelImport(ev); }} />
                        <button type="button" onClick={(ev) => { ev.stopPropagation(); fileInputRef.current?.click(); }} className="text-xs font-bold text-gray-600 hover:text-gray-800 flex items-center gap-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-gray-100 rounded-lg w-fit transition-colors border border-gray-200"><FontAwesomeIcon icon={faFileExcel} size="sm" className="fa-icon-force-current" /> Importar desde Excel</button>
                      </div>
+                    </div>
+                )}
+                {isEvaluationType && (
+                  <div className="space-y-4" onClick={(e) => e.stopPropagation()}>
+                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Ítems a evaluar (filas)</p>
+                    {(data.evaluation_items || []).map((item, idx) => (
+                      <div key={item.id} className="flex items-center gap-2">
+                        <input
+                          value={item.label}
+                          onChange={(e) => {
+                            const items = [...(data.evaluation_items || [])];
+                            items[idx] = { ...item, label: e.target.value };
+                            onUpdate({ ...data, evaluation_items: items });
+                          }}
+                          className="flex-1 bg-gray-50 rounded-lg px-2 py-1.5 text-sm border border-gray-200"
+                          placeholder="Nombre del ítem"
+                        />
+                        <button type="button" onClick={() => { const items = (data.evaluation_items || []).filter((_, i) => i !== idx); onUpdate({ ...data, evaluation_items: items }); }} className="p-1 text-gray-400 hover:text-red-500"><FontAwesomeIcon icon={faXmark} size="sm" className="fa-icon-force-current" /></button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => onUpdate({ ...data, evaluation_items: [...(data.evaluation_items || []), { id: generateId(), label: `Item${(data.evaluation_items?.length || 0) + 1}` }] })} className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 rounded-lg px-2 py-1.5 flex items-center gap-1"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /> Añadir ítem</button>
+                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mt-4">Columnas de calificación</p>
+                    {(data.evaluation_columns || []).map((col, idx) => (
+                      <div key={col.id} className="flex items-center gap-2 flex-wrap">
+                        <input
+                          value={col.label}
+                          onChange={(e) => {
+                            const cols = [...(data.evaluation_columns || [])];
+                            cols[idx] = { ...col, label: e.target.value };
+                            onUpdate({ ...data, evaluation_columns: cols });
+                          }}
+                          className="flex-1 min-w-[100px] bg-gray-50 rounded-lg px-2 py-1.5 text-sm border border-gray-200"
+                          placeholder="Ej: CUMPLE"
+                        />
+                        <select
+                          value={col.inputType || 'checkbox'}
+                          onChange={(e) => {
+                            const cols = [...(data.evaluation_columns || [])];
+                            cols[idx] = { ...col, inputType: e.target.value };
+                            onUpdate({ ...data, evaluation_columns: cols });
+                          }}
+                          className="rounded-lg px-2 py-1.5 text-sm border border-gray-200 bg-white"
+                        >
+                          <option value="checkbox">Casilla</option>
+                          <option value="text">Texto (observaciones)</option>
+                        </select>
+                        <button type="button" onClick={() => { const cols = (data.evaluation_columns || []).filter((_, i) => i !== idx); onUpdate({ ...data, evaluation_columns: cols }); }} className="p-1 text-gray-400 hover:text-red-500"><FontAwesomeIcon icon={faXmark} size="sm" className="fa-icon-force-current" /></button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => onUpdate({ ...data, evaluation_columns: [...(data.evaluation_columns || []), { id: generateId(), label: 'Nueva columna', inputType: 'checkbox' }] })} className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 rounded-lg px-2 py-1.5 flex items-center gap-1"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /> Añadir columna</button>
                   </div>
                 )}
                 {data.type === 'Puntuación' && <div className="flex gap-4 justify-center py-6 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">{[1,2,3,4,5].map(i => <FontAwesomeIcon key={i} icon={faStar} size="lg" className="text-gray-300 fa-icon-force-current" />)}</div>}
@@ -326,6 +377,14 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                    <FontAwesomeIcon icon={faSignature} size="lg" className="text-gray-400 fa-icon-force-current" />
                  </div>}
                  {data.type === 'Puntuación' && <div className="flex gap-2"><FontAwesomeIcon icon={faStar} size="sm" className="text-gray-300 fa-icon-force-current" /><FontAwesomeIcon icon={faStar} size="sm" className="text-gray-300 fa-icon-force-current" /><FontAwesomeIcon icon={faStar} size="sm" className="text-gray-300 fa-icon-force-current" /></div>}
+                 {data.type === 'Evaluación' && (
+                   <div className="border border-gray-200 rounded-lg overflow-hidden">
+                     <table className="w-full text-xs">
+                       <thead><tr className="bg-gray-50"><th className="text-left p-2 border-b">Ítem</th>{(data.evaluation_columns || []).slice(0, 3).map(c => <th key={c.id} className="p-2 border-b">{c.label}</th>)}</tr></thead>
+                       <tbody>{(data.evaluation_items || []).slice(0, 3).map(item => <tr key={item.id}><td className="p-2 border-b">{item.label}</td>{(data.evaluation_columns || []).slice(0, 3).map(c => <td key={c.id} className="p-2 border-b"><div className="w-4 h-4 border border-gray-300 rounded" /></td>)}</tr>)}</tbody>
+                     </table>
+                   </div>
+                 )}
               </div>
               )}
             </div>
@@ -586,6 +645,15 @@ const SurveyPreview = ({ surveyData, onBack }) => {
               onChange={(signatureData) => handleAnswerChange(questionId, signatureData)}
             />
           )}
+
+          {question.type === 'Evaluación' && (question.evaluation_items?.length > 0 || question.evaluation_columns?.length > 0) && (
+            <div className="overflow-x-auto border border-gray-200 rounded-xl text-sm">
+              <table className="w-full min-w-[300px]">
+                <thead><tr className="bg-gray-100 border-b"><th className="text-left p-2">ITEM EVALUADO</th>{(question.evaluation_columns || []).map(c => <th key={c.id} className="p-2 text-center">{c.label}</th>)}</tr></thead>
+                <tbody>{(question.evaluation_items || []).map(item => <tr key={item.id} className="border-b"><td className="p-2">{item.label}</td>{(question.evaluation_columns || []).map(c => <td key={c.id} className="p-2 text-center">{c.inputType === 'text' ? <span className="text-gray-400 italic">Texto</span> : <div className="w-4 h-4 border border-gray-300 rounded mx-auto" />}</td>)}</tr>)}</tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -742,7 +810,8 @@ const PublicSurveyView = ({ surveyId }) => {
           'rating': 'Puntuación',
           'signature': 'Firma',
           'email': 'Correo Electrónico',
-          'titulo': 'Título'
+          'titulo': 'Título',
+          'evaluation_table': 'Evaluación'
         };
         
         const questionsWithIds = (data.questions || []).map((q, index) => ({
@@ -752,7 +821,9 @@ const PublicSurveyView = ({ surveyId }) => {
           text: q.question_text || q.text,
           options: q.options || [],
           section_id: q.section_id || null,
-          conditional_logic: q.conditional_logic || null
+          conditional_logic: q.conditional_logic || null,
+          evaluation_items: q.evaluation_items || [],
+          evaluation_columns: q.evaluation_columns || []
         }));
         
         // Process sections
@@ -1184,6 +1255,61 @@ const PublicSurveyView = ({ surveyId }) => {
               onChange={(signatureData) => handleAnswerChange(questionId, signatureData)}
             />
           )}
+
+          {question.type === 'Evaluación' && (question.evaluation_items?.length > 0 || question.evaluation_columns?.length > 0) && (
+            <div className="overflow-x-auto border-2 border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full min-w-[400px] text-sm">
+                <thead>
+                  <tr className="bg-gray-100 border-b border-gray-200">
+                    <th className="text-left p-3 font-semibold text-gray-700">ITEM EVALUADO</th>
+                    {(question.evaluation_columns || []).map((col) => (
+                      <th key={col.id} className="p-3 font-semibold text-gray-700 text-center whitespace-nowrap">{col.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(question.evaluation_items || []).map((item) => (
+                    <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                      <td className="p-3 font-medium text-gray-800 align-top">{item.label}</td>
+                      {(question.evaluation_columns || []).map((col) => {
+                        const cellValue = (answers[questionId] || {})[item.id]?.[col.id];
+                        return (
+                          <td key={col.id} className="p-2 text-center align-middle">
+                            {col.inputType === 'text' ? (
+                              <input
+                                type="text"
+                                value={typeof cellValue === 'string' ? cellValue : ''}
+                                onChange={(e) => {
+                                  const prev = answers[questionId] || {};
+                                  const prevItem = prev[item.id] || {};
+                                  handleAnswerChange(questionId, { ...prev, [item.id]: { ...prevItem, [col.id]: e.target.value } });
+                                }}
+                                placeholder="Observación"
+                                className="w-full max-w-[200px] mx-auto px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              />
+                            ) : (
+                              <label className="inline-flex items-center justify-center cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!cellValue}
+                                  onChange={(e) => {
+                                    const prev = answers[questionId] || {};
+                                    const prevItem = prev[item.id] || {};
+                                    handleAnswerChange(questionId, { ...prev, [item.id]: { ...prevItem, [col.id]: e.target.checked } });
+                                  }}
+                                  className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500 focus:ring-2"
+                                />
+                              </label>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1327,8 +1453,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         'number': 'Número',
         'date': 'Fecha',
         'rating': 'Puntuación',
+        'signature': 'Firma',
         'email': 'Correo Electrónico',
-        'titulo': 'Título'
+        'titulo': 'Título',
+        'evaluation_table': 'Evaluación'
       };
       
       // Ensure all questions have unique IDs and proper format
@@ -1389,6 +1517,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     { label: 'Puntuación', icon: faStar, color: 'red', type: 'Puntuación' },
     { label: 'Firma', icon: faSignature, color: 'indigo', type: 'Firma' },
     { label: 'Correo Electrónico', icon: faEnvelope, color: 'blue', type: 'Correo Electrónico' },
+    { label: 'Evaluación', icon: faTable, color: 'teal', type: 'Evaluación' },
   ];
 
   // #region agent log
@@ -1412,16 +1541,23 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   // #endregion
 
   const addQuestion = (type) => {
-    const newQ = { 
-      id: generateId(), 
-      type, 
-      text: '', 
-      description: '', 
-      required: false, 
-      options: ['Opción Única', 'Casillas', 'Desplegable'].includes(type) ? ['Opción 1'] : [],
-      section_id: null, // Will be assigned to a section if sections exist
-      conditional_logic: null
-    };
+    const base = { id: generateId(), type, text: '', description: '', required: false, section_id: null, conditional_logic: null };
+    const newQ = type === 'Evaluación'
+      ? {
+          ...base,
+          options: [],
+          evaluation_items: [
+            { id: generateId(), label: 'Item1' },
+            { id: generateId(), label: 'Item2' },
+            { id: generateId(), label: 'Item3' },
+          ],
+          evaluation_columns: [
+            { id: generateId(), label: 'CUMPLE', inputType: 'checkbox' },
+            { id: generateId(), label: 'NO CUMPLE', inputType: 'checkbox' },
+            { id: generateId(), label: 'OBSERVACIONES', inputType: 'text' },
+          ],
+        }
+      : { ...base, options: ['Opción Única', 'Casillas', 'Desplegable'].includes(type) ? ['Opción 1'] : [] };
     setSurveyData(prev => ({ ...prev, questions: [...prev.questions, newQ] }));
     setActiveQuestionId(newQ.id);
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
@@ -1735,6 +1871,18 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
     if (isSignature(answer)) {
       return '__SIGNATURE_IMAGE__';
     }
+    // Tabla de evaluación: objeto { itemId: { colId: value } }
+    if ((questionType === 'evaluation_table' || questionType === 'Evaluación') && typeof answer === 'object' && answer !== null && !Array.isArray(answer)) {
+      const parts = [];
+      Object.entries(answer).forEach(([itemId, cols]) => {
+        if (cols && typeof cols === 'object') {
+          Object.entries(cols).forEach(([colId, val]) => {
+            if (val !== undefined && val !== null && val !== '' && val !== false) parts.push(`${colId}: ${typeof val === 'string' ? val : 'Sí'}`);
+          });
+        }
+      });
+      return parts.length ? parts.join('; ') : 'Sin respuesta';
+    }
     if (Array.isArray(answer)) {
       return answer.join(', ');
     }
@@ -1785,6 +1933,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
       
       if (!questionId) return;
       if (questionType === 'titulo' || questionType === 'Título') return;
+      if (questionType === 'evaluation_table' || questionType === 'Evaluación') return; // No chart stats for evaluation table
       
       const answers = responses
         .map(r => r.answers && r.answers[questionId])
@@ -4130,7 +4279,8 @@ export default function App() {
       'Puntuación': 'rating',
       'Firma': 'signature',
       'Correo Electrónico': 'email',
-      'Título': 'titulo'
+      'Título': 'titulo',
+      'Evaluación': 'evaluation_table'
     };
     const DEFAULT_GROUP_ID = '693ad3cccced5113d39dc29d';
     

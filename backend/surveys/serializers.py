@@ -253,6 +253,9 @@ class QuestionSerializer(serializers.Serializer):
     section_id = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True) # ID of the section this question belongs to
     # Conditional logic support
     conditional_logic = serializers.JSONField(required=False, allow_null=True) # Structure: {"type": "show_if", "question_id": "...", "operator": "equals", "value": "..."}
+    # Evaluation table: items (rows) and columns (e.g. CUMPLE, NO CUMPLE, OBSERVACIONES)
+    evaluation_items = serializers.JSONField(required=False, allow_null=True)  # [{"id": "...", "label": "Item1"}, ...]
+    evaluation_columns = serializers.JSONField(required=False, allow_null=True)  # [{"id": "...", "label": "CUMPLE", "inputType": "checkbox"}, {"id": "...", "label": "OBSERVACIONES", "inputType": "text"}, ...]
     
     def to_internal_value(self, data):
         # Normalizar los datos para aceptar tanto question_text como text, y question_type como type
@@ -303,6 +306,10 @@ class QuestionSerializer(serializers.Serializer):
             result['section_id'] = data['section_id']
         if 'conditional_logic' in data:
             result['conditional_logic'] = data['conditional_logic']
+        if 'evaluation_items' in data:
+            result['evaluation_items'] = data['evaluation_items']
+        if 'evaluation_columns' in data:
+            result['evaluation_columns'] = data['evaluation_columns']
         return result
 
 class SectionSerializer(serializers.Serializer):
