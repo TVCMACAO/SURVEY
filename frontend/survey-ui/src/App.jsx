@@ -1880,7 +1880,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
            (answer.length > 100 && /^[A-Za-z0-9+/=]+$/.test(answer.split(',')[1] || answer));
   };
 
-  const formatAnswer = (answer, questionType) => {
+  const formatAnswer = (answer, questionType, question) => {
     if (questionType === 'titulo' || questionType === 'Título') return '—';
     // Handle email type
     if (questionType === 'Correo Electrónico' || questionType === 'email') {
@@ -1890,17 +1890,28 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
     if (isSignature(answer)) {
       return '__SIGNATURE_IMAGE__';
     }
-    // Tabla de evaluación: objeto { itemId: { colId: value } }
+    // Tabla de evaluación: objeto { itemId: { colId: value } } — usar nombres de ítems y columnas, no códigos
     if ((questionType === 'evaluation_table' || questionType === 'Evaluación') && typeof answer === 'object' && answer !== null && !Array.isArray(answer)) {
+      const items = (question && question.evaluation_items) || [];
+      const columns = (question && question.evaluation_columns) || [];
+      const getItemLabel = (id) => items.find(i => i.id === id)?.label || id;
+      const getColLabel = (id) => columns.find(c => c.id === id)?.label || id;
       const parts = [];
       Object.entries(answer).forEach(([itemId, cols]) => {
         if (cols && typeof cols === 'object') {
+          const itemLabel = getItemLabel(itemId);
+          const cellParts = [];
           Object.entries(cols).forEach(([colId, val]) => {
-            if (val !== undefined && val !== null && val !== '' && val !== false) parts.push(`${colId}: ${typeof val === 'string' ? val : 'Sí'}`);
+            if (val !== undefined && val !== null && val !== '' && val !== false) {
+              const colLabel = getColLabel(colId);
+              const displayVal = typeof val === 'string' ? val : 'Sí';
+              cellParts.push(`${colLabel}: ${displayVal}`);
+            }
           });
+          if (cellParts.length) parts.push(`${itemLabel} — ${cellParts.join('; ')}`);
         }
       });
-      return parts.length ? parts.join('; ') : 'Sin respuesta';
+      return parts.length ? parts.join(' | ') : 'Sin respuesta';
     }
     if (Array.isArray(answer)) {
       return answer.join(', ');
@@ -1911,8 +1922,8 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
     return answer || 'Sin respuesta';
   };
 
-  // Componente para renderizar respuesta (texto o imagen de firma)
-  const renderAnswer = (answer, questionType) => {
+  // Componente para renderizar respuesta (texto o imagen de firma). question opcional para evaluación (nombres legibles).
+  const renderAnswer = (answer, questionOrType) => {
     if (isSignature(answer)) {
       return (
         <div className="mt-2">
@@ -1925,7 +1936,9 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
         </div>
       );
     }
-    return <p className="text-gray-700 text-base">{formatAnswer(answer, questionType)}</p>;
+    const q = questionOrType && typeof questionOrType === 'object' ? questionOrType : null;
+    const qType = q ? (q.type || q.question_type) : questionOrType;
+    return <p className="text-gray-700 text-base">{formatAnswer(answer, qType, q)}</p>;
   };
 
   const getQuestionText = (questionId) => {
@@ -2193,11 +2206,11 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
         formatDate(dateValue, responseId)
       ];
       
-      // Agregar respuestas por pregunta
+      // Agregar respuestas por pregunta (pasamos q para evaluación: nombres de ítems/columnas)
       questions.forEach(q => {
         const questionId = q.id || q._id;
         const answer = response.answers && response.answers[questionId];
-        row.push(formatAnswer(answer, q.type || q.question_type));
+        row.push(formatAnswer(answer, q.type || q.question_type, q));
       });
       
       tableData.push(row);
@@ -2264,12 +2277,15 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
             </div>
             <div className="space-y-6">
               {selectedResponse.answers && typeof selectedResponse.answers === 'object' ? (
-                Object.entries(selectedResponse.answers).map(([questionId, answer]) => (
+                Object.entries(selectedResponse.answers).map(([questionId, answer]) => {
+                  const q = survey.questions && survey.questions.find(qu => qu.id === questionId || qu._id === questionId);
+                  return (
                   <div key={questionId} className="border-l-4 border-indigo-500 pl-6 py-4 bg-gray-50 rounded-r-lg">
                     <h4 className="font-semibold text-lg text-gray-800 mb-2">{getQuestionText(questionId)}</h4>
-                    {renderAnswer(answer, getQuestionType(questionId))}
+                    {renderAnswer(answer, q || getQuestionType(questionId))}
                   </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-gray-500 italic">Respuesta sin formato estructurado</div>
               )}
@@ -2474,8 +2490,8 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
                                         style={{ maxHeight: '80px', objectFit: 'contain' }}
                                       />
                                     ) : (
-                                      <div className="truncate" title={formatAnswer(answer, q.type || q.question_type)}>
-                                        {formatAnswer(answer, q.type || q.question_type)}
+                                      <div className="truncate" title={formatAnswer(answer, q.type || q.question_type, q)}>
+                                        {formatAnswer(answer, q.type || q.question_type, q)}
                                       </div>
                                     )}
                                   </td>
