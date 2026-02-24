@@ -1234,7 +1234,7 @@ class SurveyListCreate(APIView):
         else:
             new_survey['created_by_username'] = None
         
-        return Response(SurveySerializer(new_survey).data, status=status.HTTP_201_CREATED)
+        return Response(SurveySerializer(new_survey, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     def get(self, request):
         # #region agent log
@@ -1513,7 +1513,7 @@ class SurveyListCreate(APIView):
                 pass
             # #endregion
             
-            serializer = SurveySerializer(surveys, many=True)
+            serializer = SurveySerializer(surveys, many=True, context={'request': request})
             # #region agent log
             try:
                 with open(log_file_path, 'a') as f:
@@ -1714,7 +1714,7 @@ class SurveyRetrieveUpdateDestroy(APIView):
         else:
             survey['created_by_username'] = None
         
-        serializer = SurveySerializer(survey)
+        serializer = SurveySerializer(survey, context={'request': request})
         return Response(serializer.data)
 
     def put(self, request, pk):
@@ -1761,7 +1761,7 @@ class SurveyRetrieveUpdateDestroy(APIView):
                         {"$set": {"is_public": validated_data.get('is_public', survey.get('is_public', False))}}
                     )
                     updated_survey = self.get_object(pk)
-                    return Response(SurveySerializer(updated_survey).data)
+                    return Response(SurveySerializer(updated_survey, context={'request': request}).data)
                 except Exception:
                     pass  # fallback to full update below
             
@@ -1844,6 +1844,12 @@ class SurveyRetrieveUpdateDestroy(APIView):
             }
             if 'sections' in validated_data:
                 update_fields['sections'] = validated_data['sections']
+            if 'reference_key_column' in validated_data:
+                update_fields['reference_key_column'] = validated_data.get('reference_key_column') or ''
+            if 'reference_mapping' in validated_data:
+                update_fields['reference_mapping'] = validated_data.get('reference_mapping') or {}
+            if 'reference_data' in validated_data and validated_data['reference_data'] is not None:
+                update_fields['reference_data'] = validated_data['reference_data']
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
@@ -1861,7 +1867,7 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 {"$set": update_fields}
             )
             updated_survey = self.get_object(pk)
-            return Response(SurveySerializer(updated_survey).data)
+            return Response(SurveySerializer(updated_survey, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
@@ -2099,7 +2105,10 @@ class PublicSurveyView(APIView):
             elif 'id' not in survey:
                 survey['id'] = pk
             
-            serializer = SurveySerializer(survey)
+            # No enviar reference_data en vista pública (solo reference_key_column y reference_mapping)
+            out = dict(survey)
+            out['reference_data'] = None
+            serializer = SurveySerializer(out)
             return Response(serializer.data)
         except NotFound:
             raise
@@ -2113,6 +2122,159 @@ class PublicSurveyView(APIView):
                     f.write(json.dumps(log_data) + '\n')
             except: pass
             raise NotFound(detail="Encuesta no encontrada o ID inválido.")
+
+
+class SurveyReferenceFileUpload(APIView):
+    """
+    POST: Sube un Excel de referenciación para una encuesta.
+    Parsea el archivo, guarda reference_data en la encuesta y devuelve columnas y muestra de filas.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        if 'reference_file' not in request.FILES:
+            return Response(
+                {"detail": "Se requiere el archivo 'reference_file'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        f = request.FILES['reference_file']
+        if not f.name.lower().endswith(('.xlsx', '.xls')):
+            return Response(
+                {"detail": "Solo se permiten archivos Excel (.xlsx, .xls)."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        surveys_collection = get_surveys_collection()
+        try:
+            survey = surveys_collection.find_one({"_id": ObjectId(pk)})
+        except Exception:
+            survey = surveys_collection.find_one({"id": pk})
+        if not survey:
+            raise NotFound(detail="Encuesta no encontrada.")
+        user_role, user_group_id = get_user_role_and_group(request)
+        if user_role != 'root' and user_group_id:
+            sg = survey.get('group')
+            if sg is not None and str(sg) != str(user_group_id):
+                return Response(
+                    {"detail": "No tienes permisos para modificar esta encuesta."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+        try:
+            import openpyxl
+            from io import BytesIO
+            wb = openpyxl.load_workbook(BytesIO(f.read()), read_only=True, data_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+            wb.close()
+        except Exception as e:
+            return Response(
+                {"detail": f"No se pudo leer el archivo Excel: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not rows:
+            return Response(
+                {"detail": "El archivo no tiene filas."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        headers = [str(c).strip() if c is not None else '' for c in rows[0]]
+        if not any(h for h in headers):
+            return Response(
+                {"detail": "La primera fila debe contener los nombres de las columnas."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        max_rows = 5000
+        data_rows = []
+        for row in rows[1:max_rows + 1]:
+            if row is None:
+                continue
+            data_rows.append(dict(zip(headers, [(str(v).strip() if v is not None else '') for v in row])))
+        try:
+            surveys_collection.update_one(
+                {"_id": survey["_id"]},
+                {"$set": {"reference_data": data_rows, "reference_row_count": len(data_rows)}}
+            )
+        except Exception:
+            try:
+                surveys_collection.update_one(
+                    {"_id": ObjectId(pk)},
+                    {"$set": {"reference_data": data_rows, "reference_row_count": len(data_rows)}}
+                )
+            except Exception:
+                surveys_collection.update_one(
+                    {"id": pk},
+                    {"$set": {"reference_data": data_rows, "reference_row_count": len(data_rows)}}
+                )
+        sample = data_rows[:3] if len(data_rows) > 3 else data_rows
+        return Response({
+            "columns": headers,
+            "row_count": len(data_rows),
+            "sample": sample
+        })
+
+
+class ReferenceLookup(APIView):
+    """
+    GET: Lookup por clave en el archivo de referenciación.
+    - Encuestas con URL (públicas): acceso sin autenticación.
+    - Encuestas respondidas por APK (privadas): requiere autenticación y que la encuesta
+      pertenezca al grupo del usuario. Query param: key=<valor>
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        key_value = request.query_params.get('key', '').strip()
+        if not key_value:
+            return Response({}, status=status.HTTP_200_OK)
+        surveys_collection = get_surveys_collection()
+        try:
+            survey = surveys_collection.find_one({"_id": ObjectId(pk)})
+        except Exception:
+            survey = surveys_collection.find_one({"id": pk})
+        if not survey:
+            raise NotFound(detail="Encuesta no encontrada.")
+
+        is_public = survey.get('is_public', False)
+        if not is_public:
+            # Encuesta privada: permitir solo si el usuario está autenticado y tiene acceso (mismo grupo o root)
+            user_role, user_group_id = get_user_role_and_group(request)
+            if not (request.user and getattr(request.user, 'is_authenticated', False)):
+                return Response(
+                    {"detail": "Esta encuesta no es pública. Inicia sesión para usar el autocompletado."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            survey_group = survey.get('group')
+            if user_role != 'root' and user_group_id:
+                try:
+                    if str(survey_group) != str(user_group_id) and str(survey_group) != str(ObjectId(user_group_id)):
+                        return Response(
+                            {"detail": "No tienes acceso a esta encuesta."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+                except Exception:
+                    if str(survey_group) != str(user_group_id):
+                        return Response(
+                            {"detail": "No tienes acceso a esta encuesta."},
+                            status=status.HTTP_403_FORBIDDEN
+                        )
+            elif user_role != 'root' and not user_group_id:
+                return Response(
+                    {"detail": "No tienes acceso a esta encuesta."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+        ref_data = survey.get('reference_data') or []
+        key_col = (survey.get('reference_key_column') or '').strip()
+        if not key_col or not ref_data:
+            return Response({}, status=status.HTTP_200_OK)
+        for row in ref_data:
+            if not isinstance(row, dict):
+                continue
+            val = row.get(key_col)
+            if val is None:
+                continue
+            if str(val).strip() == key_value:
+                return Response(row)
+        return Response({}, status=status.HTTP_200_OK)
+
 
 class PublicResponseCreate(APIView):
     """

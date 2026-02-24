@@ -737,6 +737,7 @@ const PublicSurveyView = ({ surveyId }) => {
   const [currentSection, setCurrentSection] = useState(null);
   const [sectionHistory, setSectionHistory] = useState([]);
   const [visibleSections, setVisibleSections] = useState([]);
+  const [referenceLookupNotFound, setReferenceLookupNotFound] = useState(false);
 
   // Function to evaluate conditional logic
   const evaluateCondition = (condition, answers) => {
@@ -869,8 +870,42 @@ const PublicSurveyView = ({ surveyId }) => {
     }
   }, [answers, surveyData]);
 
+  // Referenciación: pregunta cuya columna mapeada es la clave de búsqueda
+  const referenceKeyQuestionId = surveyData?.reference_key_column && surveyData?.reference_mapping
+    ? (surveyData.questions || []).find(q => (surveyData.reference_mapping || {})[q.id] === surveyData.reference_key_column)?.id
+    : null;
+
   const handleAnswerChange = (questionId, value) => {
+    if (questionId === referenceKeyQuestionId) setReferenceLookupNotFound(false);
     setAnswers(prev => ({ ...prev, [questionId]: value }));
+  };
+
+  const doReferenceLookup = async (keyValue) => {
+    const key = String(keyValue || '').trim();
+    if (!key || !surveyId || !surveyData?.reference_key_column || !surveyData?.reference_mapping) return;
+    setReferenceLookupNotFound(false);
+    try {
+      const response = await fetch(`/api/public/surveys/${surveyId}/reference-lookup/?key=${encodeURIComponent(key)}`);
+      if (!response.ok) {
+        setReferenceLookupNotFound(true);
+        return;
+      }
+      const row = await response.json();
+      if (!row || typeof row !== 'object' || Object.keys(row).length === 0) {
+        setReferenceLookupNotFound(true);
+        return;
+      }
+      setReferenceLookupNotFound(false);
+      setAnswers(prev => {
+        const next = { ...prev };
+        Object.entries(surveyData.reference_mapping || {}).forEach(([qid, colName]) => {
+          if (row[colName] !== undefined && row[colName] !== null) next[qid] = row[colName];
+        });
+        return next;
+      });
+    } catch (_) {
+      setReferenceLookupNotFound(true);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -1125,13 +1160,22 @@ const PublicSurveyView = ({ surveyId }) => {
         {/* Campo de respuesta mejorado */}
         <div className="mt-6">
           {question.type === 'Texto Corto' && (
-            <input
-              type="text"
-              value={answers[questionId] || ''}
-              onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-              className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white"
-              placeholder="Escribe tu respuesta aquí..."
-            />
+            <>
+              <input
+                type="text"
+                value={answers[questionId] || ''}
+                onChange={(e) => handleAnswerChange(questionId, e.target.value)}
+                onBlur={(e) => { if (questionId === referenceKeyQuestionId) doReferenceLookup(e.target.value); }}
+                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white"
+                placeholder="Escribe tu respuesta aquí..."
+              />
+              {questionId === referenceKeyQuestionId && surveyData.reference_key_column && (
+                <p className="text-xs text-indigo-600 mt-2">Si ingresas tu documento, el resto de datos se completarán automáticamente.</p>
+              )}
+              {questionId === referenceKeyQuestionId && referenceLookupNotFound && (
+                <p className="text-xs text-amber-600 mt-2">No se encontraron datos para este documento.</p>
+              )}
+            </>
           )}
 
           {question.type === 'Párrafo' && (
@@ -1144,13 +1188,22 @@ const PublicSurveyView = ({ surveyId }) => {
           )}
 
           {question.type === 'Número' && (
-            <input
-              type="number"
-              value={answers[questionId] || ''}
-              onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-              className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white"
-              placeholder="Ingresa un número..."
-            />
+            <>
+              <input
+                type="number"
+                value={answers[questionId] || ''}
+                onChange={(e) => handleAnswerChange(questionId, e.target.value)}
+                onBlur={(e) => { if (questionId === referenceKeyQuestionId) doReferenceLookup(e.target.value); }}
+                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white"
+                placeholder="Ingresa un número..."
+              />
+              {questionId === referenceKeyQuestionId && surveyData.reference_key_column && (
+                <p className="text-xs text-indigo-600 mt-2">Si ingresas tu documento, el resto de datos se completarán automáticamente.</p>
+              )}
+              {questionId === referenceKeyQuestionId && referenceLookupNotFound && (
+                <p className="text-xs text-amber-600 mt-2">No se encontraron datos para este documento.</p>
+              )}
+            </>
           )}
 
           {question.type === 'Fecha' && (
@@ -1438,6 +1491,9 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   const [showPreview, setShowPreview] = useState(false);
   const [surveyData, setSurveyData] = useState(initialSurveyData || { title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Initialize with initialSurveyData or default
   const [showSectionManager, setShowSectionManager] = useState(false);
+  const [showReferenceSection, setShowReferenceSection] = useState(false);
+  const [referenceColumns, setReferenceColumns] = useState([]); // column names from last upload
+  const [referenceUploading, setReferenceUploading] = useState(false);
 
   // Auto-resize textarea when title changes
   React.useEffect(() => {
@@ -1503,13 +1559,20 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         conditional_logic: q.conditional_logic || null
       }));
       
+      const refKey = initialSurveyData.reference_key_column || '';
+      const refMap = initialSurveyData.reference_mapping || {};
+      const derivedColumns = [...new Set([refKey, ...Object.values(refMap)].filter(Boolean))];
+      if (derivedColumns.length > 0) setReferenceColumns(derivedColumns);
       setSurveyData({
         ...initialSurveyData,
         questions: questionsWithSections,
-        sections: sections
+        sections: sections,
+        reference_key_column: refKey,
+        reference_mapping: refMap,
+        reference_row_count: initialSurveyData.reference_row_count ?? 0
       });
     } else {
-      setSurveyData({ title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [] }); // Reset if no initial data
+      setSurveyData({ title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Reset if no initial data
     }
   }, [initialSurveyData]);
 
@@ -1811,6 +1874,114 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                </button>
              </div>
            )}
+
+           {/* Archivo de referenciación */}
+           <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
+             <button
+               type="button"
+               onClick={() => setShowReferenceSection(!showReferenceSection)}
+               className="w-full flex items-center justify-between text-left"
+             >
+               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                 <FontAwesomeIcon icon={faFileExcel} size="sm" className="text-green-600" />
+                 Archivo de referenciación
+               </h3>
+               <FontAwesomeIcon icon={showReferenceSection ? faChevronUp : faChevronDown} size="sm" className="text-gray-500" />
+             </button>
+             {showReferenceSection && (
+               <div className="mt-4 space-y-4">
+                 {!surveyData.id ? (
+                   <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg">Guarda la encuesta primero para poder subir el archivo Excel.</p>
+                 ) : (
+                   <>
+                     <div>
+                       <label className="block text-sm font-medium text-gray-700 mb-1">Subir Excel (.xlsx)</label>
+                       <input
+                         type="file"
+                         accept=".xlsx,.xls"
+                         className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-indigo-50 file:text-indigo-700"
+                         onChange={async (e) => {
+                           const file = e.target?.files?.[0];
+                           if (!file || !surveyData.id) return;
+                           setReferenceUploading(true);
+                           try {
+                             const formData = new FormData();
+                             formData.append('reference_file', file);
+                             const response = await authenticatedFetch(`/api/surveys/${surveyData.id}/reference-file/`, {
+                               method: 'POST',
+                               body: formData
+                             });
+                             if (!response.ok) {
+                               const err = await response.json().catch(() => ({}));
+                               throw new Error(err.detail || 'Error al subir el archivo');
+                             }
+                             const data = await response.json();
+                             setReferenceColumns(data.columns || []);
+                             setSurveyData(prev => ({ ...prev, reference_row_count: data.row_count ?? 0 }));
+                             e.target.value = '';
+                           } catch (err) {
+                             alert(err.message || 'Error al subir el archivo');
+                           } finally {
+                             setReferenceUploading(false);
+                           }
+                         }}
+                         disabled={referenceUploading}
+                       />
+                       {(surveyData.reference_row_count > 0 || referenceColumns.length > 0) && (
+                         <p className="text-sm text-gray-500 mt-1">
+                           Archivo cargado: {surveyData.reference_row_count || 0} filas. Columnas: {referenceColumns.length ? referenceColumns.join(', ') : '(sube de nuevo para ver)'}
+                         </p>
+                       )}
+                     </div>
+                     {(referenceColumns.length > 0 || surveyData.reference_key_column || Object.keys(surveyData.reference_mapping || {}).length > 0) && (
+                       <>
+                         <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-1">Clave de búsqueda (columna del documento)</label>
+                           <select
+                             value={surveyData.reference_key_column || ''}
+                             onChange={(e) => setSurveyData(prev => ({ ...prev, reference_key_column: e.target.value }))}
+                             className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                           >
+                             <option value="">— Ninguna —</option>
+                             {(referenceColumns.length ? referenceColumns : [...new Set([surveyData.reference_key_column, ...Object.values(surveyData.reference_mapping || {})].filter(Boolean))]).map(col => (
+                               <option key={col} value={col}>{col}</option>
+                             ))}
+                           </select>
+                         </div>
+                         <div>
+                           <label className="block text-sm font-medium text-gray-700 mb-2">Mapear preguntas a columnas</label>
+                           <div className="space-y-2">
+                             {(surveyData.questions || []).filter(q => q.type && !['Título', 'titulo'].includes(q.type)).map(q => (
+                               <div key={q.id} className="flex items-center gap-2 flex-wrap">
+                                 <span className="text-sm text-gray-600 min-w-[120px] truncate" title={q.text}>{q.text || q.id}</span>
+                                 <select
+                                   value={(surveyData.reference_mapping || {})[q.id] ?? ''}
+                                   onChange={(e) => {
+                                     const val = e.target.value;
+                                     setSurveyData(prev => {
+                                       const next = { ...(prev.reference_mapping || {}) };
+                                       if (val) next[q.id] = val; else delete next[q.id];
+                                       return { ...prev, reference_mapping: next };
+                                     });
+                                   }}
+                                   className="flex-1 min-w-[140px] px-3 py-1.5 border border-gray-200 rounded-lg text-sm"
+                                 >
+                                   <option value="">Ninguna</option>
+                                   {(referenceColumns.length ? referenceColumns : [...new Set([surveyData.reference_key_column, ...Object.values(surveyData.reference_mapping || {})].filter(Boolean))]).map(col => (
+                                     <option key={col} value={col}>{col}</option>
+                                   ))}
+                                 </select>
+                               </div>
+                             ))}
+                           </div>
+                         </div>
+                       </>
+                     )}
+                   </>
+                 )}
+               </div>
+             )}
+           </div>
 
            <div className="space-y-2 sm:space-y-3">
              {surveyData.questions.length === 0 ? (
@@ -4396,7 +4567,9 @@ export default function App() {
         description: s.description ?? '',
         order: s.order ?? index
       })),
-      is_public: surveyData.is_public || false
+      is_public: surveyData.is_public || false,
+      reference_key_column: surveyData.reference_key_column || '',
+      reference_mapping: surveyData.reference_mapping || {}
     };
 
     try {

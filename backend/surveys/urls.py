@@ -5,9 +5,10 @@ from .views import (
     SurveyGroupListCreate, SurveyGroupRetrieveUpdateDestroy,
     SurveyListCreate, SurveyRetrieveUpdateDestroy,
     SurveyRestoreView, SurveyPermanentDeleteView,
+    SurveyReferenceFileUpload,
     ResponseListCreate, ResponseRetrieve,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
-    PublicSurveyView, PublicResponseCreate,
+    PublicSurveyView, ReferenceLookup, PublicResponseCreate,
     ResponseSyncView, SyncStatusView
 )
 
@@ -28,6 +29,7 @@ urlpatterns = [
     # Rutas para Encuestas
     path('surveys/', SurveyListCreate.as_view(), name='survey-list-create'),
     path('surveys/<str:pk>/', SurveyRetrieveUpdateDestroy.as_view(), name='survey-detail'),
+    path('surveys/<str:pk>/reference-file/', SurveyReferenceFileUpload.as_view(), name='survey-reference-file'),
     path('surveys/<str:pk>/restore/', SurveyRestoreView.as_view(), name='survey-restore'),
     path('surveys/<str:pk>/permanent-delete/', SurveyPermanentDeleteView.as_view(), name='survey-permanent-delete'),
 
@@ -43,5 +45,6 @@ urlpatterns = [
     
     # Rutas públicas (sin autenticación)
     path('public/surveys/<str:pk>/', PublicSurveyView.as_view(), name='public-survey-detail'),
+    path('public/surveys/<str:pk>/reference-lookup/', ReferenceLookup.as_view(), name='reference-lookup'),
     path('public/responses/', PublicResponseCreate.as_view(), name='public-response-create'),
 ]

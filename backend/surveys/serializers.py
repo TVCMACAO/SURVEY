@@ -337,6 +337,11 @@ class SurveySerializer(serializers.Serializer):
     # Campos para configurar texto legal del consentimiento de firma (Ley 1581/2012 Colombia)
     consent_responsible = serializers.CharField(max_length=500, required=False, allow_blank=True, default='') # Nombre del responsable del tratamiento de datos
     consent_purpose = serializers.CharField(max_length=1000, required=False, allow_blank=True, default='') # Finalidad del tratamiento de la firma
+    # Archivo de referenciación (Excel): clave de búsqueda, mapeo pregunta -> columna, datos parseados
+    reference_key_column = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    reference_mapping = serializers.JSONField(required=False, default=dict)  # { question_id: column_name }
+    reference_data = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)  # list of row dicts (not sent to client)
+    reference_row_count = serializers.IntegerField(read_only=True, required=False, default=0)  # set on upload
 
     def to_representation(self, instance):
         # Get base representation
@@ -357,6 +362,15 @@ class SurveySerializer(serializers.Serializer):
                     # Generate ID based on survey ID and index
                     section['id'] = f'section_{survey_id}_{index}'
         
+        # Para clientes anónimos (vista pública): no enviar reference_data.
+        # Para autenticados (sync APK): incluir reference_data para uso offline.
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_authenticated', False):
+            data['reference_data'] = instance.get('reference_data') or []
+        else:
+            data['reference_data'] = None
+        data['reference_row_count'] = instance.get('reference_row_count') or 0
+
         return data
 
     def create(self, validated_data):

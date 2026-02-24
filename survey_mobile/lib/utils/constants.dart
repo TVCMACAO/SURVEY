@@ -10,6 +10,8 @@ class ApiConstants {
   static const String syncResponses = '/responses/sync/';
   static const String syncStatus = '/responses/sync-status/';
   static const String currentUser = '/me/';
+  static String referenceLookup(String surveyId, String key) =>
+      '/public/surveys/$surveyId/reference-lookup/?key=${Uri.encodeComponent(key)}';
 }
 
 class StorageKeys {
@@ -21,7 +23,7 @@ class StorageKeys {
 
 class DatabaseConstants {
   static const String databaseName = 'survey_mobile.db';
-  static const int databaseVersion = 4;  // v4: signature_consent_at para Ley 1581/2012 Colombia
+  static const int databaseVersion = 7;  // v7: reference_data_json para lookup offline
   
   // Tablas
   static const String tableSurveys = 'surveys';
