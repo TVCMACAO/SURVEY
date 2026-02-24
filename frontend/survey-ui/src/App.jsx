@@ -381,6 +381,50 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                   <span className="text-gray-400 text-sm italic">El usuario firmará aquí...</span>
                 </div>}
               </div>
+
+              {/* Configuración: al final del bloque, compacta y secundaria */}
+              <div className="mt-4 pt-3 border-t border-gray-200/80 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-gray-500">
+                {data.type !== 'Título' && (
+                  <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                    <input type="checkbox" checked={!!data.required} onChange={() => onUpdate({ ...data, required: !data.required })} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
+                    <span>Obligatorio</span>
+                  </label>
+                )}
+                {data.type === 'Fecha' && (
+                  <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                    <input type="checkbox" checked={!!data.date_include_time} onChange={() => onUpdate({ ...data, date_include_time: !data.date_include_time })} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
+                    <span>Incluir hora</span>
+                  </label>
+                )}
+                {sections.length > 0 && (
+                  <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                    <span className="text-gray-400">Sección</span>
+                    <select value={data.section_id || ''} onChange={(e) => { onUpdate({ ...data, section_id: e.target.value || null }); if (onAssignSection) onAssignSection(e.target.value || null); }} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white focus:ring-1 focus:ring-indigo-400 min-w-0 max-w-[140px]">
+                      <option value="">Sin sección</option>
+                      {sections.map(section => <option key={section.id} value={section.id}>{section.title}</option>)}
+                    </select>
+                  </div>
+                )}
+                {data.type !== 'Título' && otherQuestions.length > 0 && (
+                  <div className="w-full flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                      <input type="checkbox" checked={hasCondition} onChange={(e) => onUpdate({ ...data, conditional_logic: e.target.checked ? { type: 'show_if', question_id: otherQuestions[0]?.id || '', operator: 'equals', value: '' } : null })} className="rounded border-gray-300 text-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
+                      <span>Mostrar solo si…</span>
+                    </label>
+                    {hasCondition && (
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <select value={data.conditional_logic?.question_id || ''} onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: e.target.value, operator: data.conditional_logic?.operator || 'equals', value: data.conditional_logic?.value ?? '' } })} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white min-w-0 max-w-[120px]" onClick={e => e.stopPropagation()}>
+                          {otherQuestions.map(q => { const t = (q.text || q.question_text || ''); return <option key={q.id} value={q.id}>{t.length > 25 ? t.slice(0, 25) + '…' : t || 'Pregunta'}</option>; })}
+                        </select>
+                        <select value={data.conditional_logic?.operator || 'equals'} onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: data.conditional_logic?.question_id || '', operator: e.target.value, value: data.conditional_logic?.value ?? '' } })} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white" onClick={e => e.stopPropagation()}>
+                          {CONDITION_OPERATORS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
+                        </select>
+                        <input type="text" value={data.conditional_logic?.value ?? ''} onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: data.conditional_logic?.question_id || '', operator: data.conditional_logic?.operator || 'equals', value: e.target.value } })} placeholder="Valor" className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] w-20" onClick={e => e.stopPropagation()} />
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div className="md:pr-10">
@@ -423,100 +467,6 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
             </div>
           )}
         </div>
-
-        {isActive && (
-          <div className="bg-gray-50/90 backdrop-blur px-4 sm:px-6 py-2 sm:py-3 border-t border-gray-200 flex flex-col gap-3 text-xs font-medium text-gray-500">
-             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
-               <span className="uppercase tracking-wider font-bold text-gray-400 text-[10px]">Configuración</span>
-               {data.type !== 'Título' && (
-               <div onClick={() => onUpdate({...data, required: !data.required})} className={`flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-gray-200 transition-colors ${data.required ? 'text-indigo-600' : 'text-gray-400'}`}>
-                 <div className={`w-3 h-3 rounded border ${data.required ? 'bg-indigo-500 border-indigo-500' : 'border-gray-400'}`} />
-                 <span>Obligatorio</span>
-               </div>
-               )}
-               {data.type === 'Fecha' && (
-                 <div onClick={() => onUpdate({...data, date_include_time: !data.date_include_time})} className={`flex items-center gap-2 cursor-pointer px-2 py-1 rounded hover:bg-gray-200 transition-colors ${data.date_include_time ? 'text-indigo-600' : 'text-gray-400'}`}>
-                   <div className={`w-3 h-3 rounded border ${data.date_include_time ? 'bg-indigo-500 border-indigo-500' : 'border-gray-400'}`} />
-                   <span>Incluir hora</span>
-                 </div>
-               )}
-               {sections.length > 0 && (
-                 <div className="flex items-center gap-2">
-                   <span className="text-gray-400">Sección:</span>
-                   <select
-                     value={data.section_id || ''}
-                     onChange={(e) => {
-                       onUpdate({...data, section_id: e.target.value || null});
-                       if (onAssignSection) onAssignSection(e.target.value || null);
-                     }}
-                     className="px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500"
-                     onClick={(e) => e.stopPropagation()}
-                   >
-                     <option value="">Sin sección</option>
-                     {sections.map(section => (
-                       <option key={section.id} value={section.id}>{section.title}</option>
-                     ))}
-                   </select>
-                 </div>
-               )}
-             </div>
-             {data.type !== 'Título' && otherQuestions.length > 0 && (
-               <div className="flex flex-col gap-2 pt-2 border-t border-gray-200" onClick={(e) => e.stopPropagation()}>
-                 <label className="flex items-center gap-2 cursor-pointer">
-                   <input
-                     type="checkbox"
-                     checked={hasCondition}
-                     onChange={(e) => onUpdate({ ...data, conditional_logic: e.target.checked ? { type: 'show_if', question_id: otherQuestions[0]?.id || '', operator: 'equals', value: '' } : null })}
-                     className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                   />
-                   <span className="text-gray-600 font-medium">Mostrar solo si…</span>
-                 </label>
-                 {hasCondition && (
-                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pl-5">
-                     <div>
-                       <span className="block text-[10px] text-gray-400 mb-0.5">Pregunta</span>
-                       <select
-                         value={data.conditional_logic?.question_id || ''}
-                         onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: e.target.value, operator: data.conditional_logic?.operator || 'equals', value: data.conditional_logic?.value ?? '' } })}
-                         className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500"
-                       >
-                         {otherQuestions.map(q => (
-                           <option key={q.id} value={q.id}>{(q.text || q.question_text || '').slice(0, 40)}{(q.text || q.question_text || '').length > 40 ? '…' : ''}</option>
-                         ))}
-                       </select>
-                     </div>
-                     <div>
-                       <span className="block text-[10px] text-gray-400 mb-0.5">Operador</span>
-                       <select
-                         value={data.conditional_logic?.operator || 'equals'}
-                         onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: data.conditional_logic?.question_id || '', operator: e.target.value, value: data.conditional_logic?.value ?? '' } })}
-                         className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500"
-                       >
-                         {CONDITION_OPERATORS.map(op => (
-                           <option key={op.value} value={op.value}>{op.label}</option>
-                         ))}
-                       </select>
-                     </div>
-                     <div>
-                       <span className="block text-[10px] text-gray-400 mb-0.5">Valor</span>
-                       <input
-                         type="text"
-                         value={data.conditional_logic?.value ?? ''}
-                         onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: data.conditional_logic?.question_id || '', operator: data.conditional_logic?.operator || 'equals', value: e.target.value } })}
-                         placeholder="Valor"
-                         className="w-full px-2 py-1 border border-gray-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500"
-                       />
-                     </div>
-                   </div>
-                 )}
-               </div>
-             )}
-             <span className="text-indigo-400 flex items-center gap-1 text-xs">
-               <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"/> 
-               <span className="hidden sm:inline">Editando</span>
-             </span>
-          </div>
-        )}
       </div>
         </div>
     </div>
