@@ -1565,7 +1565,9 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   // #endregion
 
   const addQuestion = (type) => {
-    const base = { id: generateId(), type, text: '', description: '', required: false, section_id: null, conditional_logic: null };
+    const num = (surveyData.questions || []).length + 1;
+    const defaultText = `Pregunta ${num}`;
+    const base = { id: generateId(), type, text: defaultText, description: '', required: false, section_id: null, conditional_logic: null };
     const newQ = type === 'Evaluación'
       ? {
           ...base,
@@ -1582,7 +1584,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
           ],
         }
       : { ...base, options: ['Opción Única', 'Casillas', 'Desplegable'].includes(type) ? ['Opción 1'] : [] };
-    setSurveyData(prev => ({ ...prev, questions: [...prev.questions, newQ] }));
+    setSurveyData(prev => ({ ...prev, questions: [...(prev.questions || []), newQ] }));
     setActiveQuestionId(newQ.id);
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   };
@@ -1634,8 +1636,8 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     setSurveyData(prev => {
       const updatedQuestions = prev.questions.map(q => {
         if (q.id === id) {
-          // Preserve the ID when updating
-          return { ...newData, id: id };
+          // Fusionar con la pregunta actual para no perder type, options, etc. si newData solo trae text
+          return { ...q, ...newData, id };
         }
         return q;
       });
@@ -4373,9 +4375,6 @@ export default function App() {
           try {
             const errorData = await response.json();
             console.error('[DEBUG] Survey save error response:', errorData);
-            // #region agent log
-            fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'App.jsx:handleSaveSurvey', message: 'survey save 400 response', data: { status: response.status, errorData }, timestamp: Date.now(), hypothesisId: '400' }) }).catch(() => {});
-            // #endregion
             if (errorData.detail) {
               errorMessage = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
             } else if (errorData && typeof errorData === 'object' && !Array.isArray(errorData)) {

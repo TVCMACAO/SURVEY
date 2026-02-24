@@ -1754,14 +1754,6 @@ class SurveyRetrieveUpdateDestroy(APIView):
             
             # Si el cuerpo solo actualiza is_public, no tocar preguntas ni otros campos (evita corrupción si el front envía solo is_public)
             request_keys = set(request.data.keys()) if hasattr(request.data, 'keys') else set()
-            # #region agent log
-            try:
-                import json as _json
-                with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as _f:
-                    _f.write(_json.dumps({"location":"surveys/views.py:PUT","message":"PUT survey body keys","data":{"request_keys": list(request_keys), "only_is_public_path": request_keys <= {'is_public', 'id'} or request_keys == {'is_public'},"hypothesisId":"PUT_keys"}, "timestamp": int(__import__('time').time()*1000)}) + '\n')
-            except Exception:
-                pass
-            # #endregion
             if request_keys <= {'is_public', 'id'} or request_keys == {'is_public'}:
                 try:
                     surveys_collection.update_one(
@@ -1830,6 +1822,10 @@ class SurveyRetrieveUpdateDestroy(APIView):
             questions_to_save = validated_data.get('questions', survey.get('questions'))
             if not isinstance(questions_to_save, list):
                 questions_to_save = survey.get('questions') or []
+            # No sobrescribir con lista vacía si la encuesta ya tiene preguntas (evita borrado accidental)
+            existing = survey.get('questions') or []
+            if questions_to_save == [] and len(existing) > 0:
+                questions_to_save = existing
             if isinstance(questions_to_save, list):
                 questions_to_save = [
                     dict(
