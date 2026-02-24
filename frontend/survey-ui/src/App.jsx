@@ -1771,6 +1771,17 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                <FontAwesomeIcon icon={faListUl} size="sm" className="fa-icon-force-white" /> 
                <span className="hidden sm:inline">Secciones</span>
              </button>
+             <button 
+               onClick={() => {
+                 setShowReferenceSection(prev => !prev);
+                 if (!showReferenceSection) setTimeout(() => document.getElementById('archivo-referenciacion')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+               }} 
+               className={`flex-1 md:flex-none px-4 md:px-5 py-2 md:py-2.5 rounded-xl font-bold text-xs md:text-sm shadow-xl flex items-center justify-center gap-2 transition-transform active:scale-95 ${showReferenceSection ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-green-500/90 hover:bg-green-600 text-white'}`}
+               title="Archivo de referenciación (Excel)"
+             >
+               <FontAwesomeIcon icon={faFileExcel} size="sm" className="fa-icon-force-white" /> 
+               <span className="hidden sm:inline">Referenciación</span>
+             </button>
              <button onClick={() => setShowPreview(true)} className="flex-1 md:flex-none px-4 md:px-5 py-2 md:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs md:text-sm shadow-xl flex items-center justify-center gap-2 transition-transform active:scale-95">
                <FontAwesomeIcon icon={faEye} size="sm" className="fa-icon-force-white" /> 
                <span className="hidden sm:inline">Vista Previa</span>
@@ -1833,50 +1844,9 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                />
              </div>
            </div>
-           {/* Section Manager */}
-           {showSectionManager && (
-             <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
-               <div className="flex items-center justify-between mb-4">
-                 <h3 className="text-lg font-bold text-gray-800">Gestionar Secciones</h3>
-                 <button
-                   onClick={() => setShowSectionManager(false)}
-                   className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
-                 >
-                   <FontAwesomeIcon icon={faXmark} size="sm" />
-                 </button>
-               </div>
-               <div className="space-y-3 mb-4">
-                 {(surveyData.sections || []).map((section, index) => (
-                   <div key={section.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                     <input
-                       type="text"
-                       value={section.title}
-                       onChange={(e) => updateSection(section.id, { ...section, title: e.target.value })}
-                       className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                       placeholder="Título de la sección"
-                     />
-                     <button
-                       onClick={() => deleteSection(section.id)}
-                       className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                       title="Eliminar sección"
-                     >
-                       <FontAwesomeIcon icon={faTrash} size="sm" />
-                     </button>
-                   </div>
-                 ))}
-               </div>
-               <button
-                 onClick={addSection}
-                 className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold flex items-center justify-center gap-2"
-               >
-                 <FontAwesomeIcon icon={faPlus} size="sm" />
-                 Agregar Sección
-               </button>
-             </div>
-           )}
 
-           {/* Archivo de referenciación */}
-           <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
+           {/* Archivo de referenciación - arriba, al abrir desde el botón del header */}
+           <div id="archivo-referenciacion" className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
              <button
                type="button"
                onClick={() => setShowReferenceSection(!showReferenceSection)}
@@ -1982,6 +1952,48 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                </div>
              )}
            </div>
+
+           {/* Section Manager */}
+           {showSectionManager && (
+             <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
+               <div className="flex items-center justify-between mb-4">
+                 <h3 className="text-lg font-bold text-gray-800">Gestionar Secciones</h3>
+                 <button
+                   onClick={() => setShowSectionManager(false)}
+                   className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+                 >
+                   <FontAwesomeIcon icon={faXmark} size="sm" />
+                 </button>
+               </div>
+               <div className="space-y-3 mb-4">
+                 {(surveyData.sections || []).map((section, index) => (
+                   <div key={section.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                     <input
+                       type="text"
+                       value={section.title}
+                       onChange={(e) => updateSection(section.id, { ...section, title: e.target.value })}
+                       className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                       placeholder="Título de la sección"
+                     />
+                     <button
+                       onClick={() => deleteSection(section.id)}
+                       className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                       title="Eliminar sección"
+                     >
+                       <FontAwesomeIcon icon={faTrash} size="sm" />
+                     </button>
+                   </div>
+                 ))}
+               </div>
+               <button
+                 onClick={addSection}
+                 className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold flex items-center justify-center gap-2"
+               >
+                 <FontAwesomeIcon icon={faPlus} size="sm" />
+                 Agregar Sección
+               </button>
+             </div>
+           )}
 
            <div className="space-y-2 sm:space-y-3">
              {surveyData.questions.length === 0 ? (
