@@ -4391,6 +4391,18 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null); // Usuario actual con su rol
   const [deletedSurveys, setDeletedSurveys] = useState([]); // Encuestas eliminadas
 
+  const requireAuthOrLogin = (error) => {
+    const msg = error?.message || '';
+    if (msg.includes('No authentication token') || msg.includes('Session expired') || msg.includes('Token refresh failed')) {
+      logout();
+      setView('login');
+      setSurveys([]);
+      setCurrentUser(null);
+      return true;
+    }
+    return false;
+  };
+
   const fetchSurveys = async () => {
     setLoading(true);
     try {
@@ -4400,6 +4412,7 @@ export default function App() {
         setSurveys(data);
     } catch (error) {
         console.error("Error fetching surveys:", error);
+        if (requireAuthOrLogin(error)) return;
         alert('No se pudieron cargar las encuestas. ' + error.message);
     } finally {
         setLoading(false);
@@ -4442,7 +4455,12 @@ export default function App() {
       setLoading(false);
     } else {
       (async () => {
-        await ensureFreshToken(); // refresh token first to avoid initial 401 on /api/me/ and /api/surveys/
+        await ensureFreshToken(); // refresh token first; on 401 tokens are cleared
+        if (!isAuthenticated()) {
+          setView('login');
+          setLoading(false);
+          return;
+        }
         fetchSurveys();
         fetchCurrentUser();
       })();
@@ -4465,6 +4483,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error fetching current user:", error);
+      requireAuthOrLogin(error);
     }
   };
 
