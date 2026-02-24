@@ -756,25 +756,10 @@ const PublicSurveyView = ({ surveyId }) => {
     }
   };
 
-  // Function to determine visible sections based on conditions
-  const getVisibleSections = (sections, questions, answers) => {
+  // Todas las secciones son navegables; la lógica condicional solo oculta preguntas concretas, no secciones enteras.
+  const getVisibleSections = (sections) => {
     if (!sections || sections.length === 0) return [];
-    
-    return sections.filter(section => {
-      // Find questions in this section
-      const sectionQuestions = questions.filter(q => q.section_id === section.id);
-      
-      // Check if any question in this section has conditional logic
-      const hasCondition = sectionQuestions.some(q => q.conditional_logic);
-      
-      if (!hasCondition) return true; // Show section if no conditions
-      
-      // Check all conditions in section questions
-      return sectionQuestions.every(q => {
-        if (!q.conditional_logic) return true;
-        return evaluateCondition(q.conditional_logic, answers);
-      });
-    });
+    return [...sections];
   };
 
   useEffect(() => {
@@ -857,7 +842,7 @@ const PublicSurveyView = ({ surveyId }) => {
   // Update visible sections when answers change
   useEffect(() => {
     if (surveyData && surveyData.sections && surveyData.sections.length > 0) {
-      const visible = getVisibleSections(surveyData.sections, surveyData.questions, answers);
+      const visible = getVisibleSections(surveyData.sections);
       setVisibleSections(visible.map(s => s.id));
       
       // If current section is no longer visible, move to first visible section
@@ -1389,7 +1374,19 @@ const PublicSurveyView = ({ surveyId }) => {
             </div>
           )}
 
-          {/* Botón de envío mejorado */}
+          {/* Progreso al final de cada sección (solo si hay secciones) */}
+          {surveyData.sections && surveyData.sections.length > 0 && (
+            <SectionNavigator
+              sections={surveyData.sections}
+              currentSection={currentSection}
+              onSectionChange={setCurrentSection}
+              visibleSections={visibleSections}
+            />
+          )}
+
+          {/* Botón Enviar solo en la última sección (o siempre si no hay secciones) */}
+          {((!surveyData.sections || surveyData.sections.length === 0) ||
+            currentSection === surveyData.sections[surveyData.sections.length - 1]?.id) && (
           <div className="mt-12 pt-8 border-t border-gray-200/60">
             <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-lg border border-white/60">
               <button
@@ -1414,6 +1411,7 @@ const PublicSurveyView = ({ surveyId }) => {
               </p>
             </div>
           </div>
+          )}
         </form>
       </div>
     </div>
@@ -1707,7 +1705,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         </header>
 
         <div 
-          className="w-full max-w-3xl mx-auto px-4 py-6 md:py-8 lg:py-12"
+          className="w-full max-w-6xl mx-auto px-4 py-6 md:py-8 lg:py-12"
         >
            <div 
              className="mb-6 md:mb-10 rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm"
