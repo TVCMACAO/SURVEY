@@ -5,7 +5,8 @@ import {
   faShareNodes, faTrash, faXmark, faBars, faEllipsisVertical, faChevronLeft, 
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
   faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus, faUser,
-  faSignature, faEraser, faEnvelope, faHeading, faCopy
+  faSignature, faEraser, faEnvelope, faHeading, faCopy,
+  faChevronUp, faChevronDown, faGripVertical
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
 import * as XLSX from 'xlsx';
@@ -189,7 +190,7 @@ const CONDITION_OPERATORS = [
   { value: 'less_than_or_equal', label: 'es menor o igual que' },
 ];
 
-const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection, allQuestions = [] }) => {
+const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection, allQuestions = [], onMoveUp, onMoveDown, canMoveUp = false, canMoveDown = false }) => {
   const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(data.type);
   const isEvaluationType = data.type === 'Evaluación';
   const fileInputRef = React.useRef(null);
@@ -229,7 +230,26 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
     >
       <div className={`backdrop-blur-xl rounded-2xl border overflow-hidden transition-colors duration-300 ${isActive ? 'bg-white border-indigo-500 ring-1 ring-indigo-500/20' : 'bg-white/40 border-white/60 hover:bg-white/80'}`}>
         <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-colors ${isActive ? 'bg-indigo-500' : 'bg-transparent'}`} />
-        <div className="p-4 sm:p-5 md:p-6 lg:p-8">
+        <div className="flex gap-2 sm:gap-3 p-4 sm:p-5 md:p-6 lg:p-8">
+          {/* Orden: asas de reordenar (subir/bajar) */}
+          {(onMoveUp != null || onMoveDown != null) && (
+            <div className="flex flex-col items-center justify-start pt-1 gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+              <span className="text-gray-400 mb-1" title="Orden de la pregunta">
+                <FontAwesomeIcon icon={faGripVertical} size="sm" className="fa-icon-force-current" />
+              </span>
+              {canMoveUp && (
+                <button type="button" onClick={onMoveUp} className="p-1.5 rounded-lg text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors" title="Subir pregunta">
+                  <FontAwesomeIcon icon={faChevronUp} size="sm" className="fa-icon-force-current" />
+                </button>
+              )}
+              {canMoveDown && (
+                <button type="button" onClick={onMoveDown} className="p-1.5 rounded-lg text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors" title="Bajar pregunta">
+                  <FontAwesomeIcon icon={faChevronDown} size="sm" className="fa-icon-force-current" />
+                </button>
+              )}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
           {isActive ? (
             <div className="animate-fadeIn w-full">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-0 mb-4">
@@ -498,6 +518,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
           </div>
         )}
       </div>
+        </div>
     </div>
   );
 };
@@ -1648,7 +1669,27 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   const deleteQuestion = (id) => {
     setSurveyData(prev => ({ ...prev, questions: prev.questions.filter(q => q.id !== id) }));
   };
-  
+
+  const moveQuestionUp = (id) => {
+    setSurveyData(prev => {
+      const idx = prev.questions.findIndex(q => q.id === id);
+      if (idx <= 0) return prev;
+      const newQuestions = [...prev.questions];
+      [newQuestions[idx - 1], newQuestions[idx]] = [newQuestions[idx], newQuestions[idx - 1]];
+      return { ...prev, questions: newQuestions };
+    });
+  };
+
+  const moveQuestionDown = (id) => {
+    setSurveyData(prev => {
+      const idx = prev.questions.findIndex(q => q.id === id);
+      if (idx === -1 || idx >= prev.questions.length - 1) return prev;
+      const newQuestions = [...prev.questions];
+      [newQuestions[idx], newQuestions[idx + 1]] = [newQuestions[idx + 1], newQuestions[idx]];
+      return { ...prev, questions: newQuestions };
+    });
+  };
+
   const handlePublish = () => onSave(surveyData);
 
   return (
@@ -1815,7 +1856,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                  <p className="text-sm sm:text-base text-gray-400 mt-2">Usa la barra de herramientas para comenzar</p>
                </div>
              ) : (
-               surveyData.questions.map((q) => (
+               surveyData.questions.map((q, index) => (
                  <QuestionBlock 
                    key={q.id} 
                    data={q} 
@@ -1826,6 +1867,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                    sections={surveyData.sections || []}
                    onAssignSection={(sectionId) => assignQuestionToSection(q.id, sectionId)}
                    allQuestions={surveyData.questions}
+                   onMoveUp={() => moveQuestionUp(q.id)}
+                   onMoveDown={() => moveQuestionDown(q.id)}
+                   canMoveUp={index > 0}
+                   canMoveDown={index < surveyData.questions.length - 1}
                  />
                ))
              )}
