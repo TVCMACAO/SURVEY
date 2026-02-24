@@ -2158,6 +2158,15 @@ class SurveyReferenceFileUpload(APIView):
                     {"detail": "No tienes permisos para modificar esta encuesta."},
                     status=status.HTTP_403_FORBIDDEN
                 )
+        def to_utf8_safe(val):
+            """Convierte un valor a str válido UTF-8 para evitar JSON parse error en el cliente."""
+            if val is None:
+                return ''
+            if isinstance(val, bytes):
+                return val.decode('utf-8', errors='replace').strip()
+            s = str(val)
+            return s.encode('utf-8', errors='replace').decode('utf-8').strip()
+
         try:
             import openpyxl
             from io import BytesIO
@@ -2175,7 +2184,7 @@ class SurveyReferenceFileUpload(APIView):
                 {"detail": "El archivo no tiene filas."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        headers = [str(c).strip() if c is not None else '' for c in rows[0]]
+        headers = [to_utf8_safe(c) for c in rows[0]]
         if not any(h for h in headers):
             return Response(
                 {"detail": "La primera fila debe contener los nombres de las columnas."},
@@ -2186,7 +2195,7 @@ class SurveyReferenceFileUpload(APIView):
         for row in rows[1:max_rows + 1]:
             if row is None:
                 continue
-            data_rows.append(dict(zip(headers, [(str(v).strip() if v is not None else '') for v in row])))
+            data_rows.append(dict(zip(headers, [to_utf8_safe(v) for v in row])))
         try:
             surveys_collection.update_one(
                 {"_id": survey["_id"]},
