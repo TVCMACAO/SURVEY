@@ -111,6 +111,19 @@ export const logout = () => {
 };
 
 /**
+ * Refresh access token once if we have a refresh token (e.g. on app load).
+ * Use before the first authenticated requests to avoid initial 401s.
+ */
+export const ensureFreshToken = async () => {
+  if (!getRefreshToken()) return;
+  try {
+    await refreshAccessToken();
+  } catch {
+    // Refresh failed; subsequent requests will 401 and retry or redirect to login
+  }
+};
+
+/**
  * Make authenticated API request with automatic token refresh
  */
 export const authenticatedFetch = async (url, options = {}) => {

@@ -8,7 +8,7 @@ import {
   faSignature, faEraser, faEnvelope, faHeading, faCopy,
   faChevronUp, faChevronDown, faGripVertical
 } from '@fortawesome/free-solid-svg-icons';
-import { authenticatedFetch, isAuthenticated, login, logout } from './auth';
+import { authenticatedFetch, isAuthenticated, login, logout, ensureFreshToken } from './auth';
 import * as XLSX from 'xlsx';
 import {
   Chart as ChartJS,
@@ -4215,7 +4215,13 @@ export default function App() {
           const response = await authenticatedFetch(`/api/surveys/${id}/`);
           if (!response.ok) throw new Error('Error al cargar la encuesta.');
           const data = await response.json();
-          setSurveyToEdit(data);
+          // Normalizar: preguntas con section_id que no existe → null (evita error al guardar)
+          const sectionIds = (data.sections || []).map(s => s.id);
+          const questions = (data.questions || []).map(q => ({
+            ...q,
+            section_id: q.section_id && sectionIds.includes(q.section_id) ? q.section_id : null
+          }));
+          setSurveyToEdit({ ...data, questions });
       } catch (error) {
           console.error("Error fetching survey for edit:", error);
           alert('No se pudo cargar la encuesta para editar. ' + error.message);
@@ -4235,8 +4241,11 @@ export default function App() {
       setView('login');
       setLoading(false);
     } else {
-    fetchSurveys();
-      fetchCurrentUser();
+      (async () => {
+        await ensureFreshToken(); // refresh token first to avoid initial 401 on /api/me/ and /api/surveys/
+        fetchSurveys();
+        fetchCurrentUser();
+      })();
     }
   }, []);
 
