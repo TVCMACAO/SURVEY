@@ -1625,8 +1625,8 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
 
   const updateSection = (id, newData) => {
     setSurveyData(prev => {
-      const updatedSections = (prev.sections || []).map(s => 
-        s.id === id ? { ...newData, id: id } : s
+      const updatedSections = (prev.sections || []).map(s =>
+        s.id === id ? { ...s, ...newData, id } : s
       );
       return { ...prev, sections: updatedSections };
     });
@@ -4402,9 +4402,11 @@ export default function App() {
           date_include_time: Boolean(q.date_include_time)
         };
       }),
-      sections: (surveyData.sections || []).map(({ id, ...s }) => ({
-        ...s,
-        order: s.order || 0
+      sections: (surveyData.sections || []).map((s, index) => ({
+        id: s.id || `section_${index}`,
+        title: s.title ?? '',
+        description: s.description ?? '',
+        order: s.order ?? index
       })),
       is_public: surveyData.is_public || false
     };
