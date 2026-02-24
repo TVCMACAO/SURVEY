@@ -46,22 +46,37 @@ const SignaturePad = ({ value, onChange }) => {
   const [isDrawing, setIsDrawing] = React.useState(false);
   const [hasSignature, setHasSignature] = React.useState(!!value);
 
+  // Convierte coordenadas pantalla → canvas para que el punto de contacto coincida con lo dibujado/guardado
+  const getCanvasCoords = (canvas, e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+      scaleX,
+      scaleY
+    };
+  };
+
   React.useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     ctx.strokeStyle = '#1e40af';
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Si hay un valor guardado, restaurar la firma
+    // Si hay un valor guardado, restaurar la firma (rellenar todo el canvas)
     if (value) {
       const img = new Image();
       img.onload = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         setHasSignature(true);
       };
       img.src = value;
@@ -69,12 +84,13 @@ const SignaturePad = ({ value, onChange }) => {
   }, [value]);
 
   const startDrawing = (e) => {
+    if (e.touches) e.preventDefault();
     setIsDrawing(true);
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    const { x, y, scaleX, scaleY } = getCanvasCoords(canvas, e);
+    ctx.lineWidth = 2 * Math.min(scaleX, scaleY);
     ctx.beginPath();
     ctx.moveTo(x, y);
   };
@@ -83,10 +99,9 @@ const SignaturePad = ({ value, onChange }) => {
     if (!isDrawing) return;
     e.preventDefault();
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const rect = canvas.getBoundingClientRect();
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    const { x, y } = getCanvasCoords(canvas, e);
     ctx.lineTo(x, y);
     ctx.stroke();
     setHasSignature(true);
