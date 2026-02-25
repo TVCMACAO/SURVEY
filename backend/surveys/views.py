@@ -2176,7 +2176,7 @@ class SurveyReferenceFileUpload(APIView):
             wb.close()
         except Exception as e:
             return Response(
-                {"detail": f"No se pudo leer el archivo Excel: {str(e)}"},
+                {"detail": "No se pudo leer el archivo Excel: " + to_utf8_safe(str(e))},
                 status=status.HTTP_400_BAD_REQUEST
             )
         if not rows:

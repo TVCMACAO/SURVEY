@@ -133,12 +133,14 @@ export const authenticatedFetch = async (url, options = {}) => {
     throw new Error('No authentication token available');
   }
 
-  // Add Authorization header
+  // Add Authorization header; do not set Content-Type for FormData (browser sets multipart/form-data with boundary)
   const headers = {
-    'Content-Type': 'application/json',
     'Authorization': `Bearer ${accessToken}`,
     ...options.headers,
   };
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   let response = await fetch(url, {
     ...options,

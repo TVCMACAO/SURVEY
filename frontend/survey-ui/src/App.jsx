@@ -1882,10 +1882,21 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                                body: formData
                              });
                              if (!response.ok) {
-                               const err = await response.json().catch(() => ({}));
-                               throw new Error(err.detail || 'Error al subir el archivo');
+                               let errMsg = 'Error al subir el archivo';
+                               try {
+                                 const text = await response.text();
+                                 const err = text ? (() => { try { return JSON.parse(text); } catch (_) { return {}; } })() : {};
+                                 errMsg = err.detail || errMsg;
+                               } catch (_) {}
+                               throw new Error(errMsg);
                              }
-                             const data = await response.json();
+                             let data = {};
+                             try {
+                               const text = await response.text();
+                               data = text ? JSON.parse(text) : {};
+                             } catch (_) {
+                               throw new Error('Respuesta del servidor no válida');
+                             }
                              setReferenceColumns(data.columns || []);
                              setSurveyData(prev => ({ ...prev, reference_row_count: data.row_count ?? 0 }));
                              e.target.value = '';
