@@ -738,6 +738,7 @@ const PublicSurveyView = ({ surveyId }) => {
   const [sectionHistory, setSectionHistory] = useState([]);
   const [visibleSections, setVisibleSections] = useState([]);
   const [referenceLookupNotFound, setReferenceLookupNotFound] = useState(false);
+  const referenceLookupDebounceRef = React.useRef(null);
 
   // Function to evaluate conditional logic
   const evaluateCondition = (condition, answers) => {
@@ -876,8 +877,38 @@ const PublicSurveyView = ({ surveyId }) => {
     : null;
 
   const handleAnswerChange = (questionId, value) => {
-    if (questionId === referenceKeyQuestionId) setReferenceLookupNotFound(false);
+    if (questionId === referenceKeyQuestionId) {
+      setReferenceLookupNotFound(false);
+      if (referenceLookupDebounceRef.current) clearTimeout(referenceLookupDebounceRef.current);
+      referenceLookupDebounceRef.current = setTimeout(() => {
+        doReferenceLookup(value);
+        referenceLookupDebounceRef.current = null;
+      }, 500);
+    }
     setAnswers(prev => ({ ...prev, [questionId]: value }));
+  };
+
+  const formatDateForInput = (val, includeTime) => {
+    if (val == null) return '';
+    const s = String(val).trim();
+    if (!s) return '';
+    const num = Number(val);
+    let date;
+    if (!Number.isNaN(num) && num > 0) {
+      date = new Date((num - 25569) * 86400 * 1000);
+    } else {
+      date = new Date(s.replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/, (_, d, m, y) => `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`));
+    }
+    if (Number.isNaN(date.getTime())) return s;
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    if (includeTime) {
+      const h = String(date.getHours()).padStart(2, '0');
+      const min = String(date.getMinutes()).padStart(2, '0');
+      return `${y}-${m}-${d}T${h}:${min}`;
+    }
+    return `${y}-${m}-${d}`;
   };
 
   const doReferenceLookup = async (keyValue) => {
@@ -896,10 +927,19 @@ const PublicSurveyView = ({ surveyId }) => {
         return;
       }
       setReferenceLookupNotFound(false);
+      const questions = surveyData.questions || [];
       setAnswers(prev => {
         const next = { ...prev };
         Object.entries(surveyData.reference_mapping || {}).forEach(([qid, colName]) => {
-          if (row[colName] !== undefined && row[colName] !== null) next[qid] = row[colName];
+          let val = row[colName];
+          if (val === undefined || val === null) return;
+          const question = questions.find(q => q.id === qid);
+          if (question && (question.type === 'Fecha' || question.type === 'date')) {
+            val = formatDateForInput(val, question.date_include_time);
+          } else if (typeof val === 'number' && question && question.type !== 'Número' && question.type !== 'number') {
+            val = String(val);
+          }
+          next[qid] = val;
         });
         return next;
       });
@@ -908,10 +948,36 @@ const PublicSurveyView = ({ surveyId }) => {
     }
   };
 
+  const getVisibleRequiredQuestions = () => {
+    const questions = surveyData?.questions || [];
+    const isVisible = (q) => {
+      if (q.conditional_logic && !evaluateCondition(q.conditional_logic, answers)) return false;
+      if (surveyData.sections && surveyData.sections.length > 0) {
+        return q.section_id === currentSection;
+      }
+      return true;
+    };
+    return questions.filter(q => q.required && q.type !== 'Título' && q.type !== 'titulo' && isVisible(q));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const requiredQuestions = getVisibleRequiredQuestions();
+    const missing = requiredQuestions.filter(q => {
+      const qid = q.id || q._id;
+      const val = answers[qid];
+      if (val === undefined || val === null) return true;
+      if (typeof val === 'string' && val.trim() === '') return true;
+      return false;
+    });
+    if (missing.length > 0) {
+      const names = missing.map(q => (q.text || q.question_text || 'Pregunta')).slice(0, 3).join(', ');
+      alert(`Completa los campos obligatorios (marcados con *). Faltan: ${names}${missing.length > 3 ? '...' : ''}`);
+      return;
+    }
+
     setSubmitting(true);
-    
     try {
       // Generate device ID if not exists
       let deviceId = localStorage.getItem('device_id');
@@ -1404,8 +1470,16 @@ const PublicSurveyView = ({ surveyId }) => {
           />
         )}
 
-        {/* Formulario mejorado */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Formulario mejorado: Enter en input no envía; solo el botón Enviar envía */}
+        <form
+          onSubmit={handleSubmit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.type !== 'submit') {
+              e.preventDefault();
+            }
+          }}
+          className="space-y-6"
+        >
           {surveyData.questions && surveyData.questions.length > 0 ? (
             <div className="space-y-6">
               {(() => {
