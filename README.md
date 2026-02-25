@@ -318,7 +318,9 @@ Para problemas o preguntas, contacta al equipo de desarrollo.
 
 ## Changelog
 
-### Versión Actual
+### Versión Actual (Web y APK)
+- ✅ **Archivo de referenciación (Excel):** subida en el editor, mapeo pregunta → columna. Al responder (enlace o APK), al ingresar el documento/clave se autocompletan el resto de campos. Web: lookup al escribir (debounce) y al salir del campo; fechas del Excel formateadas para inputs date/datetime. APK: lookup online con token; offline usa copia descargada al sincronizar.
+- ✅ **Vista pública (enlace compartido):** Enter en un campo ya no envía el formulario; solo el botón «Enviar Respuestas» envía. Validación de campos obligatorios (*) antes de enviar; mensaje claro si faltan.
 - ✅ Soporte completo de secciones
 - ✅ Lógica condicional para preguntas
 - ✅ Migración a EasyPanel
