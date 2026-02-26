@@ -2485,7 +2485,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
         responseId || `Respuesta ${index + 1}`,
         response.device_id || '-',
         response.surveyor_id || '-',
-        response.synced ? 'Sincronizado' : 'Pendiente',
+        response.synced ? 'En línea' : 'Pendiente',
         formatDate(dateValue, responseId)
       ];
       
@@ -2551,7 +2551,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
               <div className="text-right">
                 <span className="text-xs text-gray-400">
                   {selectedResponse.synced ? (
-                    <span className="text-green-600">✓ Sincronizado</span>
+                    <span className="text-green-600">✓ En línea</span>
                   ) : (
                     <span className="text-yellow-600">⏳ Pendiente</span>
                   )}
@@ -2619,7 +2619,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
                 </div>
                 <div className="bg-gradient-to-br from-blue-500 to-cyan-600 rounded-2xl p-6 text-white shadow-lg">
                   <div className="text-3xl font-black mb-2">{responses.filter(r => r.synced).length}</div>
-                  <div className="text-sm opacity-90 font-medium">Sincronizadas</div>
+                  <div className="text-sm opacity-90 font-medium">En línea</div>
                 </div>
               </div>
             )}
@@ -2748,7 +2748,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
                                 {response.synced ? (
                                   <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
                                     <FontAwesomeIcon icon={faCheck} size="xs" className="fa-icon-force-current" />
-                                    Sincronizado
+                                    En línea
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">
@@ -2817,7 +2817,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
                             {response.synced ? (
                               <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
                                 <FontAwesomeIcon icon={faCheck} size="xs" className="fa-icon-force-current" />
-                                Sincronizado
+                                En línea
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">

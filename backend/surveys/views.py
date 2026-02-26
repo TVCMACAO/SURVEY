@@ -2349,6 +2349,8 @@ class ResponseListCreate(APIView):
         responses = list(responses_collection.find(query))
         for response in responses:
             response['id'] = str(response['_id'])
+            # Las respuestas en el servidor están enviadas; solo pendientes son las que aún no se envían desde el APK
+            response.setdefault('synced', True)
         serializer = ResponseSerializer(responses, many=True)
         return Response(serializer.data)
 
