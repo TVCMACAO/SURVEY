@@ -2347,10 +2347,33 @@ class ResponseListCreate(APIView):
                 raise ValidationError(detail="ID de encuesta inválido.")
 
         responses = list(responses_collection.find(query))
-        for response in responses:
-            response['id'] = str(response['_id'])
-            # Las respuestas en el servidor están enviadas; solo pendientes son las que aún no se envían desde el APK
-            response.setdefault('synced', True)
+        surveyor_ids = set()
+        for r in responses:
+            r['id'] = str(r['_id'])
+            r.setdefault('synced', True)
+            sid = r.get('surveyor_id')
+            if sid:
+                surveyor_ids.add(str(sid))
+        # Resolver nombres de encuestadores desde MongoDB
+        surveyor_names = {}
+        if surveyor_ids:
+            users_collection = get_mongo_collection('users')
+            for sid in surveyor_ids:
+                try:
+                    user_doc = users_collection.find_one({'_id': ObjectId(sid)})
+                    if not user_doc:
+                        user_doc = users_collection.find_one({'id': sid})
+                    if user_doc:
+                        first = (user_doc.get('first_name') or '').strip()
+                        last = (user_doc.get('last_name') or '').strip()
+                        name = f'{first} {last}'.strip() or (user_doc.get('username') or sid)
+                        surveyor_names[str(sid)] = name
+                except Exception:
+                    surveyor_names[str(sid)] = sid
+        for r in responses:
+            r.setdefault('synced', True)
+            sid = r.get('surveyor_id')
+            r['surveyor_name'] = surveyor_names.get(str(sid), sid or '') if sid else ''
         serializer = ResponseSerializer(responses, many=True)
         return Response(serializer.data)
 

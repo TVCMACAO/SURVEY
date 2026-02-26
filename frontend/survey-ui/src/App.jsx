@@ -2484,7 +2484,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       const row = [
         responseId || `Respuesta ${index + 1}`,
         response.device_id || '-',
-        response.surveyor_id || '-',
+        (response.surveyor_name || response.surveyor_id) || '-',
         response.synced ? 'En línea' : 'Pendiente',
         formatDate(dateValue, responseId)
       ];
@@ -2545,7 +2545,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                 <h3 className="font-bold text-xl text-gray-800">Respuesta Detallada</h3>
                 <p className="text-sm text-gray-500 mt-1">
                   {selectedResponse.device_id && `Dispositivo: ${selectedResponse.device_id}`}
-                  {selectedResponse.surveyor_id && ` • Encuestador ID: ${selectedResponse.surveyor_id}`}
+                  {(selectedResponse.surveyor_name || selectedResponse.surveyor_id) && ` • Encuestador: ${selectedResponse.surveyor_name || selectedResponse.surveyor_id}`}
                 </p>
               </div>
               <div className="text-right">
@@ -2753,7 +2753,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                                 {response.device_id || '-'}
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700">
-                                {response.surveyor_id || '-'}
+                                {(response.surveyor_name || response.surveyor_id) || '-'}
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap">
                                 {response.synced ? (
@@ -2821,7 +2821,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                             </div>
                             <p className="text-sm text-gray-600 mt-2">
                               {response.device_id && <span className="inline-flex items-center gap-1"><FontAwesomeIcon icon={faHashtag} size="xs" className="fa-icon-force-current" /> {response.device_id}</span>}
-                              {response.surveyor_id && <span className="ml-4">Encuestador ID: {response.surveyor_id}</span>}
+                              {(response.surveyor_name || response.surveyor_id) && <span className="ml-4">Encuestador: {response.surveyor_name || response.surveyor_id}</span>}
                             </p>
                           </div>
                           <div className="text-right flex flex-col items-end gap-2">
