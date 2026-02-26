@@ -10,6 +10,7 @@ class ApiConstants {
   static const String syncResponses = '/responses/sync/';
   static const String syncStatus = '/responses/sync-status/';
   static const String currentUser = '/me/';
+  static const String users = '/users/';
   static String referenceLookup(String surveyId, String key) =>
       '/public/surveys/$surveyId/reference-lookup/?key=${Uri.encodeComponent(key)}';
 }
@@ -23,11 +24,13 @@ class StorageKeys {
 
 class DatabaseConstants {
   static const String databaseName = 'survey_mobile.db';
-  static const int databaseVersion = 7;  // v7: reference_data_json para lookup offline
+  static const int databaseVersion = 9;  // v9: session + local_users para offline-first
   
   // Tablas
   static const String tableSurveys = 'surveys';
   static const String tableResponses = 'responses';
   static const String tableSyncQueue = 'sync_queue';
+  static const String tableSession = 'session';
+  static const String tableLocalUsers = 'local_users';
 }
 
