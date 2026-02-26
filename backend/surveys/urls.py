@@ -6,7 +6,7 @@ from .views import (
     SurveyListCreate, SurveyRetrieveUpdateDestroy,
     SurveyRestoreView, SurveyPermanentDeleteView,
     SurveyReferenceFileUpload,
-    ResponseListCreate, ResponseRetrieve,
+    ResponseListCreate, ResponseRetrieve, ResponseResetView,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
     PublicSurveyView, ReferenceLookup, PublicResponseCreate,
     ResponseSyncView, SyncStatusView
@@ -35,6 +35,7 @@ urlpatterns = [
 
     # Rutas para Respuestas
     path('responses/', ResponseListCreate.as_view(), name='response-list-create'),
+    path('responses/reset/', ResponseResetView.as_view(), name='response-reset'),
     
     # Rutas de sincronización (DEBEN estar ANTES de responses/<str:pk>/ para evitar conflictos)
     path('responses/sync/', ResponseSyncView.as_view(), name='response-sync'),

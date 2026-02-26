@@ -2384,6 +2384,52 @@ class ResponseListCreate(APIView):
             return Response(ResponseSerializer(new_response).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+class ResponseResetView(APIView):
+    """
+    Borra todas las respuestas de una encuesta.
+    Solo permitido para rol group_admin (y root). group_admin solo puede en encuestas de su grupo.
+    POST /api/responses/reset/ con body {"survey_id": "<id>"}
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user_role, user_group_id = get_user_role_and_group(request)
+        if user_role not in ('root', 'group_admin'):
+            return Response(
+                {"detail": "Solo el administrador de grupo puede reiniciar las respuestas de una encuesta."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        survey_id = request.data.get('survey_id')
+        if not survey_id:
+            return Response(
+                {"detail": "Se requiere survey_id."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        surveys_collection = get_surveys_collection()
+        try:
+            survey_oid = ObjectId(survey_id)
+        except Exception:
+            return Response(
+                {"detail": "ID de encuesta inválido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        survey = surveys_collection.find_one({'_id': survey_oid})
+        if not survey:
+            raise NotFound(detail="Encuesta no encontrada.")
+        if user_role == 'group_admin' and user_group_id:
+            survey_group = survey.get('group')
+            err = check_group_admin_access(user_role, user_group_id, survey_group, "No puedes reiniciar respuestas de encuestas de otro grupo.")
+            if err is not None:
+                return err
+        responses_collection = get_responses_collection()
+        result = responses_collection.delete_many({'survey': survey_oid})
+        return Response(
+            {"detail": "Respuestas eliminadas.", "deleted_count": result.deleted_count},
+            status=status.HTTP_200_OK
+        )
+
+
 class ResponseSyncView(APIView):
     """
     Vista para sincronizar múltiples respuestas en lote desde dispositivos móviles.

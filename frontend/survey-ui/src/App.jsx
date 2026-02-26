@@ -2127,7 +2127,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
 
 // --- VISTA: RESPUESTAS DE ENCUESTAS ---
 
-const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
+const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onResetResponses }) => {
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [activeTab, setActiveTab] = useState('individual'); // 'individual', 'statistics', or 'table'
   const [chartTypes, setChartTypes] = useState({}); // { questionId: 'bar' | 'doughnut' | 'line' }
@@ -2593,6 +2593,17 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading }) => {
             </span>
           </div>
         </div>
+        {userRole === 'group_admin' && responses.length > 0 && onResetResponses && (
+          <button
+            type="button"
+            onClick={() => onResetResponses(survey)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-xl font-bold text-sm transition-colors"
+            title="Borrar todas las respuestas de esta encuesta"
+          >
+            <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
+            Reiniciar respuestas
+          </button>
+        )}
       </header>
 
       <div className={`w-full ${activeTab === 'table' ? 'max-w-full' : 'max-w-7xl'} mx-auto ${activeTab === 'table' ? 'px-0' : 'px-4'} py-8 md:py-12`}>
@@ -4886,6 +4897,27 @@ export default function App() {
     await fetchResponses(surveyId);
   };
 
+  const handleResetResponses = async (survey) => {
+    const surveyId = survey?.id || survey?._id;
+    if (!surveyId) return;
+    if (!window.confirm('¿Eliminar todas las respuestas de esta encuesta? Esta acción no se puede deshacer.')) return;
+    try {
+      const response = await authenticatedFetch('/api/responses/reset/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ survey_id: surveyId }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'Error al reiniciar respuestas.');
+      }
+      await fetchResponses(surveyId);
+    } catch (error) {
+      console.error('Reset responses error:', error);
+      alert(error.message || 'No se pudieron borrar las respuestas.');
+    }
+  };
+
   const handleUpdatePublicStatus = async (surveyId, isPublic) => {
     // Update the survey in the local state
     setSurveys(prevSurveys => 
@@ -5006,6 +5038,8 @@ export default function App() {
               responses={responses}
               onBack={handleBackToDashboard}
               loading={responsesLoading}
+              userRole={currentUser?.role}
+              onResetResponses={handleResetResponses}
           />
       ) : (
           <SurveyEditor 
