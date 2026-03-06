@@ -1,4 +1,6 @@
+import mimetypes
 import os
+import re
 import uuid
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -1223,7 +1225,12 @@ class SurveyListCreate(APIView):
         # Agregar sections si existen
         if 'sections' in validated_data:
             survey_doc['sections'] = validated_data['sections']
-        
+        # IDs para nombrar adjuntos: documento_empleado-documento_votante.ext
+        if 'documento_empleado_question_id' in validated_data:
+            survey_doc['documento_empleado_question_id'] = validated_data.get('documento_empleado_question_id') or ''
+        if 'documento_votante_question_id' in validated_data:
+            survey_doc['documento_votante_question_id'] = validated_data.get('documento_votante_question_id') or ''
+
         result = surveys_collection.insert_one(survey_doc)
         new_survey = surveys_collection.find_one({'_id': result.inserted_id})
         new_survey['id'] = str(new_survey['_id'])
@@ -1896,6 +1903,10 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['reference_mapping'] = validated_data.get('reference_mapping') or {}
             if 'reference_data' in validated_data and validated_data['reference_data'] is not None:
                 update_fields['reference_data'] = validated_data['reference_data']
+            if 'documento_empleado_question_id' in validated_data:
+                update_fields['documento_empleado_question_id'] = validated_data.get('documento_empleado_question_id') or ''
+            if 'documento_votante_question_id' in validated_data:
+                update_fields['documento_votante_question_id'] = validated_data.get('documento_votante_question_id') or ''
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
@@ -2331,11 +2342,21 @@ class ReferenceLookup(APIView):
         return Response({}, status=status.HTTP_200_OK)
 
 
+def _sanitize_filename_part(s):
+    """Elimina caracteres no permitidos en nombres de archivo."""
+    if not s or not isinstance(s, str):
+        return ''
+    s = str(s).strip()
+    s = re.sub(r'[/\\:*?"<>|]', '_', s)
+    s = re.sub(r'\s+', '_', s)
+    return s[:100] if len(s) > 100 else s
+
+
 class AttachmentUploadView(APIView):
     """
     POST: Sube un archivo (imagen o PDF) para usarlo como adjunto en respuestas.
-    multipart/form-data con campo 'file'. Guarda en MEDIA_ROOT/attachments/ y registra en MongoDB.
-    Devuelve { "id": "<attachment_id>", "filename": "..." }.
+    multipart/form-data con campo 'file'. Opcionales: documento_empleado, documento_votante.
+    Si ambos están presentes, el archivo se guarda como {doc_emp}-{doc_vot}.ext
     AllowAny para que encuestas públicas puedan adjuntar archivos sin login.
     """
     permission_classes = [permissions.AllowAny]
@@ -2372,7 +2393,23 @@ class AttachmentUploadView(APIView):
         ext = os.path.splitext(f.name)[1] or ''
         if not ext or ext.lower() not in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'):
             ext = '.bin'
-        stored_name = f"{uuid.uuid4().hex}{ext}"
+
+        doc_emp = _sanitize_filename_part(request.POST.get('documento_empleado', ''))
+        doc_vot = _sanitize_filename_part(request.POST.get('documento_votante', ''))
+
+        if doc_emp and doc_vot:
+            base_name = f"{doc_emp}-{doc_vot}{ext}"
+            stored_name = base_name
+            n = 1
+            while os.path.isfile(os.path.join(attach_dir, stored_name)):
+                stem, suf = os.path.splitext(base_name)
+                stored_name = f"{stem}_{n}{suf}"
+                n += 1
+            display_filename = stored_name
+        else:
+            stored_name = f"{uuid.uuid4().hex}{ext}"
+            display_filename = f.name
+
         file_path = os.path.join(attach_dir, stored_name)
         with open(file_path, 'wb') as dest:
             for chunk in f.chunks():
@@ -2380,12 +2417,12 @@ class AttachmentUploadView(APIView):
         # Registrar en MongoDB
         attachments_coll = get_attachments_collection()
         doc = {
-            'filename': f.name,
+            'filename': display_filename,
             'stored_name': stored_name,
         }
         result = attachments_coll.insert_one(doc)
         doc_id = str(result.inserted_id)
-        return Response({"id": doc_id, "filename": f.name}, status=status.HTTP_201_CREATED)
+        return Response({"id": doc_id, "filename": display_filename}, status=status.HTTP_201_CREATED)
 
 
 class AttachmentRetrieveView(APIView):
@@ -2411,7 +2448,9 @@ class AttachmentRetrieveView(APIView):
         if not os.path.isfile(file_path):
             raise NotFound(detail="Archivo no encontrado en el servidor.")
         filename = doc.get('filename') or stored_name
+        content_type, _ = mimetypes.guess_type(filename)
         response = FileResponse(open(file_path, 'rb'), as_attachment=False)
+        response['Content-Type'] = content_type or 'application/octet-stream'
         response['Content-Disposition'] = f'inline; filename="{filename}"'
         return response
 

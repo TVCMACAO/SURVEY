@@ -193,6 +193,56 @@ const ToolButton = ({ icon, label, onClick, color }) => (
   </button>
 );
 
+// --- VISTA PREVIA DE ADJUNTOS (para respuestas file_upload) ---
+const AttachmentPreview = ({ attachmentId, compact = false }) => {
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [contentType, setContentType] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!attachmentId) return;
+    let url = null;
+    authenticatedFetch(`/api/attachments/${attachmentId}/`)
+      .then((res) => {
+        if (!res.ok) throw new Error('Adjunto no encontrado');
+        const ct = res.headers.get('Content-Type') || '';
+        setContentType(ct);
+        return res.blob();
+      })
+      .then((blob) => {
+        url = URL.createObjectURL(blob);
+        setBlobUrl(url);
+      })
+      .catch((err) => setError(err.message));
+
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [attachmentId]);
+
+  if (error) {
+    return <span className="text-red-500 text-sm">Error: {error}</span>;
+  }
+  if (!blobUrl) {
+    return <span className="text-gray-400 text-sm italic">Cargando...</span>;
+  }
+  const isImage = contentType && contentType.startsWith('image/');
+  if (isImage) {
+    return (
+      <img
+        src={blobUrl}
+        alt="Adjunto"
+        className={`border border-gray-300 rounded-lg shadow-sm object-contain ${compact ? 'max-h-[60px]' : 'max-h-[200px]'}`}
+      />
+    );
+  }
+  return (
+    <a href={blobUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline text-sm">
+      Ver documento
+    </a>
+  );
+};
+
 // --- VISTA: EDITOR DE ENCUESTAS ---
 
 const CONDITION_OPERATORS = [
@@ -1002,6 +1052,11 @@ const PublicSurveyView = ({ surveyId }) => {
       }
 
       // Upload file_upload question files first and collect attachment IDs
+      const docEmpleadoQId = surveyData.documento_empleado_question_id || '';
+      const docVotanteQId = surveyData.documento_votante_question_id || '';
+      const docEmpleado = docEmpleadoQId ? String(answers[docEmpleadoQId] || '').trim() : '';
+      const docVotante = docVotanteQId ? String(answers[docVotanteQId] || '').trim() : '';
+
       const attachmentIdsByQuestion = {};
       const fileUploadQuestions = surveyData.questions.filter(q => q.type === 'Adjuntar archivos');
       for (const question of fileUploadQuestions) {
@@ -1010,6 +1065,8 @@ const PublicSurveyView = ({ surveyId }) => {
         const ids = [];
         for (const file of files) {
           const formData = new FormData();
+          formData.append('documento_empleado', docEmpleado);
+          formData.append('documento_votante', docVotante);
           formData.append('file', file);
           const uploadRes = await fetch('/api/attachments/', {
             method: 'POST',
@@ -1733,7 +1790,9 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         sections: sections,
         reference_key_column: refKey,
         reference_mapping: refMap,
-        reference_row_count: initialSurveyData.reference_row_count ?? 0
+        reference_row_count: initialSurveyData.reference_row_count ?? 0,
+        documento_empleado_question_id: initialSurveyData.documento_empleado_question_id || '',
+        documento_votante_question_id: initialSurveyData.documento_votante_question_id || ''
       });
     } else {
       setSurveyData({ title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Reset if no initial data
@@ -2129,6 +2188,45 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
              )}
            </div>
 
+           {/* Nombre de adjuntos: documento_empleado-documento_votante */}
+           {(surveyData.questions || []).some(q => q.type === 'Adjuntar archivos') && (
+             <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
+               <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+                 <FontAwesomeIcon icon={faPaperclip} size="sm" className="text-teal-600" />
+                 Nombre de adjuntos
+               </h3>
+               <p className="text-sm text-gray-600 mb-4">Los archivos adjuntos se guardarán como documento_empleado-documento_votante.ext</p>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Pregunta documento empleado (encuestador)</label>
+                   <select
+                     value={surveyData.documento_empleado_question_id || ''}
+                     onChange={(e) => setSurveyData(prev => ({ ...prev, documento_empleado_question_id: e.target.value }))}
+                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                   >
+                     <option value="">— Ninguna —</option>
+                     {(surveyData.questions || []).filter(q => q.type && ['Texto Corto', 'Texto corto', 'short_text', 'Número', 'Correo Electrónico'].includes(q.type)).map(q => (
+                       <option key={q.id} value={q.id}>{q.text || q.question_text || q.id}</option>
+                     ))}
+                   </select>
+                 </div>
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Pregunta documento votante (evaluado)</label>
+                   <select
+                     value={surveyData.documento_votante_question_id || ''}
+                     onChange={(e) => setSurveyData(prev => ({ ...prev, documento_votante_question_id: e.target.value }))}
+                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                   >
+                     <option value="">— Ninguna —</option>
+                     {(surveyData.questions || []).filter(q => q.type && ['Texto Corto', 'Texto corto', 'short_text', 'Número', 'Correo Electrónico'].includes(q.type)).map(q => (
+                       <option key={q.id} value={q.id}>{q.text || q.question_text || q.id}</option>
+                     ))}
+                   </select>
+                 </div>
+               </div>
+             </div>
+           )}
+
            {/* Section Manager */}
            {showSectionManager && (
              <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
@@ -2302,7 +2400,20 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
   };
 
   // Componente para renderizar respuesta (texto o imagen de firma). question opcional para evaluación (nombres legibles).
-  const renderAnswer = (answer, questionOrType) => {
+  const renderAnswer = (answer, questionOrType, compact = false) => {
+    const q = questionOrType && typeof questionOrType === 'object' ? questionOrType : null;
+    const qType = q ? (q.type || q.question_type) : questionOrType;
+    if ((qType === 'file_upload' || qType === 'Adjuntar archivos') && Array.isArray(answer) && answer.length > 0) {
+      return (
+        <div className="mt-2 flex flex-wrap gap-3">
+          {answer.map((id) => (
+            <div key={id}>
+              <AttachmentPreview attachmentId={id} compact={compact} />
+            </div>
+          ))}
+        </div>
+      );
+    }
     if (isSignature(answer)) {
       return (
         <div className="mt-2">
@@ -2315,8 +2426,6 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
         </div>
       );
     }
-    const q = questionOrType && typeof questionOrType === 'object' ? questionOrType : null;
-    const qType = q ? (q.type || q.question_type) : questionOrType;
     return <p className="text-gray-700 text-base">{formatAnswer(answer, qType, q)}</p>;
   };
 
@@ -2866,10 +2975,12 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                               {survey.questions && survey.questions.map((q) => {
                                 const questionId = q.id || q._id;
                                 const answer = response.answers && response.answers[questionId];
+                                const qType = q.type || q.question_type;
                                 const isAnswerSignature = answer && typeof answer === 'string' && 
                                   (answer.startsWith('data:image/png;base64,') || 
                                    answer.startsWith('data:image/jpeg;base64,') ||
                                    (answer.length > 100 && /^[A-Za-z0-9+/=]+$/.test(answer.split(',')[1] || answer)));
+                                const isFileUpload = (qType === 'file_upload' || qType === 'Adjuntar archivos') && Array.isArray(answer) && answer.length > 0;
                                 return (
                                   <td key={questionId} className="px-4 py-4 text-sm text-gray-700 max-w-xs">
                                     {isAnswerSignature ? (
@@ -2879,9 +2990,15 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                                         className="max-w-[200px] h-auto border border-gray-300 rounded shadow-sm"
                                         style={{ maxHeight: '80px', objectFit: 'contain' }}
                                       />
+                                    ) : isFileUpload ? (
+                                      <div className="flex flex-wrap gap-2">
+                                        {answer.map((id) => (
+                                          <AttachmentPreview key={id} attachmentId={id} compact />
+                                        ))}
+                                      </div>
                                     ) : (
-                                      <div className="truncate" title={formatAnswer(answer, q.type || q.question_type, q)}>
-                                        {formatAnswer(answer, q.type || q.question_type, q)}
+                                      <div className="truncate" title={formatAnswer(answer, qType, q)}>
+                                        {formatAnswer(answer, qType, q)}
                                       </div>
                                     )}
                                   </td>
@@ -4795,7 +4912,9 @@ export default function App() {
       })),
       is_public: surveyData.is_public || false,
       reference_key_column: surveyData.reference_key_column || '',
-      reference_mapping: surveyData.reference_mapping || {}
+      reference_mapping: surveyData.reference_mapping || {},
+      documento_empleado_question_id: surveyData.documento_empleado_question_id || '',
+      documento_votante_question_id: surveyData.documento_votante_question_id || ''
     };
 
     try {

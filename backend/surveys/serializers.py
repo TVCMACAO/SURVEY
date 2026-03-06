@@ -345,6 +345,9 @@ class SurveySerializer(serializers.Serializer):
     reference_mapping = serializers.JSONField(required=False, default=dict)  # { question_id: column_name }
     reference_data = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)  # list of row dicts (not sent to client)
     reference_row_count = serializers.IntegerField(read_only=True, required=False, default=0)  # set on upload
+    # IDs de preguntas para nombrar adjuntos: documento_empleado-documento_votante.ext
+    documento_empleado_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    documento_votante_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
 
     def to_representation(self, instance):
         # Get base representation

@@ -175,6 +175,7 @@ def build_payload(group_id: str, created_by_username: str):
         {"id": "fecha_firma_trabajador", "question_text": "Fecha", "question_type": "date", "required": True, "section_id": "constancia_firmas"},
         {"id": "firma_supervisor_th", "question_text": "Firma Supervisora Talento Humano", "question_type": "signature", "required": True, "section_id": "constancia_firmas"},
         {"id": "nombre_supervisor_th", "question_text": "Nombre", "question_type": "short_text", "required": True, "section_id": "constancia_firmas"},
+        {"id": "documento_supervisor_th", "question_text": "Documento", "question_type": "short_text", "required": True, "section_id": "constancia_firmas"},
         {"id": "fecha_firma_supervisor", "question_text": "Fecha", "question_type": "date", "required": True, "section_id": "constancia_firmas"},
     ]
 
@@ -185,6 +186,8 @@ def build_payload(group_id: str, created_by_username: str):
         "is_public": False,
         "sections": sections,
         "questions": questions,
+        "documento_empleado_question_id": "documento_supervisor_th",
+        "documento_votante_question_id": "identificacion",
         # Root-only override (backend lo aplicará si el autenticado es root)
         "created_by_username": created_by_username,
     }
