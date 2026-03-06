@@ -2687,6 +2687,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       const questionText = q.text || q.question_text || `Pregunta ${questionId}`;
       headers.push(questionText);
     });
+    headers.push('Link público');
     
     // Agregar filas de datos
     responses.forEach((response, index) => {
@@ -2715,6 +2716,12 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
         row.push(formatAnswer(answer, q.type || q.question_type, q));
       });
       
+      // Columna con el link público del/los adjunto(s) de la respuesta
+      const links = response.attachment_links && typeof response.attachment_links === 'object'
+        ? Object.values(response.attachment_links).filter(Boolean)
+        : [];
+      row.push(links.length > 0 ? links.join('\n') : '-');
+      
       tableData.push(row);
     });
     
@@ -2728,6 +2735,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       if (i === 2) return { wch: 15 }; // Encuestador
       if (i === 3) return { wch: 12 }; // Estado
       if (i === 4) return { wch: 20 }; // Fecha de Toma
+      if (i === headers.length - 1) return { wch: 55 }; // Link público (URL larga)
       return { wch: 30 }; // Columnas de preguntas
     });
     ws['!cols'] = colWidths;

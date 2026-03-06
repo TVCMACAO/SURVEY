@@ -17,8 +17,10 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - DEBUG=${DEBUG:-0}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      # BD única: MongoDB en easypanel.clinicamaicao.com (encuestas, respuestas, adjuntos, preview_link)
       - MONGO_URI=${MONGO_URI:-mongodb://root:1b20629a87ea780a63aa@easypanel.clinicamaicao.com:27017/?tls=false}
       - MONGO_DB_NAME=${MONGO_DB_NAME:-survey_db}
+      - BASE_URL=${BASE_URL:-https://chat-survey-app.rhfh8t.easypanel.host}
       # Google Drive (opcional): adjuntos se copian a carpeta compartida
       - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID:-1ljZUHTQaAcM4j8xiJXbrj2Ja_IkMs3MX}
       - GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64=${GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64:-}

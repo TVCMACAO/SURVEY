@@ -153,6 +153,74 @@ def validate_file_upload_answers(survey_doc, answers):
                     detail=f"El adjunto con ID '{item}' no es un ID válido."
                 )
 
+
+def _enrich_responses_with_attachment_links(responses, surveys_collection=None, attachments_coll=None):
+    """
+    Añade a cada respuesta un campo 'attachment_links': { attachment_id: preview_link (URL pública), ... }.
+    Usa preview_link de la colección attachments para que los enlaces sean públicos.
+    """
+    if not responses:
+        return
+    if surveys_collection is None:
+        surveys_collection = get_surveys_collection()
+    if attachments_coll is None:
+        attachments_coll = get_attachments_collection()
+    survey_cache = {}
+    for r in responses:
+        r.setdefault('attachment_links', {})
+        survey_oid = r.get('survey')
+        if not survey_oid:
+            continue
+        sid = str(survey_oid)
+        if sid not in survey_cache:
+            try:
+                survey_cache[sid] = surveys_collection.find_one({'_id': survey_oid})
+            except Exception:
+                survey_cache[sid] = None
+        survey = survey_cache[sid]
+        if not survey:
+            continue
+        file_upload_qids = []
+        for q in survey.get('questions', []):
+            qtype = q.get('question_type') or q.get('type', '')
+            if qtype == 'file_upload':
+                qid = q.get('id') or q.get('_id')
+                if qid:
+                    file_upload_qids.append(str(qid))
+        answers = r.get('answers') or {}
+        attachment_ids = set()
+        for qid in file_upload_qids:
+            val = answers.get(qid)
+            if val is None:
+                continue
+            if isinstance(val, list):
+                for item in val:
+                    if isinstance(item, str) and item.strip():
+                        try:
+                            ObjectId(item.strip())
+                            attachment_ids.add(item.strip())
+                        except Exception:
+                            pass
+            elif isinstance(val, str):
+                for item in val.replace(',', ' ').split():
+                    item = item.strip()
+                    if item:
+                        try:
+                            ObjectId(item)
+                            attachment_ids.add(item)
+                        except Exception:
+                            pass
+        for aid in attachment_ids:
+            if aid in r['attachment_links']:
+                continue
+            try:
+                doc = attachments_coll.find_one({'_id': ObjectId(aid)}, {'preview_link': 1})
+                if doc and doc.get('preview_link'):
+                    r['attachment_links'][aid] = doc['preview_link']
+            except Exception:
+                pass
+
+
 # Vistas de autenticación
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
@@ -2479,8 +2547,13 @@ class AttachmentUploadView(APIView):
                 doc['drive_web_link'] = drive_info['web_view_link']
         result = attachments_coll.insert_one(doc)
         doc_id = str(result.inserted_id)
-        # Guardar preview_link (URL pública para vista previa)
-        preview_link = request.build_absolute_uri(f'/api/public/attachments/{doc_id}/')
+        # Guardar preview_link (URL pública). Usar BASE_URL si está definida (ej. BD en easypanel.clinicamaicao.com)
+        base = getattr(django_settings, 'BASE_URL', None) or os.environ.get('BASE_URL', '')
+        if base:
+            base = base.rstrip('/')
+            preview_link = f'{base}/api/public/attachments/{doc_id}/'
+        else:
+            preview_link = request.build_absolute_uri(f'/api/public/attachments/{doc_id}/')
         attachments_coll.update_one({'_id': result.inserted_id}, {'$set': {'preview_link': preview_link}})
         return Response({"id": doc_id, "filename": display_filename}, status=status.HTTP_201_CREATED)
 
@@ -2673,6 +2746,7 @@ class ResponseListCreate(APIView):
             r.setdefault('synced', True)
             sid = r.get('surveyor_id')
             r['surveyor_name'] = surveyor_names.get(str(sid), sid or '') if sid else ''
+        _enrich_responses_with_attachment_links(responses)
         serializer = ResponseSerializer(responses, many=True)
         return Response(serializer.data)
 
@@ -3188,6 +3262,7 @@ class ResponseRetrieve(APIView):
 
     def get(self, request, pk):
         response = self.get_object(pk)
+        _enrich_responses_with_attachment_links([response])
         serializer = ResponseSerializer(response)
         return Response(serializer.data)
 

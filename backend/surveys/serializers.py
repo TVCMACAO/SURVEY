@@ -397,6 +397,7 @@ class ResponseSerializer(serializers.Serializer):
     surveyor_name = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True) # Nombre para mostrar del encuestador
     device_id = serializers.CharField(max_length=255, required=False)
     answers = serializers.JSONField() # Almacena las respuestas como un campo JSON flexible
+    attachment_links = serializers.JSONField(required=False, read_only=True)  # Map attachment_id -> public preview_link (URL pública)
     synced = serializers.BooleanField(default=False)
     created_at = serializers.DateTimeField(read_only=True, required=False) # Fecha de creación
     signature_consent_at = serializers.DateTimeField(required=False, allow_null=True) # Timestamp del consentimiento de firma (Ley 1581/2012 Colombia)
