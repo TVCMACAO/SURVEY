@@ -1,7 +1,7 @@
 name: survey_mobile
 description: Aplicación móvil para responder encuestas offline y sincronizar con el servidor
 publish_to: 'none'
-version: 1.0.88+89
+version: 1.0.91+92
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -40,4 +40,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-

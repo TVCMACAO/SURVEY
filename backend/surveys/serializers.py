@@ -257,7 +257,8 @@ class QuestionSerializer(serializers.Serializer):
     evaluation_items = serializers.JSONField(required=False, allow_null=True)  # [{"id": "...", "label": "Item1"}, ...]
     evaluation_columns = serializers.JSONField(required=False, allow_null=True)  # [{"id": "...", "label": "CUMPLE", "inputType": "checkbox"}, {"id": "...", "label": "OBSERVACIONES", "inputType": "text"}, ...]
     date_include_time = serializers.BooleanField(required=False, default=False)  # For type date: if True, show datetime picker
-    
+    accept = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')  # For file_upload: e.g. "image/*,application/pdf"
+
     def to_internal_value(self, data):
         # Normalizar los datos para aceptar tanto question_text como text, y question_type como type
         normalized_data = dict(data)
@@ -313,6 +314,8 @@ class QuestionSerializer(serializers.Serializer):
             result['evaluation_columns'] = data['evaluation_columns']
         if 'date_include_time' in data:
             result['date_include_time'] = data['date_include_time']
+        if 'accept' in data:
+            result['accept'] = data['accept']
         return result
 
 class SectionSerializer(serializers.Serializer):

@@ -33,4 +33,3 @@ class DatabaseConstants {
   static const String tableSession = 'session';
   static const String tableLocalUsers = 'local_users';
 }
-

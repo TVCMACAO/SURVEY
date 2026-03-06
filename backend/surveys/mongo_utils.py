@@ -104,3 +104,5 @@ def get_surveys_collection():
     return get_mongo_collection('surveys') # Survey(uuid PK, title, group, questions JSON[])
 def get_responses_collection():
     return get_mongo_collection('responses') # Response(uuid PK, survey, surveyor_id, device_id, answers JSON, synced bool)
+def get_attachments_collection():
+    return get_mongo_collection('attachments')  # Attachment(_id, filename, stored_name)

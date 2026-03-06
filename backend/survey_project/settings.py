@@ -179,6 +179,16 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# Media files (uploaded attachments for survey responses)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+ATTACHMENTS_SUBDIR = 'attachments'  # subdir under MEDIA_ROOT for file_upload question attachments
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MB per file
+ALLOWED_ATTACHMENT_CONTENT_TYPES = (
+    'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+    'application/pdf',
+)
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 

@@ -6,7 +6,7 @@ import {
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
   faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus, faUser,
   faSignature, faEraser, faEnvelope, faHeading, faCopy,
-  faChevronUp, faChevronDown, faGripVertical
+  faChevronUp, faChevronDown, faGripVertical, faPaperclip
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout, ensureFreshToken } from './auth';
 import * as XLSX from 'xlsx';
@@ -395,6 +395,10 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                   <FontAwesomeIcon icon={faSignature} size="2x" className="text-gray-400 fa-icon-force-current" />
                   <span className="text-gray-400 text-sm italic">El usuario firmará aquí...</span>
                 </div>}
+                {data.type === 'Adjuntar archivos' && <div className="h-24 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-2 shadow-inner">
+                  <FontAwesomeIcon icon={faPaperclip} size="lg" className="text-gray-400 fa-icon-force-current" />
+                  <span className="text-gray-400 text-sm italic">El usuario adjuntará documentos o fotos aquí...</span>
+                </div>}
               </div>
 
               {/* Configuración: al final del bloque, compacta y secundaria */}
@@ -467,6 +471,10 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                  {data.type === 'Correo Electrónico' && <div className="h-10 bg-gray-100/80 rounded-lg w-full" />}
                  {data.type === 'Firma' && <div className="h-20 bg-gray-100/80 rounded-lg w-full border-2 border-dashed border-gray-300 flex items-center justify-center">
                    <FontAwesomeIcon icon={faSignature} size="lg" className="text-gray-400 fa-icon-force-current" />
+                 </div>}
+                 {data.type === 'Adjuntar archivos' && <div className="h-14 bg-gray-100/80 rounded-lg w-full border-2 border-dashed border-gray-300 flex items-center justify-center gap-2">
+                   <FontAwesomeIcon icon={faPaperclip} size="sm" className="text-gray-400 fa-icon-force-current" />
+                   <span className="text-gray-400 text-xs">Adjuntar archivos</span>
                  </div>}
                  {data.type === 'Puntuación' && <div className="flex gap-2"><FontAwesomeIcon icon={faStar} size="sm" className="text-gray-300 fa-icon-force-current" /><FontAwesomeIcon icon={faStar} size="sm" className="text-gray-300 fa-icon-force-current" /><FontAwesomeIcon icon={faStar} size="sm" className="text-gray-300 fa-icon-force-current" /></div>}
                  {data.type === 'Evaluación' && (
@@ -729,6 +737,7 @@ const SurveyPreview = ({ surveyData, onBack }) => {
 const PublicSurveyView = ({ surveyId }) => {
   const [surveyData, setSurveyData] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [fileLists, setFileLists] = useState({}); // questionId -> File[] for file_upload questions
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -808,7 +817,8 @@ const PublicSurveyView = ({ surveyId }) => {
           'signature': 'Firma',
           'email': 'Correo Electrónico',
           'titulo': 'Título',
-          'evaluation_table': 'Evaluación'
+          'evaluation_table': 'Evaluación',
+          'file_upload': 'Adjuntar archivos'
         };
         
         const questionsWithIds = (data.questions || []).map((q, index) => ({
@@ -820,7 +830,8 @@ const PublicSurveyView = ({ surveyId }) => {
           section_id: q.section_id || null,
           conditional_logic: q.conditional_logic || null,
           evaluation_items: q.evaluation_items || [],
-          evaluation_columns: q.evaluation_columns || []
+          evaluation_columns: q.evaluation_columns || [],
+          accept: q.accept || 'image/*,application/pdf'
         }));
         
         // Process sections
@@ -966,6 +977,10 @@ const PublicSurveyView = ({ surveyId }) => {
     const requiredQuestions = getVisibleRequiredQuestions();
     const missing = requiredQuestions.filter(q => {
       const qid = q.id || q._id;
+      if (q.type === 'Adjuntar archivos') {
+        const files = fileLists[qid];
+        return !files || files.length === 0;
+      }
       const val = answers[qid];
       if (val === undefined || val === null) return true;
       if (typeof val === 'string' && val.trim() === '') return true;
@@ -986,14 +1001,44 @@ const PublicSurveyView = ({ surveyId }) => {
         localStorage.setItem('device_id', deviceId);
       }
 
+      // Upload file_upload question files first and collect attachment IDs
+      const attachmentIdsByQuestion = {};
+      const fileUploadQuestions = surveyData.questions.filter(q => q.type === 'Adjuntar archivos');
+      for (const question of fileUploadQuestions) {
+        const qid = question.id || question._id;
+        const files = fileLists[qid] || [];
+        const ids = [];
+        for (const file of files) {
+          const formData = new FormData();
+          formData.append('file', file);
+          const uploadRes = await fetch('/api/attachments/', {
+            method: 'POST',
+            body: formData
+          });
+          if (!uploadRes.ok) {
+            const errData = await uploadRes.json().catch(() => ({}));
+            throw new Error(errData.detail || `Error al subir ${file.name}`);
+          }
+          const { id } = await uploadRes.json();
+          ids.push(id);
+        }
+        attachmentIdsByQuestion[qid] = ids;
+      }
+
       // Map frontend question IDs to backend format
       const formattedAnswers = {};
       Object.entries(answers).forEach(([questionId, answer]) => {
-        // Find the question to get its backend ID
         const question = surveyData.questions.find(q => q.id === questionId);
         if (question) {
           const backendId = question._id || question.id;
           formattedAnswers[backendId] = answer;
+        }
+      });
+      Object.entries(attachmentIdsByQuestion).forEach(([questionId, ids]) => {
+        const question = surveyData.questions.find(q => q.id === questionId);
+        if (question) {
+          const backendId = question._id || question.id;
+          formattedAnswers[backendId] = ids;
         }
       });
 
@@ -1370,6 +1415,50 @@ const PublicSurveyView = ({ surveyId }) => {
             />
           )}
 
+          {question.type === 'Adjuntar archivos' && (
+            <div className="space-y-3">
+              <label className="flex flex-col gap-2 cursor-pointer">
+                <span className="inline-flex items-center gap-2 px-4 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded-xl border-2 border-indigo-200 transition-colors">
+                  <FontAwesomeIcon icon={faPaperclip} className="fa-icon-force-current" />
+                  Adjuntar documentos o fotografías
+                </span>
+                <input
+                  type="file"
+                  accept={question.accept || 'image/*,application/pdf'}
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = e.target.files ? Array.from(e.target.files) : [];
+                    setFileLists(prev => ({ ...prev, [questionId]: files }));
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              {(fileLists[questionId] || []).length > 0 && (
+                <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                  {(fileLists[questionId] || []).map((f, i) => (
+                    <li key={i} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{f.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFileLists(prev => ({
+                            ...prev,
+                            [questionId]: (prev[questionId] || []).filter((_, j) => j !== i)
+                          }));
+                        }}
+                        className="text-red-500 hover:text-red-700 p-1"
+                        title="Quitar"
+                      >
+                        <FontAwesomeIcon icon={faXmark} size="sm" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           {question.type === 'Evaluación' && (question.evaluation_items?.length > 0 || question.evaluation_columns?.length > 0) && (
             <div className="overflow-x-auto border-2 border-gray-200 rounded-xl overflow-hidden">
               <table className="w-full min-w-[400px] text-sm">
@@ -1592,6 +1681,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         'date': 'Fecha',
         'rating': 'Puntuación',
         'signature': 'Firma',
+        'file_upload': 'Adjuntar archivos',
         'email': 'Correo Electrónico',
         'titulo': 'Título',
         'evaluation_table': 'Evaluación'
@@ -1661,6 +1751,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     { label: 'Fecha', icon: faCalendarDays, color: 'pink', type: 'Fecha' },
     { label: 'Puntuación', icon: faStar, color: 'red', type: 'Puntuación' },
     { label: 'Firma', icon: faSignature, color: 'indigo', type: 'Firma' },
+    { label: 'Adjuntar archivos', icon: faPaperclip, color: 'teal', type: 'Adjuntar archivos' },
     { label: 'Correo Electrónico', icon: faEnvelope, color: 'blue', type: 'Correo Electrónico' },
     { label: 'Evaluación', icon: faTable, color: 'teal', type: 'Evaluación' },
   ];
@@ -2168,6 +2259,11 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     // Handle email type
     if (questionType === 'Correo Electrónico' || questionType === 'email') {
       return answer || '-';
+    }
+    // Adjuntos: lista de IDs
+    if ((questionType === 'file_upload' || questionType === 'Adjuntar archivos') && Array.isArray(answer)) {
+      const n = answer.length;
+      return n === 0 ? '—' : n === 1 ? '1 archivo adjunto' : `${n} archivos adjuntos`;
     }
     // Si es una firma, retornar un marcador especial para renderizar como imagen
     if (isSignature(answer)) {
@@ -4635,6 +4731,7 @@ export default function App() {
       'Fecha': 'date', 
       'Puntuación': 'rating',
       'Firma': 'signature',
+      'Adjuntar archivos': 'file_upload',
       'Correo Electrónico': 'email',
       'Título': 'titulo',
       'Evaluación': 'evaluation_table'
@@ -4672,7 +4769,7 @@ export default function App() {
         const questionText = q.question_text ?? q.text ?? '';
         const displayType = q.type || q.question_type;
         const backendType = typeMapping[displayType] ?? displayType ?? 'short_text';
-        return {
+        const payload = {
           id: q.id || `q_${index}`,
           text: questionText,
           question_text: questionText,
@@ -4687,6 +4784,8 @@ export default function App() {
           evaluation_columns: q.evaluation_columns ?? [],
           date_include_time: Boolean(q.date_include_time)
         };
+        if (backendType === 'file_upload') payload.accept = q.accept || 'image/*,application/pdf';
+        return payload;
       }),
       sections: (surveyData.sections || []).map((s, index) => ({
         id: s.id || `section_${index}`,

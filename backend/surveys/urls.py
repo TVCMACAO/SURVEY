@@ -6,6 +6,7 @@ from .views import (
     SurveyListCreate, SurveyRetrieveUpdateDestroy,
     SurveyRestoreView, SurveyPermanentDeleteView,
     SurveyReferenceFileUpload,
+    AttachmentUploadView, AttachmentRetrieveView,
     ResponseListCreate, ResponseRetrieve, ResponseResetView,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
     PublicSurveyView, ReferenceLookup, PublicResponseCreate,
@@ -32,6 +33,10 @@ urlpatterns = [
     path('surveys/<str:pk>/reference-file/', SurveyReferenceFileUpload.as_view(), name='survey-reference-file'),
     path('surveys/<str:pk>/restore/', SurveyRestoreView.as_view(), name='survey-restore'),
     path('surveys/<str:pk>/permanent-delete/', SurveyPermanentDeleteView.as_view(), name='survey-permanent-delete'),
+
+    # Adjuntos (subida y descarga para preguntas file_upload)
+    path('attachments/', AttachmentUploadView.as_view(), name='attachment-upload'),
+    path('attachments/<str:pk>/', AttachmentRetrieveView.as_view(), name='attachment-retrieve'),
 
     # Rutas para Respuestas
     path('responses/', ResponseListCreate.as_view(), name='response-list-create'),

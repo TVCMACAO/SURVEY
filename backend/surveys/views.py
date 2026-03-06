@@ -1,15 +1,19 @@
+import os
+import uuid
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework_simplejwt.views import TokenObtainPairView
+from django.conf import settings as django_settings
+from django.http import FileResponse
 
 from bson import ObjectId
 from datetime import datetime
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 
-from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection, get_mongo_collection
+from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection, get_mongo_collection, get_attachments_collection
 from .serializers import (
     SurveyGroupSerializer, SurveySerializer, ResponseSerializer,
     CustomTokenObtainPairSerializer, UserSerializer, UserCreateSerializer, UserUpdateSerializer,
@@ -76,6 +80,48 @@ def check_group_admin_access(user_role, user_group_id, resource_group_id, error_
                     status=status.HTTP_403_FORBIDDEN
                 )
     return None
+
+
+def validate_file_upload_answers(survey_doc, answers):
+    """
+    Para preguntas con question_type == 'file_upload', valida que answers[question_id]
+    sea una lista de strings (IDs de adjuntos). Opcionalmente verifica que los IDs existan.
+    Raises ValidationError si la validación falla.
+    """
+    questions = survey_doc.get('questions') or []
+    attachments_coll = get_attachments_collection()
+    for q in questions:
+        qid = q.get('id') or q.get('_id')
+        qtype = q.get('question_type') or q.get('type', '')
+        if qtype != 'file_upload':
+            continue
+        if qid is None:
+            continue
+        qid_str = str(qid)
+        val = answers.get(qid_str)
+        if val is None:
+            continue
+        if not isinstance(val, list):
+            raise ValidationError(
+                detail=f"Para la pregunta de adjuntos '{qid_str}' el valor debe ser una lista de IDs."
+            )
+        for item in val:
+            if not isinstance(item, str) or not item.strip():
+                raise ValidationError(
+                    detail=f"Para la pregunta de adjuntos '{qid_str}' cada elemento debe ser un ID de adjunto válido."
+                )
+            # Verificar que el adjunto exista
+            try:
+                if not attachments_coll.find_one({'_id': ObjectId(item.strip())}):
+                    raise ValidationError(
+                        detail=f"El adjunto con ID '{item.strip()}' no existe o no es válido."
+                    )
+            except Exception as e:
+                if isinstance(e, ValidationError):
+                    raise
+                raise ValidationError(
+                    detail=f"El adjunto con ID '{item}' no es un ID válido."
+                )
 
 # Vistas de autenticación
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -2285,6 +2331,91 @@ class ReferenceLookup(APIView):
         return Response({}, status=status.HTTP_200_OK)
 
 
+class AttachmentUploadView(APIView):
+    """
+    POST: Sube un archivo (imagen o PDF) para usarlo como adjunto en respuestas.
+    multipart/form-data con campo 'file'. Guarda en MEDIA_ROOT/attachments/ y registra en MongoDB.
+    Devuelve { "id": "<attachment_id>", "filename": "..." }.
+    AllowAny para que encuestas públicas puedan adjuntar archivos sin login.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        if 'file' not in request.FILES:
+            return Response(
+                {"detail": "Se requiere el campo 'file' en la petición."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        f = request.FILES['file']
+        # Tamaño
+        max_size = getattr(django_settings, 'MAX_ATTACHMENT_SIZE', 10 * 1024 * 1024)
+        if f.size > max_size:
+            return Response(
+                {"detail": f"El archivo supera el tamaño máximo permitido ({max_size // (1024*1024)} MB)."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        # Tipo de contenido
+        allowed = getattr(django_settings, 'ALLOWED_ATTACHMENT_CONTENT_TYPES', (
+            'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'
+        ))
+        content_type = (getattr(f, 'content_type') or '').split(';')[0].strip().lower()
+        if content_type not in allowed:
+            return Response(
+                {"detail": "Solo se permiten imágenes (JPEG, PNG, GIF, WebP) y PDF."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        # Guardar en disco
+        media_root = django_settings.MEDIA_ROOT
+        subdir = getattr(django_settings, 'ATTACHMENTS_SUBDIR', 'attachments')
+        attach_dir = os.path.join(media_root, subdir)
+        os.makedirs(attach_dir, exist_ok=True)
+        ext = os.path.splitext(f.name)[1] or ''
+        if not ext or ext.lower() not in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'):
+            ext = '.bin'
+        stored_name = f"{uuid.uuid4().hex}{ext}"
+        file_path = os.path.join(attach_dir, stored_name)
+        with open(file_path, 'wb') as dest:
+            for chunk in f.chunks():
+                dest.write(chunk)
+        # Registrar en MongoDB
+        attachments_coll = get_attachments_collection()
+        doc = {
+            'filename': f.name,
+            'stored_name': stored_name,
+        }
+        result = attachments_coll.insert_one(doc)
+        doc_id = str(result.inserted_id)
+        return Response({"id": doc_id, "filename": f.name}, status=status.HTTP_201_CREATED)
+
+
+class AttachmentRetrieveView(APIView):
+    """
+    GET: Sirve un adjunto por ID (para previsualización o descarga).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        attachments_coll = get_attachments_collection()
+        try:
+            doc = attachments_coll.find_one({'_id': ObjectId(pk)})
+        except Exception:
+            doc = None
+        if not doc:
+            raise NotFound(detail="Adjunto no encontrado.")
+        media_root = django_settings.MEDIA_ROOT
+        subdir = getattr(django_settings, 'ATTACHMENTS_SUBDIR', 'attachments')
+        stored_name = doc.get('stored_name')
+        if not stored_name:
+            raise NotFound(detail="Adjunto no encontrado.")
+        file_path = os.path.join(media_root, subdir, stored_name)
+        if not os.path.isfile(file_path):
+            raise NotFound(detail="Archivo no encontrado en el servidor.")
+        filename = doc.get('filename') or stored_name
+        response = FileResponse(open(file_path, 'rb'), as_attachment=False)
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+
+
 class PublicResponseCreate(APIView):
     """
     Vista pública para crear respuestas sin autenticación.
@@ -2308,6 +2439,7 @@ class PublicResponseCreate(APIView):
             
             if not survey:
                 raise ValidationError(detail="La encuesta especificada no existe.")
+            validate_file_upload_answers(survey, validated_data['answers'])
             
             # Para respuestas públicas, surveyor_id puede ser None o un valor opcional
             surveyor_id = validated_data.get('surveyor_id')
@@ -2385,8 +2517,10 @@ class ResponseListCreate(APIView):
             
             # Validar que el survey_id existe
             surveys_collection = get_surveys_collection()
-            if not surveys_collection.find_one({"_id": validated_data['survey']}):
+            survey = surveys_collection.find_one({"_id": validated_data['survey']})
+            if not survey:
                 raise ValidationError(detail="La encuesta especificada no existe.")
+            validate_file_upload_answers(survey, validated_data['answers'])
             
             # Asegurarse de que el usuario autenticado es el surveyor (si está autenticado)
             if request.user and request.user.is_authenticated:
