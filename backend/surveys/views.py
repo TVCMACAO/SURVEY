@@ -16,7 +16,7 @@ from datetime import datetime
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 
-from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection, get_mongo_collection, get_attachments_collection
+from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection, get_mongo_collection, get_attachments_collection, get_gridfs
 from .serializers import (
     SurveyGroupSerializer, SurveySerializer, ResponseSerializer,
     CustomTokenObtainPairSerializer, UserSerializer, UserCreateSerializer, UserUpdateSerializer,
@@ -2386,11 +2386,6 @@ class AttachmentUploadView(APIView):
                 {"detail": "Solo se permiten imágenes (JPEG, PNG, GIF, WebP) y PDF."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        # Guardar en disco
-        media_root = django_settings.MEDIA_ROOT
-        subdir = getattr(django_settings, 'ATTACHMENTS_SUBDIR', 'attachments')
-        attach_dir = os.path.join(media_root, subdir)
-        os.makedirs(attach_dir, exist_ok=True)
         ext = os.path.splitext(f.name)[1] or ''
         if not ext or ext.lower() not in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'):
             ext = '.bin'
@@ -2399,28 +2394,36 @@ class AttachmentUploadView(APIView):
         doc_vot = _sanitize_filename_part(request.POST.get('documento_votante', ''))
 
         if doc_emp and doc_vot:
-            base_name = f"{doc_emp}-{doc_vot}{ext}"
-            stored_name = base_name
-            n = 1
-            while os.path.isfile(os.path.join(attach_dir, stored_name)):
-                stem, suf = os.path.splitext(base_name)
-                stored_name = f"{stem}_{n}{suf}"
-                n += 1
-            display_filename = stored_name
+            display_filename = f"{doc_emp}-{doc_vot}{ext}"
         else:
-            stored_name = f"{uuid.uuid4().hex}{ext}"
             display_filename = f.name
 
-        file_path = os.path.join(attach_dir, stored_name)
-        with open(file_path, 'wb') as dest:
-            for chunk in f.chunks():
-                dest.write(chunk)
-        # Registrar en MongoDB
+        # Guardar en GridFS (MongoDB) para que migre con la base de datos
+        gridfs = get_gridfs()
+        f.seek(0)  # Asegurar que el archivo está al inicio
+        grid_out = gridfs.put(f, filename=display_filename, content_type=content_type)
+        gridfs_id = grid_out
+
+        # Subir también a Google Drive si está configurado (carpeta SURVEYAPP)
+        drive_info = None
+        try:
+            from .google_drive_storage import upload_to_google_drive
+            f.seek(0)
+            drive_info = upload_to_google_drive(f, display_filename, content_type)
+        except Exception:
+            pass  # No fallar si Drive no está configurado
+
+        # Registrar en colección attachments (referencia para respuestas)
         attachments_coll = get_attachments_collection()
         doc = {
             'filename': display_filename,
-            'stored_name': stored_name,
+            'storage': 'gridfs',
+            'gridfs_id': gridfs_id,
         }
+        if drive_info and drive_info.get('id'):
+            doc['drive_file_id'] = drive_info['id']
+            if drive_info.get('web_view_link'):
+                doc['drive_web_link'] = drive_info['web_view_link']
         result = attachments_coll.insert_one(doc)
         doc_id = str(result.inserted_id)
         return Response({"id": doc_id, "filename": display_filename}, status=status.HTTP_201_CREATED)
@@ -2443,21 +2446,38 @@ class AttachmentRetrieveView(APIView):
         if not doc:
             logger.warning("Attachment %s: not found in MongoDB", pk)
             raise NotFound(detail="Adjunto no encontrado.")
-        media_root = django_settings.MEDIA_ROOT
-        subdir = getattr(django_settings, 'ATTACHMENTS_SUBDIR', 'attachments')
+        filename = doc.get('filename') or 'attachment'
+
+        # Prioridad 1: GridFS (nuevos adjuntos, migran con MongoDB)
+        gridfs_id = doc.get('gridfs_id')
+        if gridfs_id is not None:
+            try:
+                gridfs = get_gridfs()
+                gfile = gridfs.get(gridfs_id)
+                content_type = getattr(gfile, 'content_type', None) or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+                from django.http import HttpResponse
+                response = HttpResponse(gfile.read(), content_type=content_type)
+                response['Content-Disposition'] = f'inline; filename="{filename}"'
+                return response
+            except Exception as e:
+                logger.warning("Attachment %s: GridFS read failed: %s", pk, e)
+                raise NotFound(detail="Archivo no encontrado.")
+
+        # Prioridad 2: Disco (adjuntos antiguos, retrocompatibilidad)
         stored_name = doc.get('stored_name')
-        if not stored_name:
-            raise NotFound(detail="Adjunto no encontrado.")
-        file_path = os.path.join(str(media_root), subdir, stored_name)
-        if not os.path.isfile(file_path):
-            logger.warning("Attachment %s: doc exists but file missing at %s", pk, file_path)
-            raise NotFound(detail="Archivo no encontrado en el servidor.")
-        filename = doc.get('filename') or stored_name
-        content_type, _ = mimetypes.guess_type(filename)
-        response = FileResponse(open(file_path, 'rb'), as_attachment=False)
-        response['Content-Type'] = content_type or 'application/octet-stream'
-        response['Content-Disposition'] = f'inline; filename="{filename}"'
-        return response
+        if stored_name:
+            media_root = django_settings.MEDIA_ROOT
+            subdir = getattr(django_settings, 'ATTACHMENTS_SUBDIR', 'attachments')
+            file_path = os.path.join(str(media_root), subdir, stored_name)
+            if os.path.isfile(file_path):
+                content_type, _ = mimetypes.guess_type(filename)
+                response = FileResponse(open(file_path, 'rb'), as_attachment=False)
+                response['Content-Type'] = content_type or 'application/octet-stream'
+                response['Content-Disposition'] = f'inline; filename="{filename}"'
+                return response
+            logger.warning("Attachment %s: file missing at %s", pk, file_path)
+
+        raise NotFound(detail="Archivo no encontrado en el servidor.")
 
 
 class PublicResponseCreate(APIView):

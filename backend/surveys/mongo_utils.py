@@ -105,4 +105,10 @@ def get_surveys_collection():
 def get_responses_collection():
     return get_mongo_collection('responses') # Response(uuid PK, survey, surveyor_id, device_id, answers JSON, synced bool)
 def get_attachments_collection():
-    return get_mongo_collection('attachments')  # Attachment(_id, filename, stored_name)
+    return get_mongo_collection('attachments')  # Attachment(_id, filename, stored_name, storage?, gridfs_id?)
+
+
+def get_gridfs():
+    """GridFS para adjuntos. Los archivos se guardan en MongoDB (fs.files, fs.chunks)."""
+    from gridfs import GridFS
+    return GridFS(get_mongo_db(), collection='attachments_fs')

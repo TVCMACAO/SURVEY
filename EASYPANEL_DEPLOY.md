@@ -191,6 +191,25 @@ Deberías ver:
 2. Revisa los logs de Django: `docker logs survey-django`
 3. Verifica que el healthcheck esté pasando
 
+### Problema: Adjuntos devuelven 404 (Archivo no disponible)
+
+**Desde la actualización con GridFS:** Los nuevos adjuntos se guardan en MongoDB (GridFS) y migran automáticamente con la base de datos. Al ejecutar `migrate_to_easypanel_v2.sh`, las colecciones `attachments_fs.files` y `attachments_fs.chunks` se incluyen.
+
+**Para adjuntos antiguos (subidos antes de GridFS):**
+
+1. Si tienes los archivos en disco (`backend/media/attachments/`), migra a GridFS antes de migrar MongoDB:
+   ```bash
+   cd backend && python manage.py migrate_attachments_to_gridfs
+   ```
+   Luego ejecuta `migrate_to_easypanel_v2.sh` como siempre.
+
+2. Si los archivos están en otro servidor y no puedes migrarlos a GridFS, copia manualmente al contenedor:
+   ```bash
+   scp -r backend/media/attachments/* user@servidor:/tmp/attachments/
+   docker exec survey-django mkdir -p /app/media/attachments
+   docker cp /tmp/attachments/. survey-django:/app/media/attachments/
+   ```
+
 ### Problema: Frontend no carga
 
 **Solución:**
