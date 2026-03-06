@@ -2363,6 +2363,17 @@ class AttachmentUploadView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        logger = logging.getLogger(__name__)
+        try:
+            return self._do_upload(request)
+        except Exception as e:
+            logger.exception("AttachmentUploadView: error al subir adjunto")
+            return Response(
+                {"detail": f"Error al subir el archivo: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _do_upload(self, request):
         if 'file' not in request.FILES:
             return Response(
                 {"detail": "Se requiere el campo 'file' en la petición."},
@@ -2437,6 +2448,18 @@ class AttachmentRetrieveView(APIView):
 
     def get(self, request, pk):
         logger = logging.getLogger(__name__)
+        try:
+            return self._serve_attachment(request, pk, logger)
+        except NotFound:
+            raise
+        except Exception as e:
+            logger.exception("AttachmentRetrieveView: error al servir adjunto %s", pk)
+            return Response(
+                {"detail": f"Error al obtener el archivo: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _serve_attachment(self, request, pk, logger):
         attachments_coll = get_attachments_collection()
         try:
             doc = attachments_coll.find_one({'_id': ObjectId(pk)})

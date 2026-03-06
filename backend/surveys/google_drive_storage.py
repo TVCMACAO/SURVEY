@@ -35,7 +35,7 @@ def _get_drive_service():
     from django.conf import settings
     folder_id = getattr(settings, 'GOOGLE_DRIVE_FOLDER_ID', None) or os.environ.get('GOOGLE_DRIVE_FOLDER_ID', DEFAULT_DRIVE_FOLDER_ID)
     creds_path = getattr(settings, 'GOOGLE_DRIVE_CREDENTIALS_JSON', None) or os.environ.get('GOOGLE_DRIVE_CREDENTIALS_JSON', '')
-    creds_base64 = os.environ.get('GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64', '')
+    creds_base64 = (os.environ.get('GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64', '') or '').strip().replace('\n', '').replace('\r', '')
 
     if not creds_path and not creds_base64:
         logger.info("Google Drive: no hay credenciales configuradas. Adjuntos solo en GridFS.")
