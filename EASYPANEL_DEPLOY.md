@@ -143,6 +143,22 @@ Esto creará un archivo `survey-app-easypanel-YYYYMMDD_HHMMSS.tar.gz`
 | `DEBUG` | `0` | Modo debug (0=False, 1=True) |
 | `MONGO_DB_NAME` | `survey_db` | Nombre de la base de datos |
 
+### Google Drive (opcional)
+
+Para que los adjuntos se copien también a una carpeta de Google Drive:
+
+| Variable | Descripción |
+|----------|-------------|
+| `GOOGLE_DRIVE_FOLDER_ID` | ID de la carpeta (ej: `1ljZUHTQaAcM4j8xiJXbrj2Ja_IkMs3MX`) |
+| `GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64` | JSON de la cuenta de servicio codificado en base64 |
+
+**Generar base64 del JSON:**
+```bash
+cat service-account.json | base64 -w0
+```
+
+Para pasos detallados (crear proyecto, cuenta de servicio, compartir carpeta), consulta [docs/GOOGLE_DRIVE_SETUP.md](docs/GOOGLE_DRIVE_SETUP.md).
+
 ## Verificación Post-Despliegue
 
 ### 1. Verificar Contenedores

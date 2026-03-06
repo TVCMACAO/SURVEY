@@ -21,7 +21,7 @@ services:
       - MONGO_DB_NAME=${MONGO_DB_NAME:-survey_db}
       # Google Drive (opcional): adjuntos se copian a carpeta compartida
       - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID:-1ljZUHTQaAcM4j8xiJXbrj2Ja_IkMs3MX}
-      - GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64=${GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64}
+      - GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64=${GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64:-}
     restart: unless-stopped
     networks:
       - survey-network

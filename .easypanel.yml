@@ -37,6 +37,14 @@ environment:
     default: "survey_db"
     description: "Nombre de la base de datos MongoDB"
 
+  GOOGLE_DRIVE_FOLDER_ID:
+    required: false
+    description: "ID de carpeta Drive (ej: 1ljZUHTQaAcM4j8xiJXbrj2Ja_IkMs3MX)"
+
+  GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64:
+    required: false
+    description: "JSON de cuenta de servicio codificado en base64"
+
 # Puertos
 ports:
   - container: 80

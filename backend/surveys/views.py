@@ -2477,6 +2477,12 @@ class AttachmentRetrieveView(APIView):
                 return response
             logger.warning("Attachment %s: file missing at %s", pk, file_path)
 
+        # Prioridad 3: Google Drive (fallback si GridFS y disco fallan)
+        drive_web_link = doc.get('drive_web_link')
+        if drive_web_link:
+            from django.http import HttpResponseRedirect
+            return HttpResponseRedirect(redirect_to=drive_web_link)
+
         raise NotFound(detail="Archivo no encontrado en el servidor.")
 
 

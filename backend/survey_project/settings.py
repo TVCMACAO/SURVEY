@@ -189,6 +189,11 @@ ALLOWED_ATTACHMENT_CONTENT_TYPES = (
     'application/pdf',
 )
 
+# Google Drive (opcional): guardar copia de adjuntos en carpeta compartida
+# https://drive.google.com/drive/folders/1ljZUHTQaAcM4j8xiJXbrj2Ja_IkMs3MX
+GOOGLE_DRIVE_FOLDER_ID = os.environ.get('GOOGLE_DRIVE_FOLDER_ID', '1ljZUHTQaAcM4j8xiJXbrj2Ja_IkMs3MX')
+GOOGLE_DRIVE_CREDENTIALS_JSON = os.environ.get('GOOGLE_DRIVE_CREDENTIALS_JSON', '')  # Ruta al JSON de cuenta de servicio
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
