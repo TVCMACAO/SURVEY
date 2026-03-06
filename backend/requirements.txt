@@ -11,3 +11,6 @@ sqlparse==0.5.4
 # Google Drive (opcional - para guardar adjuntos en carpeta compartida)
 google-auth>=2.0.0
 google-api-python-client>=2.0.0
+
+# Excel (para archivo de referenciación en encuestas)
+openpyxl>=3.0.0
