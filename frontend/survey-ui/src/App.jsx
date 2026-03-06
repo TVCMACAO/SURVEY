@@ -198,30 +198,42 @@ const AttachmentPreview = ({ attachmentId, compact = false }) => {
   const [blobUrl, setBlobUrl] = useState(null);
   const [contentType, setContentType] = useState(null);
   const [error, setError] = useState(null);
+  const blobUrlRef = React.useRef(null);
 
   useEffect(() => {
     if (!attachmentId) return;
-    let url = null;
+    blobUrlRef.current = null;
     authenticatedFetch(`/api/attachments/${attachmentId}/`)
       .then((res) => {
-        if (!res.ok) throw new Error('Adjunto no encontrado');
+        if (!res.ok) {
+          if (res.status === 404) throw new Error('no_available');
+          throw new Error('Adjunto no encontrado');
+        }
         const ct = res.headers.get('Content-Type') || '';
         setContentType(ct);
         return res.blob();
       })
       .then((blob) => {
-        url = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
         setBlobUrl(url);
       })
       .catch((err) => setError(err.message));
 
     return () => {
-      if (url) URL.revokeObjectURL(url);
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
     };
   }, [attachmentId]);
 
   if (error) {
-    return <span className="text-red-500 text-sm">Error: {error}</span>;
+    return (
+      <span className="text-amber-600 text-sm italic">
+        {error === 'no_available' ? 'Archivo no disponible' : `Error: ${error}`}
+      </span>
+    );
   }
   if (!blobUrl) {
     return <span className="text-gray-400 text-sm italic">Cargando...</span>;
@@ -229,11 +241,13 @@ const AttachmentPreview = ({ attachmentId, compact = false }) => {
   const isImage = contentType && contentType.startsWith('image/');
   if (isImage) {
     return (
-      <img
-        src={blobUrl}
-        alt="Adjunto"
-        className={`border border-gray-300 rounded-lg shadow-sm object-contain ${compact ? 'max-h-[60px]' : 'max-h-[200px]'}`}
-      />
+      <a href={blobUrl} target="_blank" rel="noopener noreferrer" className="inline-block cursor-pointer" title="Abrir en tamaño real">
+        <img
+          src={blobUrl}
+          alt="Adjunto"
+          className={`border border-gray-300 rounded-lg shadow-sm object-contain hover:opacity-90 transition-opacity ${compact ? 'max-h-[60px]' : 'max-h-[200px]'}`}
+        />
+      </a>
     );
   }
   return (

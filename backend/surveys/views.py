@@ -1,3 +1,4 @@
+import logging
 import mimetypes
 import os
 import re
@@ -2432,20 +2433,24 @@ class AttachmentRetrieveView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, pk):
+        logger = logging.getLogger(__name__)
         attachments_coll = get_attachments_collection()
         try:
             doc = attachments_coll.find_one({'_id': ObjectId(pk)})
-        except Exception:
+        except Exception as e:
             doc = None
+            logger.warning("Attachment %s: invalid ObjectId or DB error: %s", pk, e)
         if not doc:
+            logger.warning("Attachment %s: not found in MongoDB", pk)
             raise NotFound(detail="Adjunto no encontrado.")
         media_root = django_settings.MEDIA_ROOT
         subdir = getattr(django_settings, 'ATTACHMENTS_SUBDIR', 'attachments')
         stored_name = doc.get('stored_name')
         if not stored_name:
             raise NotFound(detail="Adjunto no encontrado.")
-        file_path = os.path.join(media_root, subdir, stored_name)
+        file_path = os.path.join(str(media_root), subdir, stored_name)
         if not os.path.isfile(file_path):
+            logger.warning("Attachment %s: doc exists but file missing at %s", pk, file_path)
             raise NotFound(detail="Archivo no encontrado en el servidor.")
         filename = doc.get('filename') or stored_name
         content_type, _ = mimetypes.guess_type(filename)
