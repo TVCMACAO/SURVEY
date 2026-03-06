@@ -6,7 +6,7 @@ from .views import (
     SurveyListCreate, SurveyRetrieveUpdateDestroy,
     SurveyRestoreView, SurveyPermanentDeleteView,
     SurveyReferenceFileUpload,
-    AttachmentUploadView, AttachmentRetrieveView,
+    AttachmentUploadView, AttachmentRetrieveView, PublicAttachmentRetrieveView,
     ResponseListCreate, ResponseRetrieve, ResponseResetView,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
     PublicSurveyView, ReferenceLookup, PublicResponseCreate,
@@ -53,4 +53,5 @@ urlpatterns = [
     path('public/surveys/<str:pk>/', PublicSurveyView.as_view(), name='public-survey-detail'),
     path('public/surveys/<str:pk>/reference-lookup/', ReferenceLookup.as_view(), name='reference-lookup'),
     path('public/responses/', PublicResponseCreate.as_view(), name='public-response-create'),
+    path('public/attachments/<str:pk>/', PublicAttachmentRetrieveView.as_view(), name='public-attachment-retrieve'),
 ]

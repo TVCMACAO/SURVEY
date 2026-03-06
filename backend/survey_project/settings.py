@@ -194,6 +194,10 @@ ALLOWED_ATTACHMENT_CONTENT_TYPES = (
 GOOGLE_DRIVE_FOLDER_ID = os.environ.get('GOOGLE_DRIVE_FOLDER_ID', '1ljZUHTQaAcM4j8xiJXbrj2Ja_IkMs3MX')
 GOOGLE_DRIVE_CREDENTIALS_JSON = os.environ.get('GOOGLE_DRIVE_CREDENTIALS_JSON', '')  # Ruta al JSON de cuenta de servicio
 
+# URL base para preview_link de adjuntos (migración de adjuntos existentes)
+# Ej: https://chat-survey-app.rhfh8t.easypanel.host
+BASE_URL = os.environ.get('BASE_URL', '')
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 

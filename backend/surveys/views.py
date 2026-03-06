@@ -61,6 +61,33 @@ def require_admin_permission(request, action_description="realizar esta acción"
     return None
 
 
+def require_admin_or_analista_for_read(request, action_description="ver este recurso"):
+    """
+    Para operaciones de solo lectura: root, group_admin y analista pueden ver.
+    """
+    user_role, _ = get_user_role_and_group(request)
+    if user_role not in ['root', 'group_admin', 'analista']:
+        return Response(
+            {"detail": f"No tienes permisos para {action_description}."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    return None
+
+
+def require_not_analista(request, action_description="realizar esta acción"):
+    """
+    Analista es solo lectura. Bloquea cualquier operación de escritura.
+    Retorna Response con error 403 si es analista, None si puede continuar.
+    """
+    user_role, _ = get_user_role_and_group(request)
+    if user_role == 'analista':
+        return Response(
+            {"detail": f"El rol Analista es solo lectura. No tienes permisos para {action_description}."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+    return None
+
+
 def check_group_admin_access(user_role, user_group_id, resource_group_id, error_message="No tienes permisos para acceder a este recurso."):
     """
     Verifica que un group_admin solo pueda acceder a recursos de su grupo.
@@ -407,6 +434,10 @@ class SurveyGroupListCreate(APIView):
         except Exception:
             pass
         # #endregion
+
+        err = require_not_analista(request, "crear grupos")
+        if err is not None:
+            return err
         
         serializer = SurveyGroupSerializer(data=request.data)
         if serializer.is_valid():
@@ -589,6 +620,9 @@ class SurveyListCreate(APIView):
         """
         Implementación real del método POST.
         """
+        err = require_not_analista(request, "crear encuestas")
+        if err is not None:
+            return err
         # #region agent log
         import json
         import traceback
@@ -1390,12 +1424,12 @@ class SurveyListCreate(APIView):
                         query = {'$and': [query, group_filter]}
                 else:
                     query = group_filter
-            elif user_role == 'root':
-                # Root puede ver todas las encuestas (con o sin grupo)
-                # No agregamos filtro de grupo para root
+            elif user_role == 'root' or user_role == 'analista':
+                # Root y analista pueden ver todas las encuestas (independiente del grupo)
+                # Analista es solo lectura pero tiene acceso a todo para análisis
                 pass
             else:
-                # Usuario sin grupo asignado y no es root: no ver ninguna encuesta
+                # Usuario sin grupo asignado y no es root/analista: no ver ninguna encuesta
                 query = {'_id': None}  # Query que no devuelve resultados
             
             if not show_deleted or user_role != 'root':
@@ -1693,9 +1727,11 @@ class SurveyRetrieveUpdateDestroy(APIView):
         
         survey_group = survey.get('group')
         
-        # Si el usuario NO es root y tiene user_group_id: solo puede ver encuestas de su grupo
-        if user_role != 'root' and user_group_id:
-            # Verificar que la encuesta pertenece al grupo del usuario
+        # Root y analista pueden ver cualquier encuesta (analista es solo lectura, independiente)
+        if user_role in ('root', 'analista'):
+            pass  # Permitir acceso
+        elif user_role and user_group_id:
+            # Usuario con grupo: solo puede ver encuestas de su grupo
             try:
                 if str(survey_group) != str(user_group_id) and str(survey_group) != str(ObjectId(user_group_id)):
                     return Response(
@@ -1708,13 +1744,12 @@ class SurveyRetrieveUpdateDestroy(APIView):
                         {"detail": "No tienes permisos para ver esta encuesta."},
                         status=status.HTTP_403_FORBIDDEN
                     )
-        elif user_role != 'root' and not user_group_id:
-            # Usuario sin grupo asignado y no es root: no puede ver ninguna encuesta
+        else:
+            # Usuario sin grupo asignado (y no root/analista): no puede ver ninguna encuesta
             return Response(
                 {"detail": "No tienes permisos para ver esta encuesta."},
                 status=status.HTTP_403_FORBIDDEN
             )
-        # Si el usuario es root: puede ver todas las encuestas (con o sin grupo)
         
         # Enriquecer con información del grupo y usuario creador
         groups_collection = get_survey_groups_collection()
@@ -1773,7 +1808,9 @@ class SurveyRetrieveUpdateDestroy(APIView):
 
     def put(self, request, pk):
         survey = self.get_object(pk)
-        
+        err = require_not_analista(request, "editar encuestas")
+        if err is not None:
+            return err
         # Verificar permisos: si es group_admin, solo puede actualizar encuestas de su grupo
         user_role = None
         user_group_id = None
@@ -1930,7 +1967,9 @@ class SurveyRetrieveUpdateDestroy(APIView):
 
     def delete(self, request, pk):
         survey = self.get_object(pk)
-        
+        err = require_not_analista(request, "eliminar encuestas")
+        if err is not None:
+            return err
         # Verificar permisos: si es group_admin, solo puede eliminar encuestas de su grupo
         user_role = None
         user_group_id = None
@@ -2190,6 +2229,9 @@ class SurveyReferenceFileUpload(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
+        err = require_not_analista(request, "subir archivos de referenciación")
+        if err is not None:
+            return err
         if 'reference_file' not in request.FILES:
             return Response(
                 {"detail": "Se requiere el archivo 'reference_file'."},
@@ -2437,6 +2479,9 @@ class AttachmentUploadView(APIView):
                 doc['drive_web_link'] = drive_info['web_view_link']
         result = attachments_coll.insert_one(doc)
         doc_id = str(result.inserted_id)
+        # Guardar preview_link (URL pública para vista previa)
+        preview_link = request.build_absolute_uri(f'/api/public/attachments/{doc_id}/')
+        attachments_coll.update_one({'_id': result.inserted_id}, {'$set': {'preview_link': preview_link}})
         return Response({"id": doc_id, "filename": display_filename}, status=status.HTTP_201_CREATED)
 
 
@@ -2460,53 +2505,82 @@ class AttachmentRetrieveView(APIView):
             )
 
     def _serve_attachment(self, request, pk, logger):
-        attachments_coll = get_attachments_collection()
+        return _serve_attachment_response(pk, logger)
+
+
+def _serve_attachment_response(pk, logger):
+    """
+    Sirve un adjunto por ID. Retorna HttpResponse, FileResponse o HttpResponseRedirect.
+    Usado por AttachmentRetrieveView y PublicAttachmentRetrieveView.
+    """
+    attachments_coll = get_attachments_collection()
+    try:
+        doc = attachments_coll.find_one({'_id': ObjectId(pk)})
+    except Exception as e:
+        doc = None
+        logger.warning("Attachment %s: invalid ObjectId or DB error: %s", pk, e)
+    if not doc:
+        logger.warning("Attachment %s: not found in MongoDB", pk)
+        raise NotFound(detail="Adjunto no encontrado.")
+    filename = doc.get('filename') or 'attachment'
+
+    # Prioridad 1: GridFS
+    gridfs_id = doc.get('gridfs_id')
+    if gridfs_id is not None:
         try:
-            doc = attachments_coll.find_one({'_id': ObjectId(pk)})
+            gridfs = get_gridfs()
+            gfile = gridfs.get(gridfs_id)
+            content_type = getattr(gfile, 'content_type', None) or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+            from django.http import HttpResponse
+            response = HttpResponse(gfile.read(), content_type=content_type)
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            return response
         except Exception as e:
-            doc = None
-            logger.warning("Attachment %s: invalid ObjectId or DB error: %s", pk, e)
-        if not doc:
-            logger.warning("Attachment %s: not found in MongoDB", pk)
-            raise NotFound(detail="Adjunto no encontrado.")
-        filename = doc.get('filename') or 'attachment'
+            logger.warning("Attachment %s: GridFS read failed: %s", pk, e)
+            raise NotFound(detail="Archivo no encontrado.")
 
-        # Prioridad 1: GridFS (nuevos adjuntos, migran con MongoDB)
-        gridfs_id = doc.get('gridfs_id')
-        if gridfs_id is not None:
-            try:
-                gridfs = get_gridfs()
-                gfile = gridfs.get(gridfs_id)
-                content_type = getattr(gfile, 'content_type', None) or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
-                from django.http import HttpResponse
-                response = HttpResponse(gfile.read(), content_type=content_type)
-                response['Content-Disposition'] = f'inline; filename="{filename}"'
-                return response
-            except Exception as e:
-                logger.warning("Attachment %s: GridFS read failed: %s", pk, e)
-                raise NotFound(detail="Archivo no encontrado.")
+    # Prioridad 2: Disco
+    stored_name = doc.get('stored_name')
+    if stored_name:
+        media_root = django_settings.MEDIA_ROOT
+        subdir = getattr(django_settings, 'ATTACHMENTS_SUBDIR', 'attachments')
+        file_path = os.path.join(str(media_root), subdir, stored_name)
+        if os.path.isfile(file_path):
+            content_type, _ = mimetypes.guess_type(filename)
+            response = FileResponse(open(file_path, 'rb'), as_attachment=False)
+            response['Content-Type'] = content_type or 'application/octet-stream'
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            return response
+        logger.warning("Attachment %s: file missing at %s", pk, file_path)
 
-        # Prioridad 2: Disco (adjuntos antiguos, retrocompatibilidad)
-        stored_name = doc.get('stored_name')
-        if stored_name:
-            media_root = django_settings.MEDIA_ROOT
-            subdir = getattr(django_settings, 'ATTACHMENTS_SUBDIR', 'attachments')
-            file_path = os.path.join(str(media_root), subdir, stored_name)
-            if os.path.isfile(file_path):
-                content_type, _ = mimetypes.guess_type(filename)
-                response = FileResponse(open(file_path, 'rb'), as_attachment=False)
-                response['Content-Type'] = content_type or 'application/octet-stream'
-                response['Content-Disposition'] = f'inline; filename="{filename}"'
-                return response
-            logger.warning("Attachment %s: file missing at %s", pk, file_path)
+    # Prioridad 3: Google Drive
+    drive_web_link = doc.get('drive_web_link')
+    if drive_web_link:
+        from django.http import HttpResponseRedirect
+        return HttpResponseRedirect(redirect_to=drive_web_link)
 
-        # Prioridad 3: Google Drive (fallback si GridFS y disco fallan)
-        drive_web_link = doc.get('drive_web_link')
-        if drive_web_link:
-            from django.http import HttpResponseRedirect
-            return HttpResponseRedirect(redirect_to=drive_web_link)
+    raise NotFound(detail="Archivo no encontrado en el servidor.")
 
-        raise NotFound(detail="Archivo no encontrado en el servidor.")
+
+class PublicAttachmentRetrieveView(APIView):
+    """
+    GET: Sirve un adjunto por ID sin autenticación (vista previa pública).
+    URL para preview_link almacenado en BD.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        logger = logging.getLogger(__name__)
+        try:
+            return _serve_attachment_response(pk, logger)
+        except NotFound:
+            raise
+        except Exception as e:
+            logger.exception("PublicAttachmentRetrieveView: error al servir adjunto %s", pk)
+            return Response(
+                {"detail": f"Error al obtener el archivo: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class PublicResponseCreate(APIView):
@@ -2603,6 +2677,9 @@ class ResponseListCreate(APIView):
         return Response(serializer.data)
 
     def post(self, request):
+        err = require_not_analista(request, "crear respuestas")
+        if err is not None:
+            return err
         serializer = ResponseSerializer(data=request.data)
         if serializer.is_valid():
             responses_collection = get_responses_collection()
@@ -2773,6 +2850,10 @@ class ResponseSyncView(APIView):
             logger.info(f"Request body: {json.dumps(request.data) if hasattr(request, 'data') else 'No data'}")
         except Exception as e:
             logger.warning(f"Could not log request body: {e}")
+
+        err = require_not_analista(request, "sincronizar respuestas")
+        if err is not None:
+            return err
         
         serializer = BatchResponseSerializer(data=request.data)
         if not serializer.is_valid():
@@ -3410,8 +3491,8 @@ class UserListCreate(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # Verificar que el usuario es 'root' o 'group_admin'
-        permission_error = require_admin_permission(request, "ver usuarios")
+        # Verificar que el usuario es 'root', 'group_admin' o 'analista' (analista solo lectura)
+        permission_error = require_admin_or_analista_for_read(request, "ver usuarios")
         if permission_error:
             return permission_error
         
@@ -3426,7 +3507,7 @@ class UserListCreate(APIView):
         try:
             users_collection = get_mongo_collection('users')
             
-            # Si es group_admin, solo mostrar usuarios de su grupo
+            # Si es group_admin, solo mostrar usuarios de su grupo. Root y analista ven todos
             if user_role == 'group_admin' and user_group_id:
                 try:
                     query = {'user_group_id': ObjectId(user_group_id)}
@@ -3434,7 +3515,7 @@ class UserListCreate(APIView):
                     query = {'user_group_id': user_group_id}
                 users_docs = list(users_collection.find(query).sort('date_joined', -1))
             else:
-                # Root puede ver todos los usuarios
+                # Root y analista pueden ver todos los usuarios
                 users_docs = list(users_collection.find().sort('date_joined', -1))
             
             # Obtener todos los grupos para enriquecer usuarios con nombres de grupos
@@ -3776,14 +3857,14 @@ class UserRetrieveUpdateDestroy(APIView):
         return user
 
     def get(self, request, pk):
-        # Verificar que el usuario es 'root' o 'group_admin'
-        permission_error = require_admin_permission(request, "ver usuarios")
+        # Verificar que el usuario es 'root', 'group_admin' o 'analista' (analista solo lectura)
+        permission_error = require_admin_or_analista_for_read(request, "ver usuarios")
         if permission_error:
             return permission_error
 
         user = self.get_object(pk)
         
-        # Si es group_admin, verificar que el usuario pertenece a su grupo
+        # Si es group_admin, verificar que el usuario pertenece a su grupo (root y analista ven todos)
         user_role, user_group_id = get_user_role_and_group(request)
         if user_role == 'group_admin' and user_group_id:
             from .mongo_user_utils import get_user_by_id

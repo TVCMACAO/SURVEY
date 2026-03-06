@@ -3322,8 +3322,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     }
   };
 
+  const canManageUsers = userRole === 'root' || userRole === 'group_admin';
+  const canViewUsers = canManageUsers || userRole === 'analista';
+
   useEffect(() => {
-    if (userRole === 'root' || userRole === 'group_admin') {
+    if (canViewUsers) {
       fetchUsers().then(() => {
         fetchGroups();
       });
@@ -3670,7 +3673,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
             <p className="text-sm text-gray-600 font-medium">Administra usuarios y grupos del sistema.</p>
           </div>
           <div className="flex gap-3">
-            {activeTab === 'usuarios' && (
+            {activeTab === 'usuarios' && canManageUsers && (
               <button 
                 onClick={handleNewUser} 
                 className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
@@ -3678,7 +3681,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                 <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" /> Nuevo Usuario
               </button>
             )}
-            {activeTab === 'grupos' && (
+            {activeTab === 'grupos' && canManageUsers && (
               <button 
                 onClick={handleNewGroup} 
                 className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
@@ -3729,7 +3732,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       </header>
 
       <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
-        {activeTab === 'usuarios' && showUserForm ? (
+        {activeTab === 'usuarios' && showUserForm && canManageUsers ? (
           <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-black text-gray-800">
@@ -3969,13 +3972,15 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                   <FontAwesomeIcon icon={faUsers} size="2x" className="fa-icon-force-current" />
                 </div>
                 <p className="text-2xl font-black text-gray-700 mb-2">No hay usuarios</p>
-                <p className="text-gray-500 mb-6">Crea el primer usuario para comenzar.</p>
+                <p className="text-gray-500 mb-6">{canManageUsers ? 'Crea el primer usuario para comenzar.' : 'No hay usuarios para mostrar.'}</p>
+                {canManageUsers && (
                 <button
                   onClick={handleNewUser}
                   className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-xl hover:shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 mx-auto"
                 >
                   <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" /> Crear Usuario
                 </button>
+                )}
               </div>
             ) : (
               <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 shadow-lg overflow-hidden">
@@ -3993,7 +3998,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                         )}
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Estado</th>
                         <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Fecha de Registro</th>
-                        <th className="px-6 py-4 text-center text-xs font-black text-gray-700 uppercase tracking-wider">Acciones</th>
+                        {canManageUsers && <th className="px-6 py-4 text-center text-xs font-black text-gray-700 uppercase tracking-wider">Acciones</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -4038,6 +4043,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                             {user.date_joined ? new Date(user.date_joined).toLocaleDateString('es-ES') : '-'}
                           </td>
+                          {canManageUsers && (
                           <td className="px-6 py-4 whitespace-nowrap text-center">
                             <div className="flex items-center justify-center gap-2">
                               <button
@@ -4056,6 +4062,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                               </button>
                             </div>
                           </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -4066,7 +4073,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
           </>
         ) : activeTab === 'grupos' ? (
           <>
-            {showGroupForm ? (
+            {showGroupForm && canManageUsers ? (
               <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-black text-gray-800">
@@ -4134,13 +4141,15 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                       <FontAwesomeIcon icon={faUsers} size="2x" className="fa-icon-force-current" />
                     </div>
                     <p className="text-2xl font-black text-gray-700 mb-2">No hay grupos</p>
-                    <p className="text-gray-500 mb-6">Crea el primer grupo para comenzar.</p>
+                    <p className="text-gray-500 mb-6">{canManageUsers ? 'Crea el primer grupo para comenzar.' : 'No hay grupos para mostrar.'}</p>
+                    {canManageUsers && (
                     <button
                       onClick={handleNewGroup}
                       className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-xl hover:shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 mx-auto"
                     >
                       <FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-white" /> Crear Grupo
                     </button>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
@@ -4372,7 +4381,7 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
 );
 };
 
-const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus, onDuplicate }) => {
+const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus, onDuplicate, canEdit = true }) => {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const titleRef = React.useRef(null);
@@ -4462,6 +4471,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
 
             {/* Botones de acción mejorados */}
             <div className="flex items-center justify-end gap-1">
+              {canEdit && (
               <button 
                 onClick={handleShare} 
                 className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-green-50 hover:to-emerald-50 text-gray-500 hover:text-green-600 transition-all duration-200 hover:scale-110 active:scale-95" 
@@ -4469,6 +4479,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
               >
                 <FontAwesomeIcon icon={faShareNodes} size="sm" className="fa-icon-force-current" />
               </button>
+              )}
               <button 
                 onClick={onViewResponses} 
                 className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-indigo-50 hover:to-purple-50 text-gray-500 hover:text-indigo-600 transition-all duration-200 hover:scale-110 active:scale-95" 
@@ -4476,6 +4487,8 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
               >
                 <FontAwesomeIcon icon={faChartBar} size="sm" className="fa-icon-force-current" />
               </button>
+              {canEdit && (
+              <>
               <button 
                 onClick={onEdit} 
                 className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-blue-50 hover:to-cyan-50 text-gray-500 hover:text-blue-600 transition-all duration-200 hover:scale-110 active:scale-95" 
@@ -4499,6 +4512,8 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
               >
                 <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
               </button>
+              </>
+              )}
             </div>
           </div>
         </div>
@@ -4521,10 +4536,13 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
   
   const isRoot = userRole === 'root';
   const isGroupAdmin = userRole === 'group_admin';
+  const isAnalista = userRole === 'analista';
   const canManageUsers = isRoot || isGroupAdmin;
+  const canViewUsers = canManageUsers || isAnalista;  // analista solo lectura
+  const canEditSurveys = !isAnalista;  // analista es solo lectura, no puede crear/editar/eliminar
 
   const displayName = currentUser ? [currentUser.first_name, currentUser.last_name].filter(Boolean).join(' ').trim() || currentUser.username : '';
-  const roleLabel = (currentUser?.role && { root: 'Administrador', group_admin: 'Administrador de grupo', encuestador: 'Encuestador' }[currentUser.role]) || currentUser?.role || '';
+  const roleLabel = (currentUser?.role && { root: 'Administrador', group_admin: 'Administrador de grupo', encuestador: 'Encuestador', analista: 'Analista' }[currentUser.role]) || currentUser?.role || '';
 
   return (
     <main className="flex-1 relative z-10">
@@ -4544,7 +4562,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                  )}
                </div>
                <div className="flex gap-3 flex-shrink-0">
-                 {canManageUsers && onViewUsers && (
+                 {canViewUsers && onViewUsers && (
                    <button 
                      onClick={onViewUsers} 
                      className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
@@ -4552,12 +4570,14 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                      <FontAwesomeIcon icon={faUsers} size="sm" className="fa-icon-force-white" /> Usuarios
                    </button>
                  )}
+                 {canEditSurveys && (
                  <button 
                    onClick={onNewSurvey} 
                    className="px-6 py-3 bg-gradient-to-r from-gray-900 to-gray-800 hover:from-black hover:to-gray-900 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
                  >
                    <FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-white" /> Nueva Encuesta
                </button>
+                 )}
                  {onLogout && (
                    <button 
                      onClick={onLogout} 
@@ -4658,7 +4678,8 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                       <FontAwesomeIcon icon={faFileLines} size="2x" className="fa-icon-force-current" />
                     </div>
                     <p className="text-2xl font-black text-gray-700 mb-2">No hay encuestas todavía</p>
-                    <p className="text-gray-500 mb-6">Comienza creando tu primera encuesta para recopilar respuestas.</p>
+                    <p className="text-gray-500 mb-6">{canEditSurveys ? 'Comienza creando tu primera encuesta para recopilar respuestas.' : 'No tienes encuestas para ver.'}</p>
+                    {canEditSurveys && (
                     <button 
                       onClick={onNewSurvey}
                       className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95"
@@ -4666,6 +4687,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                       <FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-white mr-2" />
                       Crear Primera Encuesta
                     </button>
+                    )}
                 </div>
               ) : (
                 <>
@@ -4695,6 +4717,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                         onViewResponses={() => onViewResponses(s)} 
                         onUpdatePublicStatus={onUpdatePublicStatus}
                         onDuplicate={onDuplicateSurvey ? () => onDuplicateSurvey(s) : undefined}
+                        canEdit={canEditSurveys}
                       />)}
                   </div>
                 </>
