@@ -2593,8 +2593,8 @@ def _serve_attachment_response(pk, logger):
         doc = None
         logger.warning("Attachment %s: invalid ObjectId or DB error: %s", pk, e)
     if not doc:
-        logger.warning("Attachment %s: not found in MongoDB", pk)
-        raise NotFound(detail="Adjunto no encontrado.")
+        logger.warning("Attachment %s: not found in MongoDB (comprobar que MONGO_URI apunta a la BD donde están los adjuntos)", pk)
+        raise NotFound(detail="Adjunto no encontrado. Compruebe que la aplicación usa la misma MongoDB (MONGO_URI) donde se guardaron los adjuntos.")
     filename = doc.get('filename') or 'attachment'
 
     # Prioridad 1: GridFS
@@ -2610,7 +2610,7 @@ def _serve_attachment_response(pk, logger):
             return response
         except Exception as e:
             logger.warning("Attachment %s: GridFS read failed: %s", pk, e)
-            raise NotFound(detail="Archivo no encontrado.")
+            # No lanzar aquí; intentar disco y Drive por si hay alternativa
 
     # Prioridad 2: Disco
     stored_name = doc.get('stored_name')
@@ -2626,13 +2626,17 @@ def _serve_attachment_response(pk, logger):
             return response
         logger.warning("Attachment %s: file missing at %s", pk, file_path)
 
-    # Prioridad 3: Google Drive
+    # Prioridad 3: Google Drive (redirige al visor; funciona aunque GridFS falle en este servidor)
     drive_web_link = doc.get('drive_web_link')
     if drive_web_link:
         from django.http import HttpResponseRedirect
         return HttpResponseRedirect(redirect_to=drive_web_link)
 
-    raise NotFound(detail="Archivo no encontrado en el servidor.")
+    raise NotFound(
+        detail="Archivo no encontrado en el servidor. "
+        "El documento existe pero no hay contenido (GridFS, disco ni enlace Drive). "
+        "Compruebe que la app usa la misma MONGO_URI que la BD donde se subieron los adjuntos."
+    )
 
 
 class PublicAttachmentRetrieveView(APIView):

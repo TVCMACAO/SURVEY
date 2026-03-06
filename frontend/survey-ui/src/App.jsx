@@ -2670,6 +2670,30 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     return '-';
   };
 
+  // Links públicos de adjuntos de una respuesta (API attachment_links o fallback desde answers)
+  const getResponsePublicLinks = (response, questionsList) => {
+    let links = response.attachment_links && typeof response.attachment_links === 'object'
+      ? Object.values(response.attachment_links).filter(Boolean)
+      : [];
+    if (links.length === 0 && response.answers && typeof response.answers === 'object') {
+      const base = typeof window !== 'undefined' ? window.location.origin : '';
+      const qType = (q) => (q.type || q.question_type || '').trim();
+      const isFileUpload = (q) => qType(q) === 'file_upload' || qType(q) === 'Adjuntar archivos';
+      (questionsList || []).filter(isFileUpload).forEach(q => {
+        const qid = q.id ?? q._id;
+        if (qid == null) return;
+        const key = typeof qid === 'string' ? qid : String(qid);
+        const val = response.answers[key] ?? response.answers[qid];
+        if (val == null) return;
+        const ids = Array.isArray(val)
+          ? val.map(x => (typeof x === 'string' ? x.trim() : String(x))).filter(Boolean)
+          : (typeof val === 'string' ? val.split(/[\s,]+/).map(s => s.trim()).filter(Boolean) : []);
+        ids.forEach(id => { if (id && base) links.push(`${base}/api/public/attachments/${id}/`); });
+      });
+    }
+    return links;
+  };
+
   // Función para exportar a Excel
   const exportToExcel = () => {
     if (!responses.length || !survey.questions) return;
@@ -2716,10 +2740,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
         row.push(formatAnswer(answer, q.type || q.question_type, q));
       });
       
-      // Columna con el link público del/los adjunto(s) de la respuesta
-      const links = response.attachment_links && typeof response.attachment_links === 'object'
-        ? Object.values(response.attachment_links).filter(Boolean)
-        : [];
+      const links = getResponsePublicLinks(response, questions);
       row.push(links.length > 0 ? links.join('\n') : '-');
       
       tableData.push(row);
@@ -2965,6 +2986,9 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                                 </th>
                               );
                             })}
+                            <th className="px-4 py-4 text-left text-xs font-black text-white uppercase tracking-wider min-w-[280px]">
+                              Link público
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -3026,6 +3050,21 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                                   </td>
                                 );
                               })}
+                              <td className="px-4 py-4 text-sm text-gray-700 max-w-[280px]">
+                                {(() => {
+                                  const linkList = getResponsePublicLinks(response, survey.questions);
+                                  if (linkList.length === 0) return <span className="text-gray-400">—</span>;
+                                  return (
+                                    <div className="flex flex-col gap-1">
+                                      {linkList.map((url, i) => (
+                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate text-xs" title={url}>
+                                          {url.length > 45 ? url.slice(0, 42) + '…' : url}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
