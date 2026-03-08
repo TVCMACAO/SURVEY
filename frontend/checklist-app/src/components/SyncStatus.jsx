@@ -1,6 +1,6 @@
 import React from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSync, faCheckCircle, faExclamationTriangle, faWifi, faWifiSlash } from '@fortawesome/free-solid-svg-icons';
+import { faSync, faCheckCircle, faExclamationTriangle, faWifi, faBan } from '@fortawesome/free-solid-svg-icons';
 
 const SyncStatus = ({ 
   isOnline, 
@@ -19,7 +19,7 @@ const SyncStatus = ({
             </>
           ) : (
             <>
-              <FontAwesomeIcon icon={faWifiSlash} className="h-5 w-5 text-red-600" />
+              <FontAwesomeIcon icon={faBan} className="h-5 w-5 text-red-600" />
               <span className="text-sm font-medium text-red-600">Sin conexión</span>
             </>
           )}

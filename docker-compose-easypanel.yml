@@ -6,7 +6,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: survey-django
-    command: sh -c "python manage.py collectstatic --noinput && gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000 --timeout 120 --workers 2"
+    command: sh -c "python manage.py collectstatic --noinput && gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000 --timeout 120 --workers 2 --worker-class gevent --worker-connections 100"
     volumes:
       - ./backend:/app
       - static_volume:/app/staticfiles
