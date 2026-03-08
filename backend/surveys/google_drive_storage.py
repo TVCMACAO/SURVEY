@@ -85,6 +85,9 @@ def upload_to_google_drive(file_obj, filename, content_type=None):
     """
     Sube un archivo a la carpeta de Google Drive configurada.
 
+    Solo se ejecuta si GOOGLE_DRIVE_ENABLED=1 (o true/yes). Si no está activo,
+    retorna None sin llamar a la API (evita errores 404 y logs en producción).
+
     Args:
         file_obj: objeto file-like (con read()) o bytes
         filename: nombre del archivo
@@ -94,6 +97,8 @@ def upload_to_google_drive(file_obj, filename, content_type=None):
         dict con 'id' (file_id de Drive) y 'web_view_link' si está disponible,
         o None si falla o no está configurado.
     """
+    if os.environ.get('GOOGLE_DRIVE_ENABLED', '').strip().lower() not in ('1', 'true', 'yes'):
+        return None
     service = _get_drive_service()
     if service is None:
         return None
@@ -134,20 +139,22 @@ def upload_to_google_drive(file_obj, filename, content_type=None):
         logger.info("Google Drive: archivo subido: %s (id=%s)", filename, drive_file_id)
         return {'id': drive_file_id, 'web_view_link': web_link}
     except Exception as e:
-        # 404 = carpeta no existe o sin acceso: warning como máximo una vez por minuto
+        # 404 = carpeta no existe o sin acceso: warning como máximo una vez por minuto, sin traceback
+        is_404 = False
         try:
             from googleapiclient.errors import HttpError
-            if isinstance(e, HttpError) and e.resp.status == 404:
-                global _last_drive_404_log
-                now = time.time()
-                if now - _last_drive_404_log >= 60:
-                    _last_drive_404_log = now
-                    logger.warning(
-                        "Google Drive: carpeta no encontrada o sin acceso (404). "
-                        "Revise GOOGLE_DRIVE_FOLDER_ID y permisos. Adjuntos se guardan solo en GridFS."
-                    )
-                return None
+            is_404 = isinstance(e, HttpError) and getattr(getattr(e, 'resp', None), 'status', None) == 404
         except Exception:
             pass
+        if is_404:
+            global _last_drive_404_log
+            now = time.time()
+            if now - _last_drive_404_log >= 60:
+                _last_drive_404_log = now
+                logger.warning(
+                    "Google Drive: carpeta no encontrada o sin acceso (404). "
+                    "Revise GOOGLE_DRIVE_FOLDER_ID y permisos. Adjuntos se guardan solo en GridFS."
+                )
+            return None
         logger.exception("Google Drive: error al subir %s: %s", filename, e)
         return None

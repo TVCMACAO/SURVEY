@@ -67,7 +67,7 @@ python /app/init_mongodb.py 2>&1 || echo "WARNING: No se pudo inicializar MongoD
 
 # Iniciar Gunicorn (usar set -e solo para Gunicorn)
 echo "=== Iniciando Gunicorn ==="
-echo "Comando: gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000"
+echo "Comando: gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000 --timeout 120 --workers 2"
 set -e
 exec gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000 --timeout 120 --workers 2 --access-logfile - --error-logfile - --log-level info
 

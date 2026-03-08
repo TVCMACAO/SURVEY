@@ -14,7 +14,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: survey-django
-    command: gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000
+    command: gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000 --timeout 120 --workers 2
     volumes:
       - ./backend:/app
       - static_volume:/app/staticfiles # For NGINX to collect static files
