@@ -18,5 +18,5 @@ COPY . /app
 # Expose port
 EXPOSE 8000
 
-# Run Gunicorn
-CMD ["gunicorn", "survey_project.wsgi:application", "--bind", "0.0.0.0:8000"]
+# Run Gunicorn (timeout 120s para servir adjuntos grandes sin WORKER TIMEOUT)
+CMD ["gunicorn", "survey_project.wsgi:application", "--bind", "0.0.0.0:8000", "--timeout", "120", "--workers", "2"]

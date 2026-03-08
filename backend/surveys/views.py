@@ -2547,14 +2547,15 @@ class AttachmentUploadView(APIView):
         grid_out = gridfs.put(f, filename=display_filename, content_type=content_type)
         gridfs_id = grid_out
 
-        # Subir también a Google Drive si está configurado (carpeta SURVEYAPP)
+        # Google Drive: deshabilitado por defecto. Activar con GOOGLE_DRIVE_ENABLED=1
         drive_info = None
-        try:
-            from .google_drive_storage import upload_to_google_drive
-            f.seek(0)
-            drive_info = upload_to_google_drive(f, display_filename, content_type)
-        except Exception:
-            pass  # No fallar si Drive no está configurado
+        if os.environ.get('GOOGLE_DRIVE_ENABLED', '').strip().lower() in ('1', 'true', 'yes'):
+            try:
+                from .google_drive_storage import upload_to_google_drive
+                f.seek(0)
+                drive_info = upload_to_google_drive(f, display_filename, content_type)
+            except Exception:
+                pass
 
         # Registrar en colección attachments (referencia para respuestas)
         attachments_coll = get_attachments_collection()

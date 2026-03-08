@@ -17,8 +17,10 @@ import base64
 import io
 import logging
 import os
+import time
 
 logger = logging.getLogger(__name__)
+_last_drive_404_log = 0.0
 
 # ID de la carpeta SURVEYAPP en Google Drive
 DEFAULT_DRIVE_FOLDER_ID = '1ljZUHTQaAcM4j8xiJXbrj2Ja_IkMs3MX'
@@ -132,5 +134,20 @@ def upload_to_google_drive(file_obj, filename, content_type=None):
         logger.info("Google Drive: archivo subido: %s (id=%s)", filename, drive_file_id)
         return {'id': drive_file_id, 'web_view_link': web_link}
     except Exception as e:
+        # 404 = carpeta no existe o sin acceso: warning como máximo una vez por minuto
+        try:
+            from googleapiclient.errors import HttpError
+            if isinstance(e, HttpError) and e.resp.status == 404:
+                global _last_drive_404_log
+                now = time.time()
+                if now - _last_drive_404_log >= 60:
+                    _last_drive_404_log = now
+                    logger.warning(
+                        "Google Drive: carpeta no encontrada o sin acceso (404). "
+                        "Revise GOOGLE_DRIVE_FOLDER_ID y permisos. Adjuntos se guardan solo en GridFS."
+                    )
+                return None
+        except Exception:
+            pass
         logger.exception("Google Drive: error al subir %s: %s", filename, e)
         return None
