@@ -157,7 +157,7 @@ def validate_file_upload_answers(survey_doc, answers):
 def _enrich_responses_with_attachment_links(responses, surveys_collection=None, attachments_coll=None):
     """
     Añade a cada respuesta un campo 'attachment_links': { attachment_id: preview_link (URL pública), ... }.
-    Usa preview_link de la colección attachments para que los enlaces sean públicos.
+    Usa preview_link de la colección attachments. Una sola consulta por lote a attachments para reducir carga.
     """
     if not responses:
         return
@@ -166,6 +166,8 @@ def _enrich_responses_with_attachment_links(responses, surveys_collection=None, 
     if attachments_coll is None:
         attachments_coll = get_attachments_collection()
     survey_cache = {}
+    all_attachment_ids = set()
+    response_attachment_ids = {}
     for r in responses:
         r.setdefault('attachment_links', {})
         survey_oid = r.get('survey')
@@ -198,7 +200,8 @@ def _enrich_responses_with_attachment_links(responses, surveys_collection=None, 
                     if isinstance(item, str) and item.strip():
                         try:
                             ObjectId(item.strip())
-                            attachment_ids.add(item.strip())
+                            aid = item.strip()
+                            attachment_ids.add(aid)
                         except Exception:
                             pass
             elif isinstance(val, str):
@@ -210,15 +213,34 @@ def _enrich_responses_with_attachment_links(responses, surveys_collection=None, 
                             attachment_ids.add(item)
                         except Exception:
                             pass
-        for aid in attachment_ids:
-            if aid in r['attachment_links']:
-                continue
-            try:
-                doc = attachments_coll.find_one({'_id': ObjectId(aid)}, {'preview_link': 1})
-                if doc and doc.get('preview_link'):
-                    r['attachment_links'][aid] = doc['preview_link']
-            except Exception:
-                pass
+        if attachment_ids:
+            response_attachment_ids[id(r)] = attachment_ids
+            all_attachment_ids.update(attachment_ids)
+    if not all_attachment_ids:
+        return
+    try:
+        oids = [ObjectId(aid) for aid in all_attachment_ids]
+    except Exception:
+        return
+    preview_map = {}
+    try:
+        cursor = attachments_coll.find(
+            {'_id': {'$in': oids}},
+            {'_id': 1, 'preview_link': 1}
+        )
+        for doc in cursor:
+            if doc.get('preview_link'):
+                preview_map[str(doc['_id'])] = doc['preview_link']
+    except Exception:
+        return
+    for r in responses:
+        aids = response_attachment_ids.get(id(r))
+        if not aids:
+            continue
+        for aid in aids:
+            link = preview_map.get(aid)
+            if link:
+                r['attachment_links'][aid] = link
 
 
 # Vistas de autenticación
@@ -2581,10 +2603,14 @@ class AttachmentRetrieveView(APIView):
         return _serve_attachment_response(pk, logger)
 
 
+# Cabecera de caché para respuestas públicas de adjuntos (reduce carga y evita picos)
+ATTACHMENT_CACHE_CONTROL = 'public, max-age=86400'
+
 def _serve_attachment_response(pk, logger):
     """
-    Sirve un adjunto por ID. Retorna HttpResponse, FileResponse o HttpResponseRedirect.
+    Sirve un adjunto por ID. Retorna HttpResponse, StreamingHttpResponse, FileResponse o HttpResponseRedirect.
     Usado por AttachmentRetrieveView y PublicAttachmentRetrieveView.
+    Cabecera Cache-Control en respuestas correctas para que navegadores/proxies cacheen y reduzcan consultas.
     """
     attachments_coll = get_attachments_collection()
     try:
@@ -2597,16 +2623,28 @@ def _serve_attachment_response(pk, logger):
         raise NotFound(detail="Adjunto no encontrado. Compruebe que la aplicación usa la misma MongoDB (MONGO_URI) donde se guardaron los adjuntos.")
     filename = doc.get('filename') or 'attachment'
 
-    # Prioridad 1: GridFS
+    # Prioridad 1: GridFS (streaming para no cargar todo en memoria con muchas peticiones)
     gridfs_id = doc.get('gridfs_id')
     if gridfs_id is not None:
         try:
             gridfs = get_gridfs()
             gfile = gridfs.get(gridfs_id)
             content_type = getattr(gfile, 'content_type', None) or mimetypes.guess_type(filename)[0] or 'application/octet-stream'
-            from django.http import HttpResponse
-            response = HttpResponse(gfile.read(), content_type=content_type)
+            from django.http import StreamingHttpResponse
+            _chunk_size = 65536
+            def _stream():
+                while True:
+                    chunk = gfile.read(_chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+            response = StreamingHttpResponse(_stream(), content_type=content_type)
             response['Content-Disposition'] = f'inline; filename="{filename}"'
+            response['Cache-Control'] = ATTACHMENT_CACHE_CONTROL
+            try:
+                response['Content-Length'] = str(gfile.length)
+            except Exception:
+                pass
             return response
         except Exception as e:
             logger.warning("Attachment %s: GridFS read failed: %s", pk, e)
@@ -2623,6 +2661,7 @@ def _serve_attachment_response(pk, logger):
             response = FileResponse(open(file_path, 'rb'), as_attachment=False)
             response['Content-Type'] = content_type or 'application/octet-stream'
             response['Content-Disposition'] = f'inline; filename="{filename}"'
+            response['Cache-Control'] = ATTACHMENT_CACHE_CONTROL
             return response
         logger.warning("Attachment %s: file missing at %s", pk, file_path)
 
@@ -2630,7 +2669,9 @@ def _serve_attachment_response(pk, logger):
     drive_web_link = doc.get('drive_web_link')
     if drive_web_link:
         from django.http import HttpResponseRedirect
-        return HttpResponseRedirect(redirect_to=drive_web_link)
+        response = HttpResponseRedirect(redirect_to=drive_web_link)
+        response['Cache-Control'] = 'public, max-age=3600'
+        return response
 
     raise NotFound(
         detail="Archivo no encontrado en el servidor. "
@@ -2643,6 +2684,7 @@ class PublicAttachmentRetrieveView(APIView):
     """
     GET: Sirve un adjunto por ID sin autenticación (vista previa pública).
     URL para preview_link almacenado en BD.
+    Respuestas correctas llevan Cache-Control para reducir carga; errores no se cachean.
     """
     permission_classes = [permissions.AllowAny]
 
@@ -2650,14 +2692,18 @@ class PublicAttachmentRetrieveView(APIView):
         logger = logging.getLogger(__name__)
         try:
             return _serve_attachment_response(pk, logger)
-        except NotFound:
-            raise
+        except NotFound as e:
+            resp = Response({"detail": e.detail}, status=status.HTTP_404_NOT_FOUND)
+            resp['Cache-Control'] = 'no-store'
+            return resp
         except Exception as e:
             logger.exception("PublicAttachmentRetrieveView: error al servir adjunto %s", pk)
-            return Response(
+            resp = Response(
                 {"detail": f"Error al obtener el archivo: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            resp['Cache-Control'] = 'no-store'
+            return resp
 
 
 class PublicResponseCreate(APIView):
