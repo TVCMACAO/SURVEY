@@ -2506,29 +2506,38 @@ class AttachmentUploadView(APIView):
             )
 
     def _do_upload(self, request):
+        logger = logging.getLogger(__name__)
         if 'file' not in request.FILES:
+            msg = "Se requiere el campo 'file' en la petición."
+            logger.warning("AttachmentUploadView 400: %s (Content-Type: %s)", msg, request.content_type)
             return Response(
-                {"detail": "Se requiere el campo 'file' en la petición."},
+                {"detail": msg},
                 status=status.HTTP_400_BAD_REQUEST
             )
         f = request.FILES['file']
         # Tamaño
         max_size = getattr(django_settings, 'MAX_ATTACHMENT_SIZE', 10 * 1024 * 1024)
         if f.size > max_size:
+            msg = f"El archivo supera el tamaño máximo permitido ({max_size // (1024*1024)} MB)."
+            logger.warning("AttachmentUploadView 400: %s", msg)
             return Response(
-                {"detail": f"El archivo supera el tamaño máximo permitido ({max_size // (1024*1024)} MB)."},
+                {"detail": msg},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        # Tipo de contenido
+        # Tipo de contenido (incluir image/jpg e image/pjpeg por compatibilidad con móviles)
         allowed = getattr(django_settings, 'ALLOWED_ATTACHMENT_CONTENT_TYPES', (
-            'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'
+            'image/jpeg', 'image/jpg', 'image/pjpeg',
+            'image/png', 'image/gif', 'image/webp', 'application/pdf'
         ))
         content_type = (getattr(f, 'content_type') or '').split(';')[0].strip().lower()
         if content_type not in allowed:
+            logger.warning("AttachmentUploadView 400: tipo no permitido %r (archivo: %s)", content_type, getattr(f, 'name', ''))
             return Response(
                 {"detail": "Solo se permiten imágenes (JPEG, PNG, GIF, WebP) y PDF."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        if content_type in ('image/jpg', 'image/pjpeg'):
+            content_type = 'image/jpeg'
         ext = os.path.splitext(f.name)[1] or ''
         if not ext or ext.lower() not in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'):
             ext = '.bin'
