@@ -261,6 +261,27 @@ Deberías ver:
 2. Sube los archivos actualizados
 3. En EasyPanel, haz clic en "Redeploy" o "Rebuild"
 
+### Activar workers gevent (concurrencia)
+
+La aplicación usa workers asíncronos (gevent) para manejar muchas peticiones concurrentes sin bloquear. Si tras un push los logs siguen mostrando `Using worker: sync`, aplica estos pasos:
+
+1. **Forzar Redeploy/Rebuild** (no solo Restart):
+   - Entra al panel de EasyPanel
+   - Localiza el servicio survey-app
+   - Usa **"Redeploy"** o **"Rebuild"** para reconstruir la imagen
+   - **Restart** solo reinicia el contenedor con la misma imagen antigua
+
+2. **Revisar comando personalizado**:
+   - Si configuraste un "Command" o "Start command" en la UI de EasyPanel para el contenedor Django, puede estar sobrescribiendo el de `docker-compose-easypanel.yml`
+   - Elimínalo o actualízalo para incluir: `--worker-class gevent --worker-connections 100`
+
+3. **Verificar que gevent está activo** en los logs de inicio:
+   ```
+   Comando: gunicorn ... --worker-class gevent --worker-connections 100
+   [INFO] Using worker: gevent
+   ```
+   Si aparece `Using worker: sync`, el comando ejecutado no es el correcto.
+
 ## Estructura del Proyecto en EasyPanel
 
 ```
