@@ -258,6 +258,7 @@ class QuestionSerializer(serializers.Serializer):
     evaluation_columns = serializers.JSONField(required=False, allow_null=True)  # [{"id": "...", "label": "CUMPLE", "inputType": "checkbox"}, {"id": "...", "label": "OBSERVACIONES", "inputType": "text"}, ...]
     date_include_time = serializers.BooleanField(required=False, default=False)  # For type date: if True, show datetime picker
     accept = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')  # For file_upload: e.g. "image/*,application/pdf"
+    question_image = serializers.CharField(max_length=500000, required=False, allow_blank=True, default='')
 
     def to_internal_value(self, data):
         # Normalizar los datos para aceptar tanto question_text como text, y question_type como type
@@ -316,6 +317,8 @@ class QuestionSerializer(serializers.Serializer):
             result['date_include_time'] = data['date_include_time']
         if 'accept' in data:
             result['accept'] = data['accept']
+        if 'question_image' in data and data['question_image']:
+            result['question_image'] = data['question_image']
         return result
 
 class SectionSerializer(serializers.Serializer):
@@ -348,6 +351,7 @@ class SurveySerializer(serializers.Serializer):
     # IDs de preguntas para nombrar adjuntos: documento_empleado-documento_votante.ext
     documento_empleado_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     documento_votante_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    header_image = serializers.CharField(max_length=500000, required=False, allow_blank=True, default='')
 
     def to_representation(self, instance):
         # Get base representation

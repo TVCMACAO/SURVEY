@@ -458,6 +458,105 @@ const CONDITION_OPERATORS = [
   { value: 'less_than_or_equal', label: 'es menor o igual que' },
 ];
 
+const compressSurveyImageFile = (file, maxWidth = 1000, quality = 0.82) => new Promise((resolve, reject) => {
+  if (!file?.type?.startsWith('image/')) {
+    reject(new Error('Selecciona un archivo de imagen válido (JPG, PNG, etc.)'));
+    return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    reject(new Error('La imagen no puede superar 5 MB'));
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / Math.max(img.width, 1));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => reject(new Error('No se pudo procesar la imagen'));
+    img.src = reader.result;
+  };
+  reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+  reader.readAsDataURL(file);
+});
+
+const QuestionImageDisplay = ({ src, className = '' }) => (
+  src ? (
+    <img
+      src={src}
+      alt="Imagen de la pregunta"
+      className={`rounded-lg border border-gray-100 max-h-52 w-auto max-w-full object-contain ${className}`}
+    />
+  ) : null
+);
+
+const QuestionImageEditor = ({ image, onChange, onRemove }) => {
+  const ref = useRef(null);
+
+  const handleFile = async (e) => {
+    e.stopPropagation();
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = await compressSurveyImageFile(file);
+      onChange?.(dataUrl);
+    } catch (err) {
+      alert(err.message || 'Error al cargar la imagen');
+    }
+    e.target.value = '';
+  };
+
+  return (
+    <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+      {image ? (
+        <div className="max-w-md">
+          <QuestionImageDisplay src={image} className="mb-2" />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => ref.current?.click()}
+              className="text-[11px] font-semibold text-indigo-600 hover:underline"
+            >
+              Cambiar imagen
+            </button>
+            <button
+              type="button"
+              onClick={() => onRemove?.()}
+              className="text-[11px] font-semibold text-red-500 hover:underline"
+            >
+              Quitar imagen
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => ref.current?.click()}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-indigo-600 px-2 py-1.5 rounded-lg hover:bg-indigo-50 transition-colors"
+        >
+          <FontAwesomeIcon icon={faImage} size="sm" className="fa-icon-force-current" />
+          Agregar imagen (opcional)
+        </button>
+      )}
+      <input
+        ref={ref}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        className="hidden"
+        onChange={handleFile}
+      />
+    </div>
+  );
+};
+
 const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection, allQuestions = [], onMoveUp, onMoveDown, canMoveUp = false, canMoveDown = false }) => {
   const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(data.type);
   const isEvaluationType = data.type === 'Evaluación';
@@ -566,6 +665,12 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
               {data.type !== 'Título' && (
               <input type="text" value={data.description || ''} onChange={(e) => onUpdate({...data, description: e.target.value})} placeholder="Añade una descripción (opcional)" className="w-full text-xs sm:text-sm md:text-base mt-2 md:mt-3 bg-transparent border-none focus:ring-0 p-0 text-gray-500 placeholder-gray-400" />
               )}
+
+              <QuestionImageEditor
+                image={data.question_image}
+                onChange={(question_image) => onUpdate({ ...data, question_image })}
+                onRemove={() => onUpdate({ ...data, question_image: '' })}
+              />
               
               <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-100/50">
                 {isOptionType && (
@@ -702,6 +807,9 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
             <div className="md:pr-10">
               <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-700 mb-2 break-words">{data.text || (data.type === 'Título' ? 'Título sin texto' : 'Sin pregunta definida')}</h3>
               {data.description && <p className="text-xs sm:text-sm text-gray-400 mb-3 sm:mb-4 break-words">{data.description}</p>}
+              {data.question_image && (
+                <QuestionImageDisplay src={data.question_image} className="mb-3 opacity-80" />
+              )}
               
               {data.type !== 'Título' && (
               <div className="opacity-60 pointer-events-none grayscale-[0.5]">
@@ -749,6 +857,136 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
   );
 };
 
+const compressHeaderImageFile = compressSurveyImageFile;
+
+const SurveyFormHeader = ({
+  title,
+  description,
+  headerImage,
+  editable = false,
+  centered = false,
+  onTitleChange,
+  onDescriptionChange,
+  onHeaderImageChange,
+  onHeaderImageRemove,
+}) => {
+  const fileInputRef = useRef(null);
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !onHeaderImageChange) return;
+    try {
+      const dataUrl = await compressHeaderImageFile(file);
+      onHeaderImageChange(dataUrl);
+    } catch (err) {
+      alert(err.message || 'Error al cargar la imagen');
+    }
+    e.target.value = '';
+  };
+
+  const alignClass = centered ? 'text-center' : '';
+
+  return (
+    <div className="mb-6 md:mb-10 rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
+      <div className="h-2 bg-purple-600 rounded-t-xl" aria-hidden="true" />
+      <div className={`border-l-4 border-l-blue-500 px-4 py-4 md:px-5 md:py-5 ${alignClass}`}>
+        {headerImage && (
+          <div className={`relative mb-4 ${editable ? 'group' : ''}`}>
+            <img
+              src={headerImage}
+              alt="Imagen de encabezado"
+              className={`w-full max-h-56 object-cover rounded-lg border border-gray-100 ${centered ? 'mx-auto' : ''}`}
+            />
+            {editable && (
+              <div className="absolute top-2 right-2 flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2 py-1 text-[11px] font-semibold bg-white/95 text-gray-700 rounded-md shadow-sm hover:bg-white border border-gray-200"
+                >
+                  Cambiar
+                </button>
+                <button
+                  type="button"
+                  onClick={onHeaderImageRemove}
+                  className="px-2 py-1 text-[11px] font-semibold bg-red-50 text-red-600 rounded-md shadow-sm hover:bg-red-100 border border-red-200"
+                >
+                  Quitar
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {editable && !headerImage && (
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full mb-4 flex flex-col items-center justify-center gap-2 py-6 border-2 border-dashed border-gray-200 rounded-lg text-gray-500 hover:border-indigo-300 hover:bg-indigo-50/40 hover:text-indigo-600 transition-colors"
+          >
+            <FontAwesomeIcon icon={faImage} size="lg" className="fa-icon-force-current" />
+            <span className="text-sm font-semibold">Agregar imagen de encabezado</span>
+            <span className="text-xs text-gray-400">JPG o PNG, máx. 5 MB</span>
+          </button>
+        )}
+        {editable ? (
+          <>
+            <textarea
+              value={title}
+              onChange={(e) => {
+                const newTitle = e.target.value;
+                const titleInput = e.target;
+                titleInput.style.height = 'auto';
+                titleInput.style.height = `${titleInput.scrollHeight}px`;
+                onTitleChange?.(newTitle);
+              }}
+              onInput={(e) => {
+                e.target.style.height = 'auto';
+                e.target.style.height = `${e.target.scrollHeight}px`;
+              }}
+              className={`w-full text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-300 resize-none overflow-hidden border-b border-gray-200 pb-1 focus:outline-none ${centered ? 'text-center' : ''}`}
+              placeholder="Formulario sin título"
+              rows={1}
+              style={{
+                wordBreak: 'break-word',
+                overflowWrap: 'break-word',
+                whiteSpace: 'pre-wrap',
+                overflow: 'hidden',
+                lineHeight: '1.2',
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+              }}
+            />
+            <input
+              value={description}
+              onChange={(e) => onDescriptionChange?.(e.target.value)}
+              className={`w-full mt-3 md:mt-4 text-base md:text-lg text-gray-500 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-400 border-b border-gray-100 pb-1 focus:outline-none ${centered ? 'text-center' : ''}`}
+              placeholder="Descripción del formulario"
+            />
+          </>
+        ) : (
+          <>
+            <h1 className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 leading-tight ${centered ? 'mx-auto max-w-3xl' : ''}`}>
+              {title || 'Formulario sin título'}
+            </h1>
+            <p className={`mt-2 md:mt-3 text-base md:text-lg text-gray-500 leading-relaxed ${centered ? 'mx-auto max-w-3xl' : ''}`}>
+              {description || 'Descripción del formulario'}
+            </p>
+          </>
+        )}
+      </div>
+      {editable && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={handleFile}
+        />
+      )}
+    </div>
+  );
+};
+
 // --- VISTA: PREVIEW DE ENCUESTAS ---
 
 const SurveyPreview = ({ surveyData, onBack }) => {
@@ -767,6 +1005,9 @@ const SurveyPreview = ({ surveyData, onBack }) => {
           {question.description && (
             <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{question.description}</p>
           )}
+          {question.question_image && (
+            <QuestionImageDisplay src={question.question_image} className="mt-3" />
+          )}
         </div>
       );
     }
@@ -781,6 +1022,9 @@ const SurveyPreview = ({ surveyData, onBack }) => {
           </h3>
           {question.description && (
             <p className="text-sm text-gray-500">{question.description}</p>
+          )}
+          {question.question_image && (
+            <QuestionImageDisplay src={question.question_image} className="mt-3" />
           )}
         </div>
 
@@ -950,17 +1194,11 @@ const SurveyPreview = ({ surveyData, onBack }) => {
       </header>
 
       <div className="w-full max-w-3xl mx-auto px-4 py-8 md:py-12">
-        <div className="mb-10 rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
-          <div className="h-2 bg-purple-600 rounded-t-xl" aria-hidden="true" />
-          <div className="border-l-4 border-l-blue-500 px-4 py-4 md:px-5 md:py-5">
-            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-gray-900">
-              {surveyData.title || 'Formulario sin título'}
-            </h1>
-            <p className="mt-2 md:mt-3 text-base md:text-lg text-gray-500">
-              {surveyData.description || 'Descripción del formulario'}
-            </p>
-          </div>
-        </div>
+        <SurveyFormHeader
+          title={surveyData.title}
+          description={surveyData.description}
+          headerImage={surveyData.header_image}
+        />
 
         {surveyData.questions && surveyData.questions.length > 0 ? (
           <div className="space-y-6">
@@ -1503,6 +1741,9 @@ const PublicSurveyView = ({ surveyId }) => {
             {question.description && (
               <p className="text-sm md:text-base text-gray-700 leading-relaxed whitespace-pre-wrap">{question.description}</p>
             )}
+            {question.question_image && (
+              <QuestionImageDisplay src={question.question_image} className="mt-4" />
+            )}
           </div>
         </div>
       );
@@ -1523,6 +1764,9 @@ const PublicSurveyView = ({ surveyId }) => {
               </h3>
               {question.description && (
                 <p className="text-sm md:text-base text-gray-600 leading-relaxed mt-2">{question.description}</p>
+              )}
+              {question.question_image && (
+                <QuestionImageDisplay src={question.question_image} className="mt-4" />
               )}
             </div>
           </div>
@@ -1790,22 +2034,17 @@ const PublicSurveyView = ({ surveyId }) => {
       <div className="relative z-10 w-full max-w-4xl mx-auto px-4 py-8 md:py-12">
         {/* Título y descripción del formulario */}
         <div className="mb-12">
-          <div className="rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
-            <div className="h-2 bg-indigo-600 rounded-t-xl" aria-hidden="true" />
-            <div className="border-l-4 border-l-indigo-600 px-6 py-6 md:px-8 md:py-8 text-center">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-gray-800 leading-tight">
-                {surveyData.title || 'Formulario sin título'}
-              </h1>
-              <p className="mt-3 md:mt-4 text-lg md:text-xl text-gray-600 leading-relaxed max-w-3xl mx-auto">
-                {surveyData.description || 'Descripción del formulario'}
-              </p>
-              <div className="mt-6 flex items-center justify-center gap-4 text-sm text-gray-500">
-                <span className="flex items-center gap-2">
-                  <FontAwesomeIcon icon={faListUl} size="sm" className="fa-icon-force-current" />
-                  {surveyData.questions?.length || 0} {surveyData.questions?.length === 1 ? 'Pregunta' : 'Preguntas'}
-                </span>
-              </div>
-            </div>
+          <SurveyFormHeader
+            title={surveyData.title}
+            description={surveyData.description}
+            headerImage={surveyData.header_image}
+            centered
+          />
+          <div className="flex items-center justify-center gap-4 text-sm text-gray-500 -mt-6 mb-2">
+            <span className="flex items-center gap-2">
+              <FontAwesomeIcon icon={faListUl} size="sm" className="fa-icon-force-current" />
+              {surveyData.questions?.length || 0} {surveyData.questions?.length === 1 ? 'Pregunta' : 'Preguntas'}
+            </span>
           </div>
         </div>
 
@@ -1915,8 +2154,24 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   const [surveyData, setSurveyData] = useState(initialSurveyData || { title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Initialize with initialSurveyData or default
   const [showSectionManager, setShowSectionManager] = useState(false);
   const [showReferenceSection, setShowReferenceSection] = useState(false);
+  const [showGearMenu, setShowGearMenu] = useState(false);
   const [referenceColumns, setReferenceColumns] = useState([]); // column names from last upload
   const [referenceUploading, setReferenceUploading] = useState(false);
+  const gearMenuDesktopRef = useRef(null);
+  const gearMenuMobileRef = useRef(null);
+
+  useEffect(() => {
+    if (!showGearMenu) return undefined;
+    const close = (e) => {
+      const insideDesktop = gearMenuDesktopRef.current?.contains(e.target);
+      const insideMobile = gearMenuMobileRef.current?.contains(e.target);
+      if (!insideDesktop && !insideMobile) {
+        setShowGearMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showGearMenu]);
 
   // Auto-resize textarea when title changes
   React.useEffect(() => {
@@ -2017,26 +2272,6 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     { label: 'Correo Electrónico', icon: faEnvelope, color: 'blue', type: 'Correo Electrónico' },
     { label: 'Evaluación', icon: faTable, color: 'teal', type: 'Evaluación' },
   ];
-
-  // #region agent log
-  useEffect(() => {
-    if (showPreview) return;
-    const labels = questionTools.map(t => t.label);
-    const payload1 = { location: 'App.jsx:SurveyEditor', message: 'questionTools at render', data: { labels, count: labels.length, hasTitulo: labels.includes('Título') }, timestamp: Date.now(), hypothesisId: 'H1' };
-    console.log('[DEBUG SurveyEditor]', JSON.stringify(payload1));
-    fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload1) }).catch(() => {});
-    const t = setTimeout(() => {
-      const nav = document.querySelector('nav.fixed.z-50');
-      if (nav) {
-        const buttons = nav.querySelectorAll('button');
-        const payload2 = { location: 'App.jsx:SurveyEditor', message: 'toolbar DOM', data: { navScrollWidth: nav.scrollWidth, navClientWidth: nav.clientWidth, buttonCount: buttons.length }, timestamp: Date.now(), hypothesisId: 'H3' };
-        console.log('[DEBUG SurveyEditor]', JSON.stringify(payload2));
-        fetch('http://localhost:7244/ingest/c3728f0a-6833-4462-afd8-e9cc790ceca9', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload2) }).catch(() => {});
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [showPreview]);
-  // #endregion
 
   const addQuestion = (type) => {
     const num = (surveyData.questions || []).length + 1;
@@ -2145,6 +2380,37 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
 
   const handlePublish = () => onSave(surveyData);
 
+  const openSectionsFromGear = () => {
+    setShowSectionManager(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openReferenceFromGear = () => {
+    setShowReferenceSection(true);
+    setTimeout(() => document.getElementById('archivo-referenciacion')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  };
+
+  const gearMenu = showGearMenu && (
+    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 bg-white rounded-xl border border-gray-200 shadow-xl py-1 z-[60]">
+      <button
+        type="button"
+        onClick={() => { openSectionsFromGear(); setShowGearMenu(false); }}
+        className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-purple-50 flex items-center gap-2"
+      >
+        <FontAwesomeIcon icon={faListUl} size="sm" className="text-purple-600 fa-icon-force-current" />
+        Secciones
+      </button>
+      <button
+        type="button"
+        onClick={() => { openReferenceFromGear(); setShowGearMenu(false); }}
+        className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-green-50 flex items-center gap-2"
+      >
+        <FontAwesomeIcon icon={faFileExcel} size="sm" className="text-green-600 fa-icon-force-current" />
+        Referenciación
+      </button>
+    </div>
+  );
+
   return (
     <>
       {!showPreview && (
@@ -2155,10 +2421,15 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
           <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide md:flex md:flex-col md:gap-2 md:px-2">
             {questionTools.map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
           </div>
-          
-          {/* Footer del sidebar en desktop */}
-          <div className="mt-auto p-2 flex-shrink-0 border-t border-gray-200/50">
-            <button className="w-full p-3 text-gray-400 hover:text-gray-800 transition-colors rounded-xl hover:bg-gray-100 flex items-center justify-center" title="Configuración">
+
+          <div className="mt-auto p-2 flex-shrink-0 border-t border-gray-200/50 relative" ref={gearMenuDesktopRef}>
+            {gearMenu}
+            <button
+              type="button"
+              onClick={() => setShowGearMenu((v) => !v)}
+              className={`w-full p-3 transition-colors rounded-xl flex items-center justify-center ${showGearMenu ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-gray-800 hover:bg-gray-100'}`}
+              title="Atajos: secciones y referenciación"
+            >
               <FontAwesomeIcon icon={faGear} size="sm" className="fa-icon-force-current" />
             </button>
           </div>
@@ -2167,6 +2438,17 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         {/* Vista móvil - sidebar horizontal */}
         <div className="flex md:hidden flex-row items-center gap-1.5 sm:gap-2 flex-shrink-0 min-w-0">
           {questionTools.map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
+          <div className="relative shrink-0" ref={gearMenuMobileRef}>
+            {gearMenu}
+            <button
+              type="button"
+              onClick={() => setShowGearMenu((v) => !v)}
+              className={`p-2 rounded-xl ${showGearMenu ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
+              title="Atajos"
+            >
+              <FontAwesomeIcon icon={faGear} size="sm" className="fa-icon-force-current" />
+            </button>
+          </div>
         </div>
         
       </nav>
@@ -2223,54 +2505,16 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         <div 
           className="w-full max-w-6xl mx-auto px-4 py-6 md:py-8 lg:py-12"
         >
-           <div 
-             className="mb-6 md:mb-10 rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm"
-             style={{
-               minWidth: 0,
-               width: '100%',
-               maxWidth: '100%',
-               boxSizing: 'border-box',
-               overflow: 'visible'
-             }}
-           >
-             <div className="h-2 bg-purple-600 rounded-t-xl" aria-hidden="true" />
-             <div className="border-l-4 border-l-blue-500 px-4 py-4 md:px-5 md:py-5">
-               <textarea
-                 value={surveyData.title} 
-                 onChange={(e) => {
-                   const newTitle = e.target.value;
-                   const titleInput = e.target;
-                   titleInput.style.height = 'auto';
-                   titleInput.style.height = `${titleInput.scrollHeight}px`;
-                   setSurveyData({...surveyData, title: newTitle});
-                 }}
-                 onInput={(e) => {
-                   e.target.style.height = 'auto';
-                   e.target.style.height = `${e.target.scrollHeight}px`;
-                 }}
-                 className="w-full text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-300 resize-none overflow-hidden border-b border-gray-200 pb-1 focus:outline-none" 
-                 placeholder="Formulario sin título"
-                 rows={1}
-                 style={{
-                   wordBreak: 'break-word',
-                   overflowWrap: 'break-word',
-                   whiteSpace: 'pre-wrap',
-                   overflow: 'hidden',
-                   textOverflow: 'clip',
-                   minWidth: 0,
-                   maxWidth: '100%',
-                   boxSizing: 'border-box',
-                   lineHeight: '1.2'
-                 }}
-               />
-               <input 
-                 value={surveyData.description} 
-                 onChange={(e) => setSurveyData({...surveyData, description: e.target.value})} 
-                 className="w-full mt-3 md:mt-4 text-base md:text-lg text-gray-500 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-400 border-b border-gray-100 pb-1 focus:outline-none" 
-                 placeholder="Descripción del formulario" 
-               />
-             </div>
-           </div>
+           <SurveyFormHeader
+             title={surveyData.title}
+             description={surveyData.description}
+             headerImage={surveyData.header_image}
+             editable
+             onTitleChange={(newTitle) => setSurveyData((prev) => ({ ...prev, title: newTitle }))}
+             onDescriptionChange={(newDesc) => setSurveyData((prev) => ({ ...prev, description: newDesc }))}
+             onHeaderImageChange={(header_image) => setSurveyData((prev) => ({ ...prev, header_image }))}
+             onHeaderImageRemove={() => setSurveyData((prev) => ({ ...prev, header_image: '' }))}
+           />
 
            {/* Archivo de referenciación - arriba, al abrir desde el botón del header */}
            <div id="archivo-referenciacion" className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
@@ -5585,15 +5829,105 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
 
 const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, currentUser, onViewUsers, onDuplicateSurvey }) => {
   const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
-  
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [groupFilter, setGroupFilter] = React.useState('all');
+  const [publicFilter, setPublicFilter] = React.useState('all');
+  const [sortBy, setSortBy] = React.useState('newest');
+  const [filtersExpanded, setFiltersExpanded] = React.useState(true);
+
   // Filtrar encuestas activas y eliminadas
-  const activeSurveys = surveys.filter(s => !s.is_deleted);
-  const deletedSurveysList = deletedSurveys.length > 0 ? deletedSurveys : surveys.filter(s => s.is_deleted);
-  
-  // Calcular estadísticas solo para encuestas activas
-  const totalSurveys = activeSurveys.length;
-  const publicSurveys = activeSurveys.filter(s => s.is_public).length;
-  const totalQuestions = activeSurveys.reduce((sum, s) => sum + (s.questions?.length || 0), 0);
+  const activeSurveys = React.useMemo(
+    () => surveys.filter((s) => !s.is_deleted),
+    [surveys]
+  );
+  const deletedSurveysList = React.useMemo(
+    () => (deletedSurveys.length > 0 ? deletedSurveys : surveys.filter((s) => s.is_deleted)),
+    [deletedSurveys, surveys]
+  );
+
+  const currentTabSurveys = activeTab === 'deleted' ? deletedSurveysList : activeSurveys;
+
+  const groupOptions = React.useMemo(() => {
+    const names = new Set();
+    currentTabSurveys.forEach((s) => {
+      if (s.group_name) names.add(String(s.group_name));
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [currentTabSurveys]);
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() || groupFilter !== 'all' || publicFilter !== 'all' || sortBy !== 'newest'
+  );
+
+  const applySurveyFilters = React.useCallback((list) => {
+    let result = list.filter((survey) => {
+      const q = searchQuery.trim().toLowerCase();
+      if (q) {
+        const haystack = [
+          survey.title,
+          survey.description,
+          survey.group_name,
+          survey.created_by_username,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+
+      if (groupFilter !== 'all' && String(survey.group_name || '') !== groupFilter) return false;
+
+      if (publicFilter === 'public' && !survey.is_public) return false;
+      if (publicFilter === 'private' && survey.is_public) return false;
+
+      return true;
+    });
+
+    result = [...result];
+    switch (sortBy) {
+      case 'title_asc':
+        result.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'es'));
+        break;
+      case 'title_desc':
+        result.sort((a, b) => (b.title || '').localeCompare(a.title || '', 'es'));
+        break;
+      case 'oldest':
+        result.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+        break;
+      case 'questions_desc':
+        result.sort((a, b) => (b.questions?.length || 0) - (a.questions?.length || 0));
+        break;
+      case 'newest':
+      default:
+        result.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        break;
+    }
+    return result;
+  }, [searchQuery, groupFilter, publicFilter, sortBy]);
+
+  const filteredActiveSurveys = React.useMemo(
+    () => applySurveyFilters(activeSurveys),
+    [activeSurveys, applySurveyFilters]
+  );
+
+  const filteredDeletedSurveys = React.useMemo(
+    () => applySurveyFilters(deletedSurveysList),
+    [deletedSurveysList, applySurveyFilters]
+  );
+
+  const displayedSurveys = activeTab === 'deleted' ? filteredDeletedSurveys : filteredActiveSurveys;
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setGroupFilter('all');
+    setPublicFilter('all');
+    setSortBy('newest');
+  };
+
+  // Calcular estadísticas sobre encuestas activas filtradas
+  const totalSurveys = filteredActiveSurveys.length;
+  const publicSurveys = filteredActiveSurveys.filter((s) => s.is_public).length;
+  const totalQuestions = filteredActiveSurveys.reduce((sum, s) => sum + (s.questions?.length || 0), 0);
   
   const isRoot = userRole === 'root';
   const isGroupAdmin = userRole === 'group_admin';
@@ -5691,6 +6025,99 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                 </div>
               </div>
             )}
+
+            {/* Filtros */}
+            {(activeTab === 'active' || (activeTab === 'deleted' && isRoot)) && currentTabSurveys.length > 0 && (
+              <div className="mb-6 bg-white/80 backdrop-blur-xl rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setFiltersExpanded((v) => !v)}
+                  className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50/80"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <FontAwesomeIcon icon={faFilter} size="sm" className="text-indigo-500 fa-icon-force-current" />
+                    Filtros
+                    {hasActiveFilters && (
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">
+                        Activos
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-xs text-gray-500 font-normal">
+                    {displayedSurveys.length} de {currentTabSurveys.length}
+                    <FontAwesomeIcon icon={filtersExpanded ? faChevronUp : faChevronDown} size="xs" className="ml-2 fa-icon-force-current" />
+                  </span>
+                </button>
+                {filtersExpanded && (
+                  <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="sm:col-span-2 relative">
+                        <FontAwesomeIcon
+                          icon={faSearch}
+                          size="sm"
+                          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 fa-icon-force-current pointer-events-none"
+                        />
+                        <input
+                          type="search"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Buscar por título, descripción o grupo..."
+                          className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                        />
+                      </div>
+                      {groupOptions.length > 0 && (
+                        <select
+                          value={groupFilter}
+                          onChange={(e) => setGroupFilter(e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                        >
+                          <option value="all">Todos los grupos</option>
+                          {groupOptions.map((name) => (
+                            <option key={name} value={name}>{name}</option>
+                          ))}
+                        </select>
+                      )}
+                      <select
+                        value={publicFilter}
+                        onChange={(e) => setPublicFilter(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="all">Todas (pública/privada)</option>
+                        <option value="public">Solo públicas</option>
+                        <option value="private">Solo privadas</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                        className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 min-w-[180px]"
+                      >
+                        <option value="newest">Más recientes</option>
+                        <option value="oldest">Más antiguas</option>
+                        <option value="title_asc">Título A → Z</option>
+                        <option value="title_desc">Título Z → A</option>
+                        <option value="questions_desc">Más preguntas</option>
+                      </select>
+                      {hasActiveFilters && (
+                        <button
+                          type="button"
+                          onClick={clearFilters}
+                          className="px-3 py-2 text-sm font-semibold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        >
+                          Limpiar filtros
+                        </button>
+                      )}
+                      <span className="text-xs text-gray-500 ml-auto">
+                        {displayedSurveys.length === currentTabSurveys.length
+                          ? `Mostrando las ${currentTabSurveys.length} encuestas`
+                          : `${displayedSurveys.length} coincidencias de ${currentTabSurveys.length}`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             
             {activeTab === 'deleted' && isRoot ? (
               /* Vista de eliminadas (solo root) */
@@ -5702,9 +6129,20 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                   <p className="text-2xl font-black text-gray-700 mb-2">No hay encuestas eliminadas</p>
                   <p className="text-gray-500">Las encuestas eliminadas aparecerán aquí.</p>
                 </div>
+            ) : displayedSurveys.length === 0 ? (
+                <div className="text-center py-16 border-2 border-dashed border-gray-300/60 rounded-3xl bg-white/40 backdrop-blur-sm">
+                  <p className="text-lg font-bold text-gray-600 mb-2">Ninguna encuesta coincide con los filtros</p>
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="text-sm text-indigo-600 font-semibold hover:underline"
+                  >
+                    Limpiar filtros
+                  </button>
+                </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {deletedSurveysList.map(s => (
+                  {displayedSurveys.map(s => (
                     <div key={s.id || s._id} className="bg-white/90 backdrop-blur-xl rounded-3xl border-2 border-red-200 p-6 md:p-8 shadow-lg opacity-75">
                       <div className="flex items-start justify-between mb-4">
                         <h3 className="text-xl font-black text-gray-800 line-through">{s.title || 'Sin título'}</h3>
@@ -5750,13 +6188,26 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                     </button>
                     )}
                 </div>
+              ) : displayedSurveys.length === 0 ? (
+                <div className="text-center py-16 border-2 border-dashed border-gray-300/60 rounded-3xl bg-white/40 backdrop-blur-sm col-span-full">
+                  <p className="text-lg font-bold text-gray-600 mb-2">Ninguna encuesta coincide con los filtros</p>
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="text-sm text-indigo-600 font-semibold hover:underline"
+                  >
+                    Limpiar filtros
+                  </button>
+                </div>
               ) : (
                 <>
                   {/* Estadísticas rápidas */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                     <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
                       <div className="text-3xl font-black mb-1">{totalSurveys}</div>
-                      <div className="text-sm opacity-90 font-medium">Total Encuestas</div>
+                      <div className="text-sm opacity-90 font-medium">
+                        {hasActiveFilters ? 'Encuestas filtradas' : 'Total Encuestas'}
+                      </div>
                     </div>
                     <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-5 text-white shadow-lg hover:shadow-xl transition-shadow">
                       <div className="text-3xl font-black mb-1">{publicSurveys}</div>
@@ -5770,7 +6221,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
 
                   {/* Grid de encuestas */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {activeSurveys.map(s => <SurveyCard 
+                      {displayedSurveys.map(s => <SurveyCard 
                         key={s.id || s._id} 
                         survey={s} 
                         onEdit={() => onEditSurvey(s)} 
@@ -5997,7 +6448,8 @@ export default function App() {
           conditional_logic: q.conditional_logic ?? null,
           evaluation_items: q.evaluation_items ?? [],
           evaluation_columns: q.evaluation_columns ?? [],
-          date_include_time: Boolean(q.date_include_time)
+          date_include_time: Boolean(q.date_include_time),
+          question_image: q.question_image || ''
         };
         if (backendType === 'file_upload') payload.accept = q.accept || 'image/*,application/pdf';
         return payload;
@@ -6012,7 +6464,8 @@ export default function App() {
       reference_key_column: surveyData.reference_key_column || '',
       reference_mapping: surveyData.reference_mapping || {},
       documento_empleado_question_id: surveyData.documento_empleado_question_id || '',
-      documento_votante_question_id: surveyData.documento_votante_question_id || ''
+      documento_votante_question_id: surveyData.documento_votante_question_id || '',
+      header_image: surveyData.header_image || ''
     };
 
     try {
@@ -6087,6 +6540,7 @@ export default function App() {
       const payload = {
         title: (data.title || 'Encuesta') + ' (copia)',
         description: data.description || '',
+        header_image: data.header_image || '',
         group: data.group || null,
         questions: data.questions || [],
         sections: data.sections || [],

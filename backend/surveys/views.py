@@ -783,6 +783,12 @@ class SurveyListCreate(APIView):
             survey_doc['documento_empleado_question_id'] = validated_data.get('documento_empleado_question_id') or ''
         if 'documento_votante_question_id' in validated_data:
             survey_doc['documento_votante_question_id'] = validated_data.get('documento_votante_question_id') or ''
+        if validated_data.get('header_image'):
+            survey_doc['header_image'] = validated_data['header_image']
+        if validated_data.get('consent_responsible'):
+            survey_doc['consent_responsible'] = validated_data['consent_responsible']
+        if validated_data.get('consent_purpose'):
+            survey_doc['consent_purpose'] = validated_data['consent_purpose']
 
         result = surveys_collection.insert_one(survey_doc)
         new_survey = surveys_collection.find_one({'_id': result.inserted_id})
@@ -1335,6 +1341,12 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['documento_empleado_question_id'] = validated_data.get('documento_empleado_question_id') or ''
             if 'documento_votante_question_id' in validated_data:
                 update_fields['documento_votante_question_id'] = validated_data.get('documento_votante_question_id') or ''
+            if 'header_image' in validated_data:
+                update_fields['header_image'] = validated_data.get('header_image') or ''
+            if 'consent_responsible' in validated_data:
+                update_fields['consent_responsible'] = validated_data.get('consent_responsible') or ''
+            if 'consent_purpose' in validated_data:
+                update_fields['consent_purpose'] = validated_data.get('consent_purpose') or ''
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
