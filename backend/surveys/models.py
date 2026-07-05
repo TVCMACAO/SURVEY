@@ -10,6 +10,10 @@ class User(AbstractUser):
         ('analista', 'Analista'),
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='encuestador')
+    user_group_id = models.CharField(
+        max_length=255, blank=True, null=True,
+        help_text='ObjectId del grupo de usuarios en MongoDB'
+    )
     # groups field is already part of AbstractUser (Many-to-Many to auth.Group)
     # The user's 'groups[]' could refer to this or the MongoDB Group.
     # For now, I'll assume Django's groups for auth, and the MongoDB Group for survey organization.

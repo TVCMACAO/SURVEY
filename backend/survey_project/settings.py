@@ -22,10 +22,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-8j#s=h1a!5m%)y+b^^x30_xpyspt_3sqjc38rsl27&md(nk)86')
+_DEFAULT_SECRET_KEY = 'django-insecure-8j#s=h1a!5m%)y+b^^x30_xpyspt_3sqjc38rsl27&md(nk)86'
+SECRET_KEY = os.environ.get('SECRET_KEY', _DEFAULT_SECRET_KEY)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
+
+if not DEBUG:
+    if not os.environ.get('SECRET_KEY') or SECRET_KEY == _DEFAULT_SECRET_KEY:
+        raise ValueError('SECRET_KEY must be set to a unique value in production (DEBUG=False).')
 
 # Get allowed hosts from environment variable, default to safe values
 # Incluir dominios de EasyPanel por defecto (incluyendo ambos dominios de EasyPanel)
@@ -44,7 +49,15 @@ for host in EASYPANEL_HOSTS:
 
 # Para producción con proxies reversos (EasyPanel)
 USE_X_FORWARDED_HOST = True
-SECURE_PROXY_SSL_HEADER = None  # EasyPanel maneja SSL
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+if not DEBUG:
+    # SSL termination is handled by EasyPanel/nginx; do not redirect at Django layer by default.
+    SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'false').lower() in ('true', '1', 'yes')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 # CORS_ALLOWED_ORIGINS for Flutter and EasyPanel
 CORS_ALLOWED_ORIGINS = [
@@ -214,11 +227,23 @@ AUTHENTICATION_BACKENDS = [
 # Django REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'surveys.mongo_jwt_authentication.MongoJWTAuthentication',  # Usar autenticación JWT con MongoDB
+        'surveys.mongo_jwt_authentication.MongoJWTAuthentication',
     ),
-    # 'DEFAULT_PERMISSION_CLASSES': (
-    #     'rest_framework.permissions.IsAuthenticated', # Default to require authentication
-    # ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/min',
+        'user': '300/min',
+        'login': '5/min',
+        'reference_lookup': '30/min',
+        'attachment_upload': '20/min',
+        'response_sync': '60/min',
+    },
     'EXCEPTION_HANDLER': 'surveys.exception_handlers.custom_exception_handler',
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
@@ -227,9 +252,9 @@ REST_FRAMEWORK = {
 
 # Simple JWT settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': False,
+    'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': False,
     'UPDATE_LAST_LOGIN': False,
 
@@ -259,10 +284,14 @@ SIMPLE_JWT = {
 }
 
 # MongoDB Connection String (for pymongo)
+_DEFAULT_MONGO_PASSWORD = 'surveypass123'
 MONGO_USERNAME = os.environ.get('MONGO_USERNAME', 'root')
-MONGO_PASSWORD = os.environ.get('MONGO_PASSWORD', 'surveypass123')
+MONGO_PASSWORD = os.environ.get('MONGO_PASSWORD', _DEFAULT_MONGO_PASSWORD)
 MONGO_HOST = os.environ.get('MONGO_HOST', 'mongo')
 MONGO_PORT = os.environ.get('MONGO_PORT', '27017')
+
+if not DEBUG and 'MONGO_URI' not in os.environ and MONGO_PASSWORD == _DEFAULT_MONGO_PASSWORD:
+    raise ValueError('MONGO_URI or a non-default MONGO_PASSWORD must be set in production.')
 
 # Si MONGO_URI está definida, usarla directamente; si no, construirla
 # Nota: Si se construye manualmente y se usa usuario root, agregar ?authSource=admin
@@ -286,11 +315,12 @@ else:
     else:
         MONGO_URI = base_uri
 
-MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'survey_db') # Name of the database to use
+MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'survey_db')
 
-# Log MongoDB URI configuration (ocultar contraseña)
-if 'MONGO_URI' in os.environ:
-    _mongo_uri_log = MONGO_URI[:30] + "..." + MONGO_URI[-20:] if len(MONGO_URI) > 50 else MONGO_URI
-    print(f"MongoDB URI configured from environment (preview: {_mongo_uri_log})")
-else:
-    print(f"MongoDB URI constructed: mongodb://{MONGO_USERNAME}:***@{MONGO_HOST}:{MONGO_PORT}/")
+# Log MongoDB URI configuration (ocultar contraseña) — solo en DEBUG
+if DEBUG:
+    if 'MONGO_URI' in os.environ:
+        _mongo_uri_log = MONGO_URI[:30] + "..." + MONGO_URI[-20:] if len(MONGO_URI) > 50 else MONGO_URI
+        print(f"MongoDB URI configured from environment (preview: {_mongo_uri_log})")
+    else:
+        print(f"MongoDB URI constructed: mongodb://{MONGO_USERNAME}:***@{MONGO_HOST}:{MONGO_PORT}/")

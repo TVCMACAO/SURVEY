@@ -17,6 +17,10 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 
 from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection, get_mongo_collection, get_attachments_collection, get_gridfs
+from .throttles import (
+    LoginRateThrottle, ReferenceLookupRateThrottle,
+    AttachmentUploadRateThrottle, ResponseSyncRateThrottle,
+)
 from .serializers import (
     SurveyGroupSerializer, SurveySerializer, ResponseSerializer,
     CustomTokenObtainPairSerializer, UserSerializer, UserCreateSerializer, UserUpdateSerializer,
@@ -244,111 +248,25 @@ def _enrich_responses_with_attachment_links(responses, surveys_collection=None, 
 
 
 # Vistas de autenticación
+class HealthCheckView(APIView):
+    """Health check for load balancers and Docker."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response({"status": "ok"})
+
+
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
     Vista personalizada para obtener tokens JWT.
     Utiliza un serializador personalizado para incluir información adicional del usuario en el token.
     """
     serializer_class = CustomTokenObtainPairSerializer
+    throttle_classes = [LoginRateThrottle]
     
     def post(self, request, *args, **kwargs):
-        # #region agent log
-        import json
-        import traceback
-        import os
-        # Detectar la ruta correcta del log (desarrollo vs producción)
-        base_paths = [
-            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
-            '/app/.cursor/debug.log',  # Producción Docker
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
-        ]
-        log_file_path = None
-        for path in base_paths:
-            log_dir = os.path.dirname(path)
-            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
-                log_file_path = path
-                # Crear directorio si no existe
-                try:
-                    os.makedirs(log_dir, exist_ok=True)
-                except:
-                    pass
-                break
-        if not log_file_path:
-            log_file_path = '/tmp/survey_debug.log'  # Fallback final
-        try:
-            request_data = request.data if hasattr(request, 'data') else {}
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "D",
-                    "location": "views.py:30",
-                    "message": "Token request received",
-                    "data": {
-                        "has_username": 'username' in request_data,
-                        "has_password": 'password' in request_data,
-                        "username_value": request_data.get('username', None),
-                        "request_method": request.method,
-                        "content_type": request.content_type if hasattr(request, 'content_type') else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
-        try:
-            response = super().post(request, *args, **kwargs)
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "D",
-                        "location": "views.py:23",
-                        "message": "Token request successful",
-                        "data": {
-                            "status_code": response.status_code if response else None
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
-            return response
-        except Exception as e:
-            # #region agent log
-            import traceback
-            import logging
-            logger = logging.getLogger(__name__)
-            
-            error_info = {
-                "error_type": type(e).__name__,
-                "error_message": str(e),
-                "error_args": str(e.args) if hasattr(e, 'args') else None,
-                "traceback": traceback.format_exc()
-            }
-            
-            # Log a stderr (visible en Gunicorn logs)
-            logger.error(f"Token request failed: {error_info['error_type']} - {error_info['error_message']}")
-            logger.error(f"Traceback: {error_info['traceback']}")
-            
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "D",
-                        "location": "views.py:73",
-                        "message": "Token request failed",
-                        "data": error_info,
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
-            raise
+        return super().post(request, *args, **kwargs)
 
 # Vistas para Grupos de Encuestas
 class SurveyGroupListCreate(APIView):
@@ -360,170 +278,22 @@ class SurveyGroupListCreate(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # #region agent log
-        import json
-        import traceback
-        import os
-        # Detectar la ruta correcta del log (desarrollo vs producción)
-        base_paths = [
-            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
-            '/app/.cursor/debug.log',  # Producción Docker
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
-        ]
-        log_file_path = None
-        for path in base_paths:
-            log_dir = os.path.dirname(path)
-            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
-                log_file_path = path
-                # Crear directorio si no existe
-                try:
-                    os.makedirs(log_dir, exist_ok=True)
-                except:
-                    pass
-                break
-        if not log_file_path:
-            log_file_path = '/tmp/survey_debug.log'  # Fallback final
-        try:
-            user_role = getattr(request.user, 'role', None) if request.user else None
-            user_group_id = getattr(request.user, 'user_group_id', None) if request.user else None
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "B",
-                    "location": "views.py:SurveyGroupListCreate.get",
-                    "message": "Entering SurveyGroupListCreate.get",
-                    "data": {
-                        "user_id": str(request.user.id) if request.user and hasattr(request.user, 'id') else 'N/A',
-                        "user_role": user_role,
-                        "user_group_id": str(user_group_id) if user_group_id else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
         
         try:
             groups_collection = get_survey_groups_collection()
             groups = list(groups_collection.find())
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:SurveyGroupListCreate.get",
-                        "message": "Groups fetched from MongoDB",
-                        "data": {"groups_count": len(groups)},
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             for group in groups:
                 group['id'] = str(group['_id']) # Convert ObjectId to string for serialization
             
             serializer = SurveyGroupSerializer(groups, many=True)
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:SurveyGroupListCreate.get",
-                        "message": "Serializer created",
-                        "data": {"serializer_valid": serializer.is_valid() if hasattr(serializer, 'is_valid') else 'N/A', "groups_count": len(groups)},
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             serialized_data = serializer.data
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:SurveyGroupListCreate.get",
-                        "message": "Returning serialized groups",
-                        "data": {"serialized_groups_count": len(serialized_data)},
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             return Response(serialized_data)
         except Exception as e:
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:SurveyGroupListCreate.get",
-                        "message": "Error in SurveyGroupListCreate.get",
-                        "data": {
-                            "error_message": str(e),
-                            "error_type": type(e).__name__,
-                            "traceback": traceback.format_exc()[:1000]
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             raise
 
     def post(self, request):
-        # #region agent log
-        import json
-        import traceback
-        import os
-        # Detectar la ruta correcta del log (desarrollo vs producción)
-        base_paths = [
-            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
-            '/app/.cursor/debug.log',  # Producción Docker
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
-        ]
-        log_file_path = None
-        for path in base_paths:
-            log_dir = os.path.dirname(path)
-            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
-                log_file_path = path
-                # Crear directorio si no existe
-                try:
-                    os.makedirs(log_dir, exist_ok=True)
-                except:
-                    pass
-                break
-        if not log_file_path:
-            log_file_path = '/tmp/survey_debug.log'  # Fallback final
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "C",
-                    "location": "views.py:SurveyGroupListCreate.post",
-                    "message": "Entering SurveyGroupListCreate.post",
-                    "data": {
-                        "user_id": str(request.user.id) if request.user and hasattr(request.user, 'id') else 'N/A',
-                        "user_role": getattr(request.user, 'role', None) if request.user else None,
-                        "request_data": dict(request.data) if hasattr(request.data, '__dict__') else str(request.data)[:200]
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
 
         err = require_not_analista(request, "crear grupos")
         if err is not None:
@@ -531,21 +301,6 @@ class SurveyGroupListCreate(APIView):
         
         serializer = SurveyGroupSerializer(data=request.data)
         if serializer.is_valid():
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "C",
-                        "location": "views.py:SurveyGroupListCreate.post",
-                        "message": "Serializer is valid",
-                        "data": {"validated_data": dict(serializer.validated_data)},
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             groups_collection = get_survey_groups_collection()
             # Asegurarse de que el usuario autenticado es el creador
@@ -559,38 +314,8 @@ class SurveyGroupListCreate(APIView):
             # Recuperar el objeto insertado para serializarlo con el ID correcto
             new_group = groups_collection.find_one({'_id': result.inserted_id})
             new_group['id'] = str(new_group['_id'])
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "C",
-                        "location": "views.py:SurveyGroupListCreate.post",
-                        "message": "Group created successfully",
-                        "data": {"group_id": new_group['id'], "group_name": new_group.get('name')},
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             return Response(SurveyGroupSerializer(new_group).data, status=status.HTTP_201_CREATED)
         
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "C",
-                    "location": "views.py:SurveyGroupListCreate.post",
-                    "message": "Serializer validation failed",
-                    "data": {"errors": dict(serializer.errors)},
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class SurveyGroupRetrieveUpdateDestroy(APIView):
@@ -713,81 +438,6 @@ class SurveyListCreate(APIView):
         err = require_not_analista(request, "crear encuestas")
         if err is not None:
             return err
-        # #region agent log
-        import json
-        import traceback
-        import os
-        # Detectar la ruta correcta del log (desarrollo vs producción)
-        base_paths = [
-            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
-            '/app/.cursor/debug.log',  # Producción Docker
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
-        ]
-        log_file_path = None
-        for path in base_paths:
-            log_dir = os.path.dirname(path)
-            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
-                log_file_path = path
-                # Crear directorio si no existe
-                try:
-                    os.makedirs(log_dir, exist_ok=True)
-                except:
-                    pass
-                break
-        if not log_file_path:
-            log_file_path = '/tmp/survey_debug.log'  # Fallback final
-        try:
-            # Obtener información del usuario antes de validar
-            user_role = None
-            user_group_id = None
-            user_id = None
-            if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
-                try:
-                    user_role = getattr(request.user, 'role', None)
-                    user_group_id = getattr(request.user, 'user_group_id', None)
-                    user_id = getattr(request.user, 'id', None)
-                except (AttributeError, TypeError):
-                    pass
-            
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "views.py:823",
-                    "message": "SurveyListCreate.post called",
-                    "data": {
-                        "user_role": user_role,
-                        "user_group_id": str(user_group_id) if user_group_id else None,
-                        "user_group_id_type": type(user_group_id).__name__ if user_group_id else None,
-                        "user_id": str(user_id) if user_id else None,
-                        "request_data_keys": list(request.data.keys()) if hasattr(request.data, 'keys') else str(type(request.data)),
-                        "has_title": 'title' in request.data if hasattr(request.data, '__contains__') else False,
-                        "has_group": 'group' in request.data if hasattr(request.data, '__contains__') else False,
-                        "request_group_value": str(request.data.get('group')) if hasattr(request.data, 'get') and 'group' in request.data else None,
-                        "has_questions": 'questions' in request.data if hasattr(request.data, '__contains__') else False,
-                        "questions_count": len(request.data.get('questions', [])) if hasattr(request.data, 'get') else 0,
-                        "has_sections": 'sections' in request.data if hasattr(request.data, '__contains__') else False,
-                        "sections_count": len(request.data.get('sections', [])) if hasattr(request.data, 'get') else 0,
-                        "request_data_preview": str(request.data)[:1000] if hasattr(request.data, '__str__') else str(type(request.data))
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception as e:
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "A",
-                        "location": "views.py:823",
-                        "message": "Error logging entry data",
-                        "data": {"error": str(e)},
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except:
-                pass
-        # #endregion
         
         # PRE-VALIDATION: Si es group_admin o usuario de grupo, ajustar el grupo antes de validar
         # Esto evita que el serializer rechace el grupo incorrecto enviado por el frontend
@@ -809,25 +459,6 @@ class SurveyListCreate(APIView):
         if user_role == 'group_admin' and user_group_id:
             # Forzar el grupo del admin antes de validar
             request_data_copy['group'] = str(user_group_id)
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "E",
-                        "location": "views.py:900",
-                        "message": "Pre-validation: Adjusting group for group_admin",
-                        "data": {
-                            "original_group": str(request.data.get('group')) if hasattr(request.data, 'get') else None,
-                            "adjusted_group": str(user_group_id),
-                            "user_group_id": str(user_group_id)
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except:
-                pass
-            # #endregion
         elif user_role and user_group_id and user_role != 'root':
             # Usuario regular con grupo: usar su grupo
             request_data_copy['group'] = str(user_group_id)
@@ -850,89 +481,8 @@ class SurveyListCreate(APIView):
         serializer = SurveySerializer(data=request_data_copy)
         is_valid = serializer.is_valid()
         
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "B",
-                    "location": "views.py:774",
-                    "message": "Serializer validation result",
-                    "data": {
-                        "is_valid": is_valid,
-                        "errors": dict(serializer.errors) if not is_valid else None,
-                        "errors_str": str(serializer.errors) if not is_valid else None,
-                        "validated_data_keys": list(serializer.validated_data.keys()) if is_valid else None,
-                        "request_group": str(request.data.get('group')) if hasattr(request.data, 'get') else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception as e:
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:774",
-                        "message": "Error logging validation result",
-                        "data": {"error": str(e)},
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except:
-                pass
-        # #endregion
         
         if not is_valid:
-            # #region agent log
-            import logging
-            logger = logging.getLogger(__name__)
-            # Log detallado a stderr (visible en Gunicorn logs)
-            logger.error("=" * 60)
-            logger.error("SURVEY CREATION VALIDATION FAILED")
-            logger.error(f"User role: {user_role}")
-            logger.error(f"User group_id: {user_group_id} (type: {type(user_group_id).__name__ if user_group_id else None})")
-            logger.error(f"Request data type: {type(request.data)}")
-            logger.error(f"Request data keys: {list(request.data.keys()) if hasattr(request.data, 'keys') else 'N/A'}")
-            logger.error(f"User role: {user_role}, User group_id: {user_group_id}")
-            logger.error(f"Request group value: {request.data.get('group') if hasattr(request.data, 'get') else 'N/A'}")
-            logger.error(f"Adjusted group value: {request_data_copy.get('group') if hasattr(request_data_copy, 'get') else 'N/A'}")
-            logger.error(f"Serializer errors: {serializer.errors}")
-            logger.error("=" * 60)
-            
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "C",
-                        "location": "views.py:795",
-                        "message": "Serializer validation failed",
-                        "data": {
-                            "errors": dict(serializer.errors),
-                            "errors_str": str(serializer.errors),
-                            "request_data_keys": list(request.data.keys()) if hasattr(request.data, 'keys') else None,
-                            "request_group": str(request.data.get('group')) if hasattr(request.data, 'get') else None,
-                            "request_data_preview": str(request.data)[:1000] if hasattr(request.data, '__str__') else None
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception as e:
-                try:
-                    with open(log_file_path, 'a') as f:
-                        f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "C",
-                            "location": "views.py:795",
-                            "message": "Error logging validation failure",
-                            "data": {"error": str(e)},
-                            "timestamp": int(__import__('time').time() * 1000)
-                        }) + '\n')
-                except:
-                    pass
-            # #endregion
             
             # Mejorar el mensaje de error para que sea más claro y detallado
             import logging
@@ -1019,48 +569,9 @@ class SurveyListCreate(APIView):
                 user_role = None
                 user_group_id = None
         
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "D",
-                    "location": "views.py:529",
-                    "message": "Checking user role and group",
-                    "data": {
-                        "user_role": user_role,
-                        "user_group_id": str(user_group_id) if user_group_id else None,
-                        "user_group_id_type": type(user_group_id).__name__ if user_group_id else None,
-                        "validated_data_group": str(validated_data.get('group')) if 'group' in validated_data else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
         
         # Si es group_admin, forzar el grupo a su grupo
         if user_role == 'group_admin' and user_group_id:
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "D",
-                        "location": "views.py:952",
-                        "message": "group_admin detected, forcing group",
-                        "data": {
-                            "user_group_id": str(user_group_id),
-                            "user_group_id_type": type(user_group_id).__name__,
-                            "validated_data_group_before": str(validated_data.get('group')) if 'group' in validated_data else None
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             # Verificar primero que el grupo existe antes de asignarlo
             groups_collection = get_survey_groups_collection()
@@ -1075,25 +586,6 @@ class SurveyListCreate(APIView):
                     if ObjectId.is_valid(str(user_group_id)):
                         group_obj = groups_collection.find_one({"_id": ObjectId(user_group_id)})
             except Exception as e:
-                # #region agent log
-                try:
-                    with open(log_file_path, 'a') as f:
-                        f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "D",
-                            "location": "views.py:983",
-                            "message": "Error converting user_group_id to ObjectId",
-                            "data": {
-                                "error": str(e),
-                                "user_group_id": str(user_group_id),
-                                "user_group_id_type": type(user_group_id).__name__
-                            },
-                            "timestamp": int(__import__('time').time() * 1000)
-                        }) + '\n')
-                except:
-                    pass
-                # #endregion
                 pass
             
             # Estrategia 2: Si no se encontró, intentar como string directo
@@ -1120,24 +612,6 @@ class SurveyListCreate(APIView):
             if group_obj:
                 # El grupo existe, usar su ObjectId
                 validated_data['group'] = group_obj['_id']
-                # #region agent log
-                try:
-                    with open(log_file_path, 'a') as f:
-                        f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "D",
-                            "location": "views.py:540",
-                            "message": "Group found for group_admin, using it",
-                            "data": {
-                                "group_id": str(group_obj['_id']),
-                                "group_name": group_obj.get('name', 'N/A')
-                            },
-                            "timestamp": int(__import__('time').time() * 1000)
-                        }) + '\n')
-                except Exception:
-                    pass
-                # #endregion
             else:
                 # El grupo no existe, esto es un error
                 # Obtener todos los grupos disponibles para el mensaje de error
@@ -1147,32 +621,6 @@ class SurveyListCreate(APIView):
                 except Exception:
                     pass
                 
-                # #region agent log
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Group not found for user_group_id: {user_group_id}")
-                logger.error(f"Available groups: {[str(g.get('_id')) for g in all_groups]}")
-                
-                try:
-                    with open(log_file_path, 'a') as f:
-                        f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "D",
-                            "location": "views.py:540",
-                            "message": "Group not found for group_admin user_group_id",
-                            "data": {
-                                "user_group_id": str(user_group_id),
-                                "user_group_id_type": type(user_group_id).__name__,
-                                "all_groups": [{"_id": str(g.get('_id')), "name": g.get('name')} for g in all_groups],
-                                "user_id": str(request.user.id) if request.user and hasattr(request.user, 'id') else None,
-                                "username": request.user.username if request.user else None
-                            },
-                            "timestamp": int(__import__('time').time() * 1000)
-                        }) + '\n')
-                except Exception:
-                    pass
-                # #endregion
                 
                 # Mensaje de error más descriptivo
                 error_message = f"El grupo asociado a tu usuario (ID: {user_group_id}) no existe en el sistema."
@@ -1223,26 +671,6 @@ class SurveyListCreate(APIView):
             if group_obj:
                 # El grupo existe, forzar su uso (sobrescribir cualquier grupo que venga del frontend)
                 validated_data['group'] = group_obj['_id']
-                # #region agent log
-                try:
-                    with open(log_file_path, 'a') as f:
-                        f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "D",
-                            "location": "views.py:1020",
-                            "message": "User with group detected, forcing group inheritance",
-                            "data": {
-                                "user_role": user_role,
-                                "user_group_id": str(user_group_id),
-                                "group_id": str(group_obj['_id']),
-                                "group_name": group_obj.get('name', 'N/A')
-                            },
-                            "timestamp": int(__import__('time').time() * 1000)
-                        }) + '\n')
-                except Exception:
-                    pass
-                # #endregion
             else:
                 # El grupo del usuario no existe, esto es un error
                 all_groups = []
@@ -1415,64 +843,9 @@ class SurveyListCreate(APIView):
         return Response(SurveySerializer(new_survey, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     def get(self, request):
-        # #region agent log
-        import json
-        import traceback
-        import os
-        # Detectar la ruta correcta del log (desarrollo vs producción)
-        base_paths = [
-            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
-            '/app/.cursor/debug.log',  # Producción Docker
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
-        ]
-        log_file_path = None
-        for path in base_paths:
-            log_dir = os.path.dirname(path)
-            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
-                log_file_path = path
-                # Crear directorio si no existe
-                try:
-                    os.makedirs(log_dir, exist_ok=True)
-                except:
-                    pass
-                break
-        if not log_file_path:
-            log_file_path = '/tmp/survey_debug.log'  # Fallback final
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "B",
-                    "location": "views.py:193",
-                    "message": "SurveyListCreate.get called",
-                    "data": {
-                        "user_authenticated": request.user.is_authenticated if request.user else False,
-                        "user_id": request.user.id if request.user and hasattr(request.user, 'id') else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
         
         try:
             surveys_collection = get_surveys_collection()
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:193",
-                        "message": "MongoDB collection obtained",
-                        "data": {},
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             group_id = request.query_params.get('group_id')
             show_deleted = request.query_params.get('show_deleted', 'false').lower() == 'true'
@@ -1542,25 +915,6 @@ class SurveyListCreate(APIView):
 
             surveys = list(surveys_collection.find(query))
             
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:231",
-                        "message": "Surveys found in database",
-                        "data": {
-                            "count": len(surveys),
-                            "query": str(query),
-                            "survey_ids": [str(s.get('_id', s.get('id', ''))) for s in surveys[:5]]
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             # Enriquecer encuestas con información del grupo y usuario creador
             # Optimización: obtener todos los grupos y usuarios de una vez en lugar de consultas individuales
@@ -1672,64 +1026,10 @@ class SurveyListCreate(APIView):
                 else:
                     survey['created_by_username'] = None
             
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:262",
-                        "message": "Surveys processed, creating serializer",
-                        "data": {
-                            "count": len(surveys),
-                            "query": str(query)
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             serializer = SurveySerializer(surveys, many=True, context={'request': request})
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:262",
-                        "message": "Serializer created, returning response",
-                        "data": {
-                            "serialized_count": len(serializer.data) if serializer.data else 0
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             return Response(serializer.data)
         except Exception as e:
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "views.py:193",
-                        "message": "SurveyListCreate.get failed",
-                        "data": {
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "traceback": traceback.format_exc()
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             raise
 
 class SurveyRetrieveUpdateDestroy(APIView):
@@ -2212,15 +1512,6 @@ class PublicSurveyView(APIView):
     def get(self, request, pk):
         surveys_collection = get_surveys_collection()
         try:
-            # Log entry
-            import json
-            log_data = {"location": "views.py:325", "message": "PublicSurveyView.get entry", "data": {"pk": pk}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
-            try:
-                with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps(log_data) + '\n')
-            except: pass
-            
-            # Try multiple search strategies
             survey = None
             
             # Excluir encuestas eliminadas en vistas públicas
@@ -2235,17 +1526,8 @@ class PublicSurveyView(APIView):
             try:
                 query = {"$and": [{"_id": ObjectId(pk)}, deleted_filter]}
                 survey = surveys_collection.find_one(query)
-                log_data = {"location": "views.py:333", "message": "ObjectId search result", "data": {"found": survey is not None}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
-                try:
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps(log_data) + '\n')
-                except: pass
-            except Exception as e:
-                log_data = {"location": "views.py:336", "message": "ObjectId search exception", "data": {"error": str(e)}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
-                try:
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps(log_data) + '\n')
-                except: pass
+            except Exception:
+                pass
             
             # Strategy 2: Try string _id (for UUIDs)
             if not survey:
@@ -2258,26 +1540,11 @@ class PublicSurveyView(APIView):
                 survey = surveys_collection.find_one(query)
             
             if not survey:
-                log_data = {"location": "views.py:346", "message": "Survey not found", "data": {"pk": pk}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
-                try:
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps(log_data) + '\n')
-                except: pass
                 raise NotFound(detail="Encuesta no encontrada.")
             
             # Check if survey is public
             is_public = survey.get('is_public', False)
-            log_data = {"location": "views.py:350", "message": "Survey found, checking is_public", "data": {"is_public": is_public, "survey_id": str(survey.get('_id', 'N/A'))}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
-            try:
-                with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps(log_data) + '\n')
-            except: pass
             if not is_public:
-                log_data = {"location": "views.py:381", "message": "Survey is not public, returning 403", "data": {"survey_id": str(survey.get('_id', 'N/A'))}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
-                try:
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps(log_data) + '\n')
-                except: pass
                 return Response(
                     {"detail": "Esta encuesta no es pública. Se requiere autenticación para acceder."},
                     status=status.HTTP_403_FORBIDDEN
@@ -2303,11 +1570,6 @@ class PublicSurveyView(APIView):
             raise
         except Exception as e:
             import traceback
-            log_data = {"location": "views.py:409", "message": "Unexpected exception in PublicSurveyView", "data": {"error": str(e), "traceback": traceback.format_exc()}, "timestamp": int(__import__('time').time() * 1000), "sessionId": "debug-session", "runId": "run1", "hypothesisId": "F"}
-            try:
-                with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                    f.write(json.dumps(log_data) + '\n')
-            except: pass
             raise NotFound(detail="Encuesta no encontrada o ID inválido.")
 
 
@@ -2418,6 +1680,7 @@ class ReferenceLookup(APIView):
       pertenezca al grupo del usuario. Query param: key=<valor>
     """
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [ReferenceLookupRateThrottle]
 
     def get(self, request, pk):
         key_value = request.query_params.get('key', '').strip()
@@ -2471,8 +1734,33 @@ class ReferenceLookup(APIView):
             if val is None:
                 continue
             if str(val).strip() == key_value:
-                return Response(row)
+                return Response(_filter_reference_row(row, survey))
         return Response({}, status=status.HTTP_200_OK)
+
+
+def _filter_reference_row(row, survey):
+    """Return only mapped columns (plus key column), not the full Excel row."""
+    mapping = survey.get('reference_mapping') or {}
+    key_col = (survey.get('reference_key_column') or '').strip()
+    allowed_cols = set(mapping.values()) if mapping else set(row.keys())
+    if key_col:
+        allowed_cols.add(key_col)
+    return {k: v for k, v in row.items() if k in allowed_cols}
+
+
+def _validate_public_survey_for_upload(survey_id):
+    """Return survey doc if public and not deleted, else None."""
+    if not survey_id:
+        return None
+    surveys_collection = get_surveys_collection()
+    survey = None
+    try:
+        survey = surveys_collection.find_one({"_id": ObjectId(survey_id)})
+    except Exception:
+        survey = surveys_collection.find_one({"id": survey_id})
+    if not survey or survey.get('is_deleted') or not survey.get('is_public', False):
+        return None
+    return survey
 
 
 def _sanitize_filename_part(s):
@@ -2488,14 +1776,16 @@ def _sanitize_filename_part(s):
 class AttachmentUploadView(APIView):
     """
     POST: Sube un archivo (imagen o PDF) para usarlo como adjunto en respuestas.
-    multipart/form-data con campo 'file'. Opcionales: documento_empleado, documento_votante.
-    Si ambos están presentes, el archivo se guarda como {doc_emp}-{doc_vot}.ext
-    AllowAny para que encuestas públicas puedan adjuntar archivos sin login.
+    Requiere JWT o survey_id de encuesta pública activa en el formulario.
     """
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [AttachmentUploadRateThrottle]
 
     def post(self, request):
         logger = logging.getLogger(__name__)
+        auth_err = self._check_upload_allowed(request)
+        if auth_err is not None:
+            return auth_err
         try:
             return self._do_upload(request)
         except Exception as e:
@@ -2504,6 +1794,17 @@ class AttachmentUploadView(APIView):
                 {"detail": f"Error al subir el archivo: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    def _check_upload_allowed(self, request):
+        if request.user and getattr(request.user, 'is_authenticated', False):
+            return None
+        survey_id = (request.POST.get('survey_id') or request.GET.get('survey_id') or '').strip()
+        if not _validate_public_survey_for_upload(survey_id):
+            return Response(
+                {"detail": "Se requiere autenticación o survey_id de una encuesta pública válida."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return None
 
     def _do_upload(self, request):
         logger = logging.getLogger(__name__)
@@ -2897,93 +2198,11 @@ class ResponseSyncView(APIView):
     - POST: Recibe un lote de respuestas y las sincroniza con el servidor.
     """
     permission_classes = [permissions.IsAuthenticated]
-
-    def dispatch(self, request, *args, **kwargs):
-        """
-        Sobrescribir dispatch para capturar TODAS las peticiones, incluso antes de autenticación.
-        """
-        import logging
-        import json
-        logger = logging.getLogger(__name__)
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
-        
-        # Log ANTES de cualquier procesamiento
-        try:
-            log_entry = {
-                'location': 'views.py:dispatch',
-                'message': 'ResponseSyncView dispatch called',
-                'data': {
-                    'method': request.method,
-                    'path': request.path,
-                    'full_path': request.get_full_path(),
-                    'META': {k: str(v)[:100] for k, v in request.META.items() if 'HTTP' in k or 'CONTENT' in k},
-                    'user': str(request.user) if hasattr(request, 'user') else 'Not set yet',
-                    'authenticated': request.user.is_authenticated if hasattr(request, 'user') and hasattr(request.user, 'is_authenticated') else False,
-                },
-                'timestamp': int(__import__('time').time() * 1000),
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-                'hypothesisId': 'S'
-            }
-            log_json = json.dumps(log_entry) + '\n'
-            with open(log_file_path, 'a') as f:
-                f.write(log_json)
-            print(f"DEBUG DISPATCH: {log_json}", flush=True)
-            logger.info(f"ResponseSyncView dispatch: {request.method} {request.path}")
-        except Exception as log_err:
-            error_msg = f"Could not write dispatch log: {log_err}"
-            logger.warning(error_msg)
-            print(error_msg, flush=True)
-        
-        # Llamar al dispatch original
-        return super().dispatch(request, *args, **kwargs)
+    throttle_classes = [ResponseSyncRateThrottle]
 
     def post(self, request):
         import logging
-        import json
-        import os
         logger = logging.getLogger(__name__)
-        
-        # Log de entrada - escribir a archivo Y stdout
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
-        log_message = f"=== SYNC REQUEST RECEIVED at {__import__('time').time()} ==="
-        logger.info(log_message)
-        print(log_message, flush=True)  # Forzar flush para gunicorn
-        
-        try:
-            log_entry = {
-                'location': 'views.py:523',
-                'message': 'SYNC REQUEST RECEIVED',
-                'data': {
-                    'method': request.method,
-                    'path': request.path,
-                    'headers': dict(request.headers),
-                    'user': str(request.user) if hasattr(request, 'user') else 'Anonymous',
-                    'body_preview': str(request.data)[:500] if hasattr(request, 'data') else 'No data'
-                },
-                'timestamp': int(__import__('time').time() * 1000),
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-                'hypothesisId': 'O'
-            }
-            log_json = json.dumps(log_entry) + '\n'
-            with open(log_file_path, 'a') as f:
-                f.write(log_json)
-            print(f"DEBUG LOG: {log_json}", flush=True)
-        except Exception as log_err:
-            error_msg = f"Could not write to debug log file: {log_err}"
-            logger.warning(error_msg)
-            print(error_msg, flush=True)
-        
-        # Log de entrada
-        logger.info(f"=== SYNC REQUEST RECEIVED ===")
-        logger.info(f"Request method: {request.method}")
-        logger.info(f"Request path: {request.path}")
-        logger.info(f"Request headers: {dict(request.headers)}")
-        try:
-            logger.info(f"Request body: {json.dumps(request.data) if hasattr(request, 'data') else 'No data'}")
-        except Exception as e:
-            logger.warning(f"Could not log request body: {e}")
 
         err = require_not_analista(request, "sincronizar respuestas")
         if err is not None:
@@ -3063,27 +2282,6 @@ class ResponseSyncView(APIView):
                     error_msg = f'La encuesta especificada no existe. ID recibido: {survey_id} (limpiado: {survey_id_str})'
                     logger.error(error_msg)
                     # Escribir a archivo de log
-                    try:
-                        import json
-                        log_entry = {
-                            'location': 'views.py:608',
-                            'message': 'Survey not found',
-                            'data': {
-                                'index': idx,
-                                'local_id': response_data.get('local_id'),
-                                'original_survey_id': str(survey_id),
-                                'cleaned_survey_id': survey_id_str,
-                                'error': error_msg
-                            },
-                            'timestamp': int(__import__('time').time() * 1000),
-                            'sessionId': 'debug-session',
-                            'runId': 'run1',
-                            'hypothesisId': 'N'
-                        }
-                        with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                            f.write(json.dumps(log_entry) + '\n')
-                    except Exception as log_err:
-                        logger.warning(f"Could not write to debug log: {log_err}")
                     
                     errors.append({
                         'index': idx,
@@ -3093,28 +2291,6 @@ class ResponseSyncView(APIView):
                     continue
                 
                 # Log cuando se encuentra la encuesta exitosamente
-                try:
-                    import json
-                    log_entry = {
-                        'location': 'views.py:665',
-                        'message': 'Survey found successfully',
-                        'data': {
-                            'index': idx,
-                            'local_id': response_data.get('local_id'),
-                            'original_survey_id': str(survey_id),
-                            'cleaned_survey_id': survey_id_str,
-                            'found_survey_id': str(survey.get('_id', 'N/A')),
-                            'survey_title': survey.get('title', 'N/A')
-                        },
-                        'timestamp': int(__import__('time').time() * 1000),
-                        'sessionId': 'debug-session',
-                        'runId': 'run1',
-                        'hypothesisId': 'P'
-                    }
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps(log_entry) + '\n')
-                except Exception as log_err:
-                    logger.warning(f"Could not write survey found log: {log_err}")
                 
                 # Usar surveyor_id del request o del usuario autenticado
                 surveyor_id = response_data.get('surveyor_id')
@@ -3155,26 +2331,6 @@ class ResponseSyncView(APIView):
                 new_response['id'] = str(new_response['_id'])
                 
                 # Log cuando se inserta exitosamente
-                try:
-                    import json
-                    log_entry = {
-                        'location': 'views.py:695',
-                        'message': 'Response inserted successfully',
-                        'data': {
-                            'index': idx,
-                            'local_id': response_data.get('local_id'),
-                            'server_id': str(new_response['_id']),
-                            'survey_id': str(survey_id_to_save)
-                        },
-                        'timestamp': int(__import__('time').time() * 1000),
-                        'sessionId': 'debug-session',
-                        'runId': 'run1',
-                        'hypothesisId': 'Q'
-                    }
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps(log_entry) + '\n')
-                except Exception as log_err:
-                    logger.warning(f"Could not write success log: {log_err}")
                 
                 results.append({
                     'index': idx,
@@ -3188,27 +2344,6 @@ class ResponseSyncView(APIView):
                 logger.error(f"Exception processing response {idx} (local_id: {response_data.get('local_id')}): {e}")
                 logger.error(f"Traceback: {error_trace}")
                 # Escribir a archivo de log también
-                try:
-                    import json
-                    log_entry = {
-                        'location': 'views.py:644',
-                        'message': 'Exception during sync processing',
-                        'data': {
-                            'index': idx,
-                            'local_id': response_data.get('local_id'),
-                            'survey_id': response_data.get('survey'),
-                            'error': str(e),
-                            'traceback': error_trace
-                        },
-                        'timestamp': int(__import__('time').time() * 1000),
-                        'sessionId': 'debug-session',
-                        'runId': 'run1',
-                        'hypothesisId': 'L'
-                    }
-                    with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                        f.write(json.dumps(log_entry) + '\n')
-                except Exception as log_err:
-                    logger.warning(f"Could not write to debug log: {log_err}")
                 
                 errors.append({
                     'index': idx,
@@ -3222,84 +2357,12 @@ class ResponseSyncView(APIView):
             logger.error(f"Errors details: {errors}")
         
         # Escribir resultado final a archivo de log
-        try:
-            import json
-            log_entry = {
-                'location': 'views.py:680',
-                'message': 'Sync request completed',
-                'data': {
-                    'success_count': len(results),
-                    'error_count': len(errors),
-                    'results': results,
-                    'errors': errors
-                },
-                'timestamp': int(__import__('time').time() * 1000),
-                'sessionId': 'debug-session',
-                'runId': 'run1',
-                'hypothesisId': 'M'
-            }
-            with open('/home/vps/Documentos/survey-app/.cursor/debug.log', 'a') as f:
-                f.write(json.dumps(log_entry) + '\n')
-        except Exception as log_err:
-            logger.warning(f"Could not write final result to debug log: {log_err}")
         
         return Response({
             'success_count': len(results),
             'error_count': len(errors),
             'results': results,
             'errors': errors
-        }, status=status.HTTP_200_OK)
-
-class SyncStatusView(APIView):
-    """
-    Vista para verificar el estado de sincronización de respuestas.
-    - POST: Recibe lista de IDs locales y devuelve su estado de sincronización.
-    """
-    permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request):
-        serializer = SyncStatusRequestSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
-        responses_collection = get_responses_collection()
-        status_results = []
-        
-        # Si se proporcionan items con más información, usarlos
-        if 'items' in serializer.validated_data and serializer.validated_data['items']:
-            items = serializer.validated_data['items']
-            for item in items:
-                local_id = item['local_id']
-                survey_id = item['survey']
-                device_id = item.get('device_id')
-                
-                # Buscar respuesta sincronizada que coincida
-                query = {'survey': survey_id}
-                if device_id:
-                    query['device_id'] = device_id
-                
-                # Buscar por device_id y survey para encontrar respuestas similares
-                synced_response = responses_collection.find_one(query)
-                
-                status_results.append({
-                    'local_id': local_id,
-                    'synced': synced_response is not None,
-                    'server_id': str(synced_response['_id']) if synced_response else None
-                })
-        # Si solo se proporcionan local_ids, buscar por device_id del usuario
-        elif 'local_ids' in serializer.validated_data:
-            local_ids = serializer.validated_data['local_ids']
-            # Sin más información, no podemos verificar exactamente
-            # Devolver todos como no sincronizados (el cliente deberá usar items con más info)
-            for local_id in local_ids:
-                status_results.append({
-                    'local_id': local_id,
-                    'synced': False,
-                    'server_id': None
-                })
-        
-        return Response({
-            'statuses': status_results
         }, status=status.HTTP_200_OK)
 
 class ResponseRetrieve(APIView):
@@ -3368,73 +2431,11 @@ class CurrentUserView(APIView):
                 )
     
     def _get_impl(self, request):
-        # #region agent log
-        import json
-        import traceback
-        import os
-        # Detectar la ruta correcta del log (desarrollo vs producción)
-        base_paths = [
-            '/home/vps/Documentos/survey-app/.cursor/debug.log',  # Desarrollo local
-            '/app/.cursor/debug.log',  # Producción Docker
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.cursor', 'debug.log')  # Fallback
-        ]
-        log_file_path = None
-        for path in base_paths:
-            log_dir = os.path.dirname(path)
-            if os.path.exists(log_dir) or os.path.exists(os.path.dirname(log_dir)):
-                log_file_path = path
-                # Crear directorio si no existe
-                try:
-                    os.makedirs(log_dir, exist_ok=True)
-                except:
-                    pass
-                break
-        if not log_file_path:
-            log_file_path = '/tmp/survey_debug.log'  # Fallback final
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "views.py:1288",
-                    "message": "CurrentUserView.get called",
-                    "data": {
-                        "user_authenticated": request.user.is_authenticated if request.user else False,
-                        "user_id": request.user.id if request.user and hasattr(request.user, 'id') else None,
-                        "user_username": request.user.username if request.user else None,
-                        "user_type": type(request.user).__name__ if request.user else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
         
         try:
             # Verificar si es un MongoUser (autenticación MongoDB)
             from .mongo_user_model import MongoUser
             
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "A",
-                        "location": "views.py:1313",
-                        "message": "CurrentUserView - checking user type",
-                        "data": {
-                            "user_type": type(request.user).__name__ if request.user else None,
-                            "is_mongo_user": isinstance(request.user, MongoUser) if request.user else False,
-                            "has_date_joined": hasattr(request.user, 'date_joined') if request.user else False,
-                            "date_joined_type": type(request.user.date_joined).__name__ if request.user and hasattr(request.user, 'date_joined') and request.user.date_joined else None
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             if isinstance(request.user, MongoUser):
                 # Si es MongoUser, crear un diccionario con los datos
@@ -3504,23 +2505,6 @@ class CurrentUserView(APIView):
                 
                 user_data['date_joined'] = date_joined_value
                 user_data['user_group_id'] = user_group_id_value
-                # #region agent log
-                try:
-                    with open(log_file_path, 'a') as f:
-                        f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "A",
-                            "location": "views.py:1288",
-                            "message": "CurrentUserView - MongoUser detected, returning dict",
-                            "data": {
-                                "user_data_keys": list(user_data.keys())
-                            },
-                            "timestamp": int(__import__('time').time() * 1000)
-                        }) + '\n')
-                except Exception:
-                    pass
-                # #endregion
                 # Validar que user_data se puede serializar
                 try:
                     json.dumps(user_data)
@@ -3544,23 +2528,6 @@ class CurrentUserView(APIView):
                 # Si es un modelo de Django normal, usar el serializer
                 try:
                     serializer = UserSerializer(request.user)
-                    # #region agent log
-                    try:
-                        with open(log_file_path, 'a') as f:
-                            f.write(json.dumps({
-                                "sessionId": "debug-session",
-                                "runId": "run1",
-                                "hypothesisId": "A",
-                                "location": "views.py:2469",
-                                "message": "UserSerializer created successfully",
-                                "data": {
-                                    "serializer_data_keys": list(serializer.data.keys()) if serializer.data else []
-                                },
-                                "timestamp": int(__import__('time').time() * 1000)
-                            }) + '\n')
-                    except Exception:
-                        pass
-                    # #endregion
                     return Response(serializer.data)
                 except Exception as serializer_error:
                     import logging
@@ -3574,30 +2541,6 @@ class CurrentUserView(APIView):
                         'role': 'encuestador'
                     })
         except Exception as e:
-            # #region agent log
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"CurrentUserView.get failed: {type(e).__name__} - {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "A",
-                        "location": "views.py:1288",
-                        "message": "CurrentUserView.get failed",
-                        "data": {
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "traceback": traceback.format_exc()[:500]
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             # Devolver error JSON en lugar de dejar que Django devuelva HTML
             # Asegurar que el mensaje sea serializable
@@ -3637,7 +2580,6 @@ class UserListCreate(APIView):
         from .mongo_utils import get_mongo_collection
         import json
         import traceback
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
         
         try:
             users_collection = get_mongo_collection('users')
@@ -3720,52 +2662,11 @@ class UserListCreate(APIView):
                 }
                 users_data.append(user_data)
             
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "G",
-                        "location": "views.py:1437",
-                        "message": "UserListCreate.get - users converted to dicts",
-                        "data": {
-                            "users_count": len(users_data)
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             # Usar un serializer simple o devolver directamente los datos
             # Como UserSerializer es ModelSerializer, devolvemos los datos directamente
             return Response(users_data)
         except Exception as e:
-            # #region agent log
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"UserListCreate.get failed: {type(e).__name__} - {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "G",
-                        "location": "views.py:1437",
-                        "message": "UserListCreate.get failed",
-                        "data": {
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "traceback": traceback.format_exc()
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             raise
 
     def post(self, request):
@@ -4038,48 +2939,11 @@ class UserRetrieveUpdateDestroy(APIView):
 
         import json
         import traceback
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
         
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "H",
-                    "location": "views.py:1608",
-                    "message": "UserRetrieveUpdateDestroy.put called",
-                    "data": {
-                        "pk": str(pk),
-                        "pk_type": type(pk).__name__
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
         
         try:
             user = self.get_object(pk)
             
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "H",
-                        "location": "views.py:1608",
-                        "message": "User found, updating",
-                        "data": {
-                            "user_id": str(user.id) if user else None,
-                            "username": user.username if user else None
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             serializer = UserUpdateSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
@@ -4151,23 +3015,6 @@ class UserRetrieveUpdateDestroy(APIView):
                         'group_name': group_name
                     }
                     
-                    # #region agent log
-                    try:
-                        with open(log_file_path, 'a') as f:
-                            f.write(json.dumps({
-                                "sessionId": "debug-session",
-                                "runId": "run1",
-                                "hypothesisId": "H",
-                                "location": "views.py:1608",
-                                "message": "User updated successfully",
-                                "data": {
-                                    "user_id": user_data.get('id')
-                                },
-                                "timestamp": int(__import__('time').time() * 1000)
-                            }) + '\n')
-                    except Exception:
-                        pass
-                    # #endregion
                     
                     return Response(user_data)
                 else:
@@ -4193,72 +3040,10 @@ class UserRetrieveUpdateDestroy(APIView):
                     }
                     return Response(user_data)
             else:
-                # #region agent log
-                try:
-                    with open(log_file_path, 'a') as f:
-                        f.write(json.dumps({
-                            "sessionId": "debug-session",
-                            "runId": "run1",
-                            "hypothesisId": "H",
-                            "location": "views.py:1608",
-                            "message": "Serializer validation failed",
-                            "data": {
-                                "errors": serializer.errors
-                            },
-                            "timestamp": int(__import__('time').time() * 1000)
-                        }) + '\n')
-                except Exception:
-                    pass
-                # #endregion
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except NotFound as e:
-            # #region agent log
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"UserRetrieveUpdateDestroy.put - User not found: {pk}")
-            
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "H",
-                        "location": "views.py:1608",
-                        "message": "User not found",
-                        "data": {
-                            "pk": str(pk)
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             raise
         except Exception as e:
-            # #region agent log
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"UserRetrieveUpdateDestroy.put failed: {type(e).__name__} - {str(e)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "H",
-                        "location": "views.py:1608",
-                        "message": "UserRetrieveUpdateDestroy.put failed",
-                        "data": {
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "traceback": traceback.format_exc()
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             raise
 
     def delete(self, request, pk):

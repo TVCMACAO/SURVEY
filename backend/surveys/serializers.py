@@ -410,203 +410,24 @@ class ResponseSerializer(serializers.Serializer):
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
-        # #region agent log
-        import json
-        import traceback
-        from django.contrib.auth import authenticate
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "B",
-                    "location": "serializers.py:234",
-                    "message": "validate() called - before authenticate",
-                    "data": {
-                        "username_field": self.username_field,
-                        "has_username": self.username_field in attrs,
-                        "has_password": "password" in attrs,
-                        "username_value": attrs.get(self.username_field, None) if self.username_field in attrs else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
         
         try:
             # Llamar al método validate del padre
             result = super().validate(attrs)
             
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "serializers.py:234",
-                        "message": "validate() - after super().validate()",
-                        "data": {
-                            "user_authenticated": hasattr(self, 'user') and self.user is not None,
-                            "user_id": self.user.id if hasattr(self, 'user') and self.user else None,
-                            "user_username": self.user.username if hasattr(self, 'user') and self.user else None,
-                            "user_is_active": self.user.is_active if hasattr(self, 'user') and self.user else None
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             
             return result
         except Exception as e:
-            # #region agent log
-            import logging
-            logger = logging.getLogger(__name__)
-            
-            error_info = {
-                "error_type": type(e).__name__,
-                "error_message": str(e),
-                "error_args": str(e.args) if hasattr(e, 'args') else None,
-                "traceback": traceback.format_exc()
-            }
-            
-            # Log a stderr (visible en Gunicorn logs)
-            logger.error(f"validate() exception: {error_info['error_type']} - {error_info['error_message']}")
-            logger.error(f"Traceback: {error_info['traceback']}")
-            
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "B",
-                        "location": "serializers.py:234",
-                        "message": "validate() - exception in super().validate()",
-                        "data": error_info,
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
             raise
     
     @classmethod
     def get_token(cls, user):
-        # #region agent log
-        import json
-        import os
-        log_file_path = '/home/vps/Documentos/survey-app/.cursor/debug.log'
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "serializers.py:146",
-                    "message": "get_token called",
-                    "data": {
-                        "user_id": str(user.id) if user else None,
-                        "user_type": type(user).__name__ if user else None,
-                        "has_username": hasattr(user, 'username') if user else False,
-                        "has_email": hasattr(user, 'email') if user else False,
-                        "has_role": hasattr(user, 'role') if user else False
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception as e:
-            pass
-        # #endregion
-        
-        try:
-            token = super().get_token(user)
-        except Exception as e:
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "C",
-                        "location": "serializers.py:147",
-                        "message": "Error in super().get_token",
-                        "data": {
-                            "error_type": type(e).__name__,
-                            "error_message": str(e)
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
-            raise
-        
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "serializers.py:148",
-                    "message": "Token base created, accessing user fields",
-                    "data": {
-                        "username_value": getattr(user, 'username', None) if user else None,
-                        "email_value": getattr(user, 'email', None) if user else None,
-                        "role_value": getattr(user, 'role', None) if user else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
-        try:
-            token['username'] = user.username
-            token['email'] = user.email
-            token['role'] = user.role
-        except Exception as e:
-            # #region agent log
-            try:
-                with open(log_file_path, 'a') as f:
-                    f.write(json.dumps({
-                        "sessionId": "debug-session",
-                        "runId": "run1",
-                        "hypothesisId": "A",
-                        "location": "serializers.py:150",
-                        "message": "Error accessing user fields",
-                        "data": {
-                            "error_type": type(e).__name__,
-                            "error_message": str(e),
-                            "field_accessed": "username/email/role"
-                        },
-                        "timestamp": int(__import__('time').time() * 1000)
-                    }) + '\n')
-            except Exception:
-                pass
-            # #endregion
-            raise
-        
-        # #region agent log
-        try:
-            with open(log_file_path, 'a') as f:
-                f.write(json.dumps({
-                    "sessionId": "debug-session",
-                    "runId": "run1",
-                    "hypothesisId": "A",
-                    "location": "serializers.py:151",
-                    "message": "Token created successfully",
-                    "data": {
-                        "token_keys": list(token.keys()) if token else None
-                    },
-                    "timestamp": int(__import__('time').time() * 1000)
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
-        
+        from .tokens import MongoRefreshToken
+
+        token = MongoRefreshToken.for_user(user)
+        token['username'] = user.username
+        token['email'] = user.email
+        token['role'] = user.role
         return token
 
 # Serializer for batch sync operations

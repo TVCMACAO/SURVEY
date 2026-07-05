@@ -79,22 +79,23 @@ Edita `.env` con tus valores:
 - `SECRET_KEY`: Genera una clave secreta para Django
 - `DEBUG`: `1` para desarrollo, `0` para producción
 - `ALLOWED_HOSTS`: `localhost,127.0.0.1`
-- Variables de MongoDB (si usas MongoDB externo)
+- `MONGO_URI`: URI de MongoDB remota (misma BD que producción)
+- `BASE_URL`: `http://localhost:8085` en local
 
 ### 3. Iniciar con Docker Compose
 
 ```bash
-docker-compose up -d
+docker compose up --build
 ```
 
 Esto iniciará:
-- MongoDB en el puerto 27017
-- Django en el puerto 8000 (interno)
-- Nginx en el puerto 8085
+- Django (API + migraciones JWT blacklist) en puerto interno 8000
+- Nginx con frontend React compilado en el puerto **8085**
 
 ### 4. Acceder a la aplicación
 
 - Frontend: http://localhost:8085
+- API health: http://localhost:8085/api/health/
 - API: http://localhost:8085/api/
 
 ### 5. Desarrollo Frontend
@@ -139,6 +140,7 @@ Consulta [FEATURES_SECTIONS.md](FEATURES_SECTIONS.md) para documentación comple
 ## API Endpoints
 
 ### Autenticación
+- `GET /api/health/` - Health check (sin autenticación)
 - `POST /api/token/` - Obtener token JWT
 - `GET /api/me/` - Obtener usuario actual
 

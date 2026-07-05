@@ -81,6 +81,8 @@ Thumbs.db
 .DS_Store
 
 # Survey app specific
+*.apk
+survey-app*.apk
 survey_mobile/
 survey-mobile/
 CONTEXTO_CONVERSACION.md

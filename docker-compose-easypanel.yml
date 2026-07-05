@@ -6,7 +6,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: survey-django
-    command: sh -c "python manage.py collectstatic --noinput && gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000 --timeout 120 --workers 2 --worker-class gevent --worker-connections 100"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn survey_project.wsgi:application --bind 0.0.0.0:8000 --timeout 120 --workers 2 --worker-class gevent --worker-connections 100"
     volumes:
       - ./backend:/app
       - static_volume:/app/staticfiles
@@ -17,18 +17,16 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - DEBUG=${DEBUG:-0}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS}
-      # BD única: MongoDB en easypanel.clinicamaicao.com (encuestas, respuestas, adjuntos, preview_link)
-      - MONGO_URI=${MONGO_URI:-mongodb://root:1b20629a87ea780a63aa@easypanel.clinicamaicao.com:27017/?tls=false}
+      - MONGO_URI=${MONGO_URI}
       - MONGO_DB_NAME=${MONGO_DB_NAME:-survey_db}
       - BASE_URL=${BASE_URL:-https://chat-survey-app.rhfh8t.easypanel.host}
-      # Google Drive (opcional): adjuntos se copian a carpeta compartida
-      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID:-1ljZUHTQaAcM4j8xiJXbrj2Ja_IkMs3MX}
+      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID:-}
       - GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64=${GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64:-}
     restart: unless-stopped
     networks:
       - survey-network
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/surveys/\")' || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/')\""]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -59,6 +57,3 @@ volumes:
 networks:
   survey-network:
     driver: bridge
-
-
-

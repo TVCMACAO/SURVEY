@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../models/user.dart';
@@ -12,6 +13,43 @@ class AuthService {
   User? _currentUser;
 
   AuthService._init();
+
+  static const int _pbkdf2Iterations = 100000;
+
+  String _deriveOfflineCredential(String password, String salt) {
+    final passwordBytes = utf8.encode(password);
+    final saltBytes = utf8.encode(salt);
+    var block = Hmac(sha256, passwordBytes).convert([...saltBytes, 0, 0, 0, 1]).bytes;
+    final result = List<int>.from(block);
+    for (var i = 1; i < _pbkdf2Iterations; i++) {
+      block = Hmac(sha256, passwordBytes).convert(block).bytes;
+      for (var j = 0; j < result.length; j++) {
+        result[j] ^= block[j];
+      }
+    }
+    return 'pbkdf2:$_pbkdf2Iterations:$salt:${base64.encode(result)}';
+  }
+
+  Future<String> _getOrCreateOfflineSalt(String userId) async {
+    final saltKey = 'offline_credential_salt_$userId';
+    var salt = await _secureStorage.read(key: saltKey);
+    if (salt == null || salt.isEmpty) {
+      salt = base64.encode(List<int>.generate(16, (_) => Random.secure().nextInt(256)));
+      await _secureStorage.write(key: saltKey, value: salt);
+    }
+    return salt;
+  }
+
+  Future<bool> _verifyOfflinePassword(String userId, String password, String stored) async {
+    if (stored.startsWith('pbkdf2:')) {
+      final salt = await _secureStorage.read(key: 'offline_credential_salt_$userId');
+      if (salt == null || salt.isEmpty) return false;
+      return stored == _deriveOfflineCredential(password, salt);
+    }
+    // Legacy SHA-256 (pre-migration)
+    final legacy = sha256.convert(utf8.encode(password)).toString();
+    return stored == legacy;
+  }
 
   Future<String?> getAccessToken() async {
     return await _secureStorage.read(key: StorageKeys.accessToken);
@@ -67,11 +105,12 @@ class AuthService {
           loggedInAt: now,
           lastActivityAt: now,
         );
-        // Hash de contraseña para login offline
-        final hash = sha256.convert(utf8.encode(password)).toString();
+        // Credencial offline con PBKDF2-HMAC-SHA256 + salt por dispositivo
+        final salt = await _getOrCreateOfflineSalt(_currentUser!.id);
+        final credential = _deriveOfflineCredential(password, salt);
         await _secureStorage.write(
           key: 'offline_credential_${_currentUser!.id}',
-          value: hash,
+          value: credential,
         );
         // Guardar usuario actual en local_users
         await DatabaseHelper.instance.upsertLocalUser(
@@ -139,8 +178,7 @@ class AuthService {
     if (storedHash == null || storedHash.isEmpty) {
       throw Exception('Inicia sesión con WiFi al menos una vez para usar sin conexión.');
     }
-    final inputHash = sha256.convert(utf8.encode(password)).toString();
-    if (inputHash != storedHash) {
+    if (!await _verifyOfflinePassword(userId, password, storedHash)) {
       throw Exception('Contraseña incorrecta.');
     }
     final user = User.fromJson(userMap);
