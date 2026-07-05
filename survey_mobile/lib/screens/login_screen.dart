@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/network_service.dart';
 import '../services/survey_service.dart';
+import '../services/sync_service.dart';
 import 'surveys_list_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -58,6 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         try {
           await SurveyService.instance.downloadSurveys();
+          await SyncService.instance.trySyncNow();
         } catch (_) {}
       }
 

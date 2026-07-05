@@ -85,6 +85,8 @@ Thumbs.db
 survey-app*.apk
 survey_mobile/
 survey-mobile/
+*.jks
+survey_mobile/android/key.properties
 CONTEXTO_CONVERSACION.md
 GEMINI.md
 IMPLEMENTACION_COMPLETA.md

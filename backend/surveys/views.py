@@ -2052,7 +2052,7 @@ class PublicResponseCreate(APIView):
                 'surveyor_id': surveyor_id,
                 'device_id': validated_data.get('device_id'),
                 'answers': validated_data['answers'],
-                'synced': validated_data.get('synced', True),  # Public responses are synced by default
+                'synced': True,
                 'created_at': datetime.utcnow()  # Agregar fecha de creación
             })
             new_response = responses_collection.find_one({'_id': result.inserted_id})
@@ -2083,7 +2083,7 @@ class ResponseListCreate(APIView):
         surveyor_ids = set()
         for r in responses:
             r['id'] = str(r['_id'])
-            r.setdefault('synced', True)
+            r['synced'] = True
             sid = r.get('surveyor_id')
             if sid:
                 surveyor_ids.add(str(sid))
@@ -2104,7 +2104,7 @@ class ResponseListCreate(APIView):
                 except Exception:
                     surveyor_names[str(sid)] = sid
         for r in responses:
-            r.setdefault('synced', True)
+            r['synced'] = True
             sid = r.get('surveyor_id')
             r['surveyor_name'] = surveyor_names.get(str(sid), sid or '') if sid else ''
         _enrich_responses_with_attachment_links(responses)
@@ -2138,7 +2138,7 @@ class ResponseListCreate(APIView):
                 'surveyor_id': validated_data['surveyor_id'],
                 'device_id': validated_data.get('device_id'),
                 'answers': validated_data['answers'],
-                'synced': validated_data.get('synced', True),  # All responses are synced by default since they're saved directly to server
+                'synced': True,  # Saved directly to server
                 'created_at': datetime.utcnow()  # Agregar fecha de creación
             })
             new_response = responses_collection.find_one({'_id': result.inserted_id})
@@ -2385,6 +2385,7 @@ class ResponseRetrieve(APIView):
 
     def get(self, request, pk):
         response = self.get_object(pk)
+        response['synced'] = True
         _enrich_responses_with_attachment_links([response])
         serializer = ResponseSerializer(response)
         return Response(serializer.data)

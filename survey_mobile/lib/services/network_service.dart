@@ -10,37 +10,27 @@ class NetworkService {
   
   NetworkService._init();
 
-  // Stream para escuchar cambios de conectividad
   Stream<ConnectivityResult> get connectivityStream => 
       _connectivity.onConnectivityChanged;
 
-  // Verificar conectividad REAL (verificando que hay red y servidor accesible)
   Future<bool> isConnected() async {
     final result = await _connectivity.checkConnectivity();
     if (result == ConnectivityResult.none) {
       return false;
     }
     
-    // Verificar conectividad real haciendo una petición HEAD a la base URL
-    // Esto no requiere autenticación y solo verifica que el servidor responde
     try {
-      await http.head(
-        Uri.parse('${ApiConstants.baseUrl}/'),
+      final response = await http.get(
+        Uri.parse('${ApiConstants.baseUrl}${ApiConstants.health}'),
       ).timeout(const Duration(seconds: 5));
-      
-      // Cualquier respuesta (incluso 404) significa que hay servidor accesible
-      return true;
+      return response.statusCode == 200;
     } catch (e) {
-      // Si falla, intentar con una petición GET simple a un endpoint público
       try {
-        // Intentar con un endpoint que sabemos que existe (aunque pueda dar 404)
-        await http.get(
-          Uri.parse('${ApiConstants.baseUrl}/public/surveys/test'),
-        ).timeout(const Duration(seconds: 3));
-        
-        // Cualquier respuesta significa que hay servidor
+        await http.head(
+          Uri.parse('${ApiConstants.baseUrl}/'),
+        ).timeout(const Duration(seconds: 5));
         return true;
-      } catch (e2) {
+      } catch (_) {
         return false;
       }
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faPlus, faGear, faFont, faListUl, faSquareCheck, faStar, faCalendarDays, 
@@ -6,9 +6,10 @@ import {
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
   faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus, faUser,
   faSignature, faEraser, faEnvelope, faHeading, faCopy,
-  faChevronUp, faChevronDown, faGripVertical, faPaperclip
+  faChevronUp, faChevronDown, faGripVertical, faPaperclip, faSearch, faFilter
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout, ensureFreshToken } from './auth';
+import { useBreakpoint } from './hooks/useBreakpoint';
 import * as XLSX from 'xlsx';
 import {
   Chart as ChartJS,
@@ -21,6 +22,7 @@ import {
   Title,
   Tooltip,
   Legend,
+  Filler,
 } from 'chart.js';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 
@@ -34,8 +36,195 @@ ChartJS.register(
   LineElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
+  Filler
 );
+
+const DELUXE_PALETTE = [
+  ['#4f46e5', '#818cf8'],
+  ['#7c3aed', '#a78bfa'],
+  ['#db2777', '#f472b6'],
+  ['#059669', '#34d399'],
+  ['#0284c7', '#38bdf8'],
+  ['#d97706', '#fbbf24'],
+  ['#dc2626', '#f87171'],
+  ['#9333ea', '#c084fc'],
+  ['#0d9488', '#2dd4bf'],
+  ['#ea580c', '#fb923c'],
+  ['#4f46e5', '#a5b4fc'],
+  ['#be185d', '#f9a8d4'],
+];
+
+const deluxeColor = (index, shade = 0) =>
+  DELUXE_PALETTE[index % DELUXE_PALETTE.length][shade];
+
+const makeLineAreaGradient = (context) => {
+  const { chart } = context;
+  const { ctx, chartArea } = chart;
+  if (!chartArea) return 'rgba(99, 102, 241, 0.15)';
+  const gradient = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+  gradient.addColorStop(0, 'rgba(99, 102, 241, 0.02)');
+  gradient.addColorStop(0.5, 'rgba(139, 92, 246, 0.18)');
+  gradient.addColorStop(1, 'rgba(167, 139, 250, 0.45)');
+  return gradient;
+};
+
+const buildDeluxeChartData = (stat, chartType) => {
+  const labels = Object.keys(stat.data || {});
+  const data = Object.values(stat.data || {});
+
+  if (chartType === 'line') {
+    return {
+      labels,
+      datasets: [{
+        label: 'Respuestas',
+        data,
+        borderColor: labels.map((_, i) => deluxeColor(i, 0)),
+        backgroundColor: (ctx) => makeLineAreaGradient(ctx),
+        segment: {
+          borderColor: (ctx) => deluxeColor(ctx.p0DataIndex, 0),
+        },
+        borderWidth: 3,
+        fill: true,
+        tension: 0.42,
+        pointBackgroundColor: labels.map((_, i) => deluxeColor(i, 0)),
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 3,
+        pointRadius: 7,
+        pointHoverRadius: 10,
+        pointHoverBackgroundColor: labels.map((_, i) => deluxeColor(i, 1)),
+        pointHoverBorderColor: '#ffffff',
+        pointHoverBorderWidth: 3,
+      }],
+    };
+  }
+
+  if (chartType === 'doughnut') {
+    return {
+      labels,
+      datasets: [{
+        label: 'Respuestas',
+        data,
+        backgroundColor: labels.map((_, i) => deluxeColor(i, 0)),
+        hoverBackgroundColor: labels.map((_, i) => deluxeColor(i, 1)),
+        borderColor: '#ffffff',
+        borderWidth: 4,
+        hoverBorderColor: '#ffffff',
+        hoverOffset: 16,
+        spacing: 2,
+      }],
+    };
+  }
+
+  return {
+    labels,
+    datasets: [{
+      label: 'Respuestas',
+      data,
+      backgroundColor: labels.map((_, i) => deluxeColor(i, 0)),
+      hoverBackgroundColor: labels.map((_, i) => deluxeColor(i, 1)),
+      borderColor: labels.map((_, i) => deluxeColor(i, 0)),
+      borderWidth: 0,
+      borderRadius: { topLeft: 12, topRight: 12, bottomLeft: 4, bottomRight: 4 },
+      borderSkipped: false,
+      maxBarThickness: 58,
+    }],
+  };
+};
+
+const buildDeluxeChartOptions = (stat, chartType) => {
+  const deluxeTooltip = {
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    titleColor: '#f8fafc',
+    bodyColor: '#e2e8f0',
+    footerColor: '#cbd5e1',
+    padding: 14,
+    cornerRadius: 12,
+    displayColors: true,
+    boxPadding: 8,
+    titleFont: { size: 13, weight: 'bold', family: 'system-ui, sans-serif' },
+    bodyFont: { size: 12, weight: '600', family: 'system-ui, sans-serif' },
+    borderColor: 'rgba(99, 102, 241, 0.35)',
+    borderWidth: 1,
+    callbacks: {
+      label(context) {
+        const label = context.label || '';
+        const value = context.parsed.y ?? context.parsed ?? context.raw ?? 0;
+        const percentage = stat.totalAnswers > 0 ? ((value / stat.totalAnswers) * 100).toFixed(1) : '0.0';
+        return ` ${label}: ${value} respuestas (${percentage}%)`;
+      },
+    },
+  };
+
+  const deluxeAnimation = {
+    duration: 1100,
+    easing: 'easeOutQuart',
+  };
+
+  const deluxeLegend = {
+    display: chartType === 'doughnut',
+    position: 'right',
+    labels: {
+      color: '#374151',
+      font: { size: 11, weight: '600', family: 'system-ui, sans-serif' },
+      padding: 14,
+      usePointStyle: true,
+      pointStyle: 'circle',
+      boxWidth: 8,
+      boxHeight: 8,
+    },
+  };
+
+  if (chartType === 'doughnut') {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '64%',
+      animation: deluxeAnimation,
+      plugins: {
+        legend: deluxeLegend,
+        tooltip: deluxeTooltip,
+      },
+    };
+  }
+
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: deluxeAnimation,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: deluxeTooltip,
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          stepSize: 1,
+          color: '#6b7280',
+          font: { size: 11, weight: '600', family: 'system-ui, sans-serif' },
+          padding: 8,
+        },
+        grid: {
+          color: 'rgba(99, 102, 241, 0.08)',
+          drawBorder: false,
+        },
+        border: { display: false },
+      },
+      x: {
+        ticks: {
+          color: '#374151',
+          font: { size: 11, weight: '600', family: 'system-ui, sans-serif' },
+          maxRotation: 45,
+          minRotation: 0,
+        },
+        grid: { display: false },
+        border: { display: false },
+      },
+    },
+  };
+};
 
 // --- UTILIDADES ---
 const generateId = () => `q_${Math.random().toString(36).substr(2, 9)}`;
@@ -2328,17 +2517,984 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
 };
 
 
+// --- Helpers y tarjeta: estadísticas por pregunta ---
+
+const STAT_CATEGORICAL_TYPES = ['single_choice', 'Opción Única', 'dropdown', 'Desplegable', 'checkbox', 'Casillas'];
+const STAT_NUMERIC_TYPES = ['rating', 'Puntuación', 'number', 'Número'];
+const STAT_FREQUENCY_TYPES = ['short_text', 'Texto Corto', 'Texto corto', 'text', 'Párrafo', 'paragraph', 'Correo Electrónico', 'email', 'Fecha', 'date'];
+const STAT_SIGNATURE_TYPES = ['Firma', 'signature'];
+const STAT_FILE_TYPES = ['file_upload', 'Adjuntar archivos'];
+
+const isStatAnswerSignature = (answer) => {
+  if (typeof answer !== 'string') return false;
+  return answer.startsWith('data:image/png;base64,') ||
+    answer.startsWith('data:image/jpeg;base64,') ||
+    (answer.length > 100 && /^[A-Za-z0-9+/=]+$/.test(answer.split(',')[1] || answer));
+};
+
+const isIdentifierQuestion = (questionText, answers) => {
+  const text = (questionText || '').toLowerCase();
+  const idKeywords = ['documento', 'cedula', 'cédula', 'identificacion', 'identificación', 'identidad', 'nit'];
+  if (idKeywords.some((k) => text.includes(k))) return true;
+  if (answers.length === 0) return false;
+  const normalized = answers.map((a) => String(a).trim()).filter(Boolean);
+  const unique = new Set(normalized).size;
+  return unique / answers.length > 0.8;
+};
+
+const getStatKind = (questionType, questionText, answers) => {
+  if (STAT_CATEGORICAL_TYPES.includes(questionType)) return 'categorical';
+  if (STAT_SIGNATURE_TYPES.includes(questionType)) return 'signature';
+  if (STAT_FILE_TYPES.includes(questionType)) return 'files';
+  if (STAT_FREQUENCY_TYPES.includes(questionType)) return 'frequency';
+  if (STAT_NUMERIC_TYPES.includes(questionType)) {
+    if (questionType === 'rating' || questionType === 'Puntuación') return 'numeric';
+    if (isIdentifierQuestion(questionText, answers)) return 'frequency';
+    return 'numeric';
+  }
+  return 'frequency';
+};
+
+const getQuestionTypeLabel = (questionType) => {
+  const labels = {
+    single_choice: 'Opción Única',
+    'Opción Única': 'Opción Única',
+    dropdown: 'Desplegable',
+    Desplegable: 'Desplegable',
+    checkbox: 'Casillas',
+    Casillas: 'Casillas',
+    short_text: 'Texto Corto',
+    'Texto Corto': 'Texto Corto',
+    text: 'Texto',
+    Párrafo: 'Párrafo',
+    paragraph: 'Párrafo',
+    number: 'Número',
+    Número: 'Número',
+    rating: 'Puntuación',
+    Puntuación: 'Puntuación',
+    date: 'Fecha',
+    Fecha: 'Fecha',
+    email: 'Correo',
+    'Correo Electrónico': 'Correo',
+    signature: 'Firma',
+    Firma: 'Firma',
+    file_upload: 'Adjuntos',
+    'Adjuntar archivos': 'Adjuntos',
+  };
+  return labels[questionType] || questionType || 'Pregunta';
+};
+
+const formatStatNumber = (value) => {
+  if (value === undefined || value === null || Number.isNaN(value)) return '-';
+  if (Number.isInteger(value)) return String(value);
+  return Number(value).toFixed(2);
+};
+
+const answerToFrequencyKey = (answer) => {
+  if (answer === undefined || answer === null || answer === '') return '(vacío)';
+  if (isStatAnswerSignature(answer)) return 'Con firma';
+  if (Array.isArray(answer)) return answer.length > 0 ? `${answer.length} archivo(s)` : 'Sin adjunto';
+  if (typeof answer === 'object') return JSON.stringify(answer);
+  const str = String(answer).trim();
+  return str || '(vacío)';
+};
+
+const calculateResponseStats = (survey, responsesList) => {
+  if (!responsesList.length || !survey.questions) return {};
+
+  const stats = {};
+  survey.questions.forEach((q) => {
+    const questionId = q.id || q._id;
+    const questionType = q.type || q.question_type;
+    const questionText = q.text || q.question_text;
+
+    if (!questionId) return;
+    if (questionType === 'titulo' || questionType === 'Título') return;
+    if (questionType === 'evaluation_table' || questionType === 'Evaluación') return;
+
+    const answers = responsesList
+      .map((r) => r.answers && r.answers[questionId])
+      .filter((a) => a !== undefined && a !== null && a !== '');
+
+    if (answers.length === 0) return;
+
+    const statKind = getStatKind(questionType, questionText, answers);
+    stats[questionId] = {
+      questionText,
+      questionType,
+      statKind,
+      totalAnswers: answers.length,
+      data: {},
+    };
+
+    if (statKind === 'categorical') {
+      if (['checkbox', 'Casillas'].includes(questionType)) {
+        answers.forEach((answer) => {
+          const options = Array.isArray(answer) ? answer : [answer];
+          options.forEach((opt) => {
+            const key = String(opt);
+            stats[questionId].data[key] = (stats[questionId].data[key] || 0) + 1;
+          });
+        });
+      } else {
+        answers.forEach((answer) => {
+          const key = String(answer);
+          stats[questionId].data[key] = (stats[questionId].data[key] || 0) + 1;
+        });
+      }
+    } else if (statKind === 'frequency') {
+      answers.forEach((answer) => {
+        const key = answerToFrequencyKey(answer);
+        stats[questionId].data[key] = (stats[questionId].data[key] || 0) + 1;
+      });
+      stats[questionId].uniqueCount = new Set(answers.map((a) => answerToFrequencyKey(a))).size;
+    } else if (statKind === 'numeric') {
+      const numbers = answers.map((a) => Number(a)).filter((n) => !Number.isNaN(n));
+      if (numbers.length > 0) {
+        stats[questionId].average = numbers.reduce((a, b) => a + b, 0) / numbers.length;
+        stats[questionId].min = Math.min(...numbers);
+        stats[questionId].max = Math.max(...numbers);
+      }
+    } else if (statKind === 'signature') {
+      const signedCount = answers.filter(isStatAnswerSignature).length;
+      stats[questionId].signedCount = signedCount;
+      stats[questionId].unsignedCount = answers.length - signedCount;
+      stats[questionId].data = { 'Con firma': signedCount, 'Sin firma': answers.length - signedCount };
+      stats[questionId].statKind = 'frequency';
+      stats[questionId].uniqueCount = signedCount > 0 && answers.length - signedCount > 0 ? 2 : 1;
+    } else if (statKind === 'files') {
+      const withFilesCount = answers.filter((a) => Array.isArray(a) && a.length > 0).length;
+      stats[questionId].withFilesCount = withFilesCount;
+      stats[questionId].totalFiles = answers.reduce((sum, a) => sum + (Array.isArray(a) ? a.length : 0), 0);
+      stats[questionId].data = {
+        'Con adjuntos': withFilesCount,
+        'Sin adjuntos': answers.length - withFilesCount,
+      };
+      stats[questionId].statKind = 'frequency';
+    }
+  });
+
+  return stats;
+};
+
+const DistributionTable = ({ stat, showAll, onToggleShowAll, maxRows = 8 }) => {
+  const entries = Object.entries(stat.data || {}).sort((a, b) => b[1] - a[1]);
+  const visible = showAll ? entries : entries.slice(0, maxRows);
+  const hiddenCount = entries.length - maxRows;
+
+  if (entries.length === 0) {
+    return <p className="text-xs text-gray-400 italic">Sin datos para mostrar</p>;
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {visible.map(([option, count]) => {
+        const percentage = stat.totalAnswers > 0 ? (count / stat.totalAnswers) * 100 : 0;
+        return (
+          <div key={option} className="flex items-center gap-2 text-xs">
+            <span className="w-24 sm:w-32 truncate shrink-0 text-gray-700" title={option}>{option}</span>
+            <div className="flex-1 h-2 bg-indigo-50 rounded-full overflow-hidden min-w-[40px] border border-indigo-100/50">
+              <div
+                className="h-2 rounded-full transition-all duration-500 bg-gradient-to-r from-indigo-500 via-purple-500 to-violet-500 shadow-sm"
+                style={{ width: `${Math.max(percentage, count > 0 ? 2 : 0)}%` }}
+              />
+            </div>
+            <span className="w-8 text-right font-bold text-gray-800 shrink-0">{count}</span>
+            <span className="w-10 text-right text-gray-400 shrink-0">{percentage.toFixed(1)}%</span>
+          </div>
+        );
+      })}
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={onToggleShowAll}
+          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 mt-1"
+        >
+          {showAll ? 'Ver menos' : `Ver todas (${entries.length})`}
+        </button>
+      )}
+    </div>
+  );
+};
+
+const sanitizeFilename = (text) =>
+  (text || 'grafico')
+    .replace(/[^a-z0-9áéíóúñü\s-]/gi, '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .slice(0, 60) || 'grafico';
+
+const wrapCanvasText = (ctx, text, maxWidth, maxLines = 3) => {
+  const words = String(text || '').split(/\s+/);
+  const lines = [];
+  let line = '';
+  words.forEach((word) => {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if (line) lines.push(line);
+  return lines.slice(0, maxLines);
+};
+
+const downloadChartWithData = (chartInstance, stat, questionId) => {
+  if (!chartInstance || typeof chartInstance.toBase64Image !== 'function') return;
+
+  const chartImage = chartInstance.toBase64Image('image/png', 1);
+  const img = new Image();
+  img.onload = () => {
+    const padding = 28;
+    const contentWidth = Math.max(img.width, 520);
+    const tableRows = Object.entries(stat.data || {}).sort((a, b) => b[1] - a[1]);
+    const rowHeight = 22;
+    const tableHeight = Math.max(tableRows.length, 1) * rowHeight + 72;
+    const titleLines = [];
+    const metaLine = `${stat.totalAnswers} respuesta${stat.totalAnswers === 1 ? '' : 's'}`;
+
+    const canvas = document.createElement('canvas');
+    const titleCanvas = document.createElement('canvas');
+    const titleCtx = titleCanvas.getContext('2d');
+    titleCtx.font = 'bold 16px system-ui, sans-serif';
+    const wrappedTitle = wrapCanvasText(titleCtx, stat.questionText, contentWidth - padding * 2, 3);
+    titleLines.push(...wrappedTitle);
+
+    canvas.width = contentWidth + padding * 2;
+    canvas.height = padding + titleLines.length * 20 + 24 + img.height + tableHeight + padding;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 16px system-ui, sans-serif';
+    let y = padding + 16;
+    titleLines.forEach((tLine) => {
+      ctx.fillText(tLine, padding, y);
+      y += 20;
+    });
+
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '12px system-ui, sans-serif';
+    ctx.fillText(metaLine, padding, y + 4);
+    y += 28;
+
+    const chartX = padding + Math.max(0, (contentWidth - img.width) / 2);
+    ctx.drawImage(img, chartX, y, img.width, img.height);
+    y += img.height + 24;
+
+    ctx.fillStyle = '#374151';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText('Datos', padding, y);
+    y += 18;
+
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.beginPath();
+    ctx.moveTo(padding, y);
+    ctx.lineTo(canvas.width - padding, y);
+    ctx.stroke();
+    y += 16;
+
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillStyle = '#4b5563';
+    ctx.fillText('Opción', padding, y);
+    ctx.fillText('Cantidad', canvas.width - padding - 100, y);
+    ctx.fillText('%', canvas.width - padding - 36, y);
+    y += 14;
+
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillStyle = '#111827';
+    tableRows.forEach(([label, count]) => {
+      const pct = stat.totalAnswers > 0 ? ((count / stat.totalAnswers) * 100).toFixed(1) : '0.0';
+      const truncated = label.length > 55 ? `${label.slice(0, 52)}...` : label;
+      ctx.fillText(truncated, padding, y);
+      ctx.fillText(String(count), canvas.width - padding - 100, y);
+      ctx.fillText(`${pct}%`, canvas.width - padding - 36, y);
+      y += rowHeight;
+    });
+
+    const link = document.createElement('a');
+    link.download = `${sanitizeFilename(stat.questionText)}_${String(questionId).slice(-8)}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
+  img.src = chartImage;
+};
+
+const QuestionStatCard = ({
+  questionId,
+  stat,
+  chartType,
+  onChartTypeChange,
+  textExpanded,
+  onToggleText,
+  showAllRows,
+  onToggleAllRows,
+  getChartData,
+  getChartOptions,
+  getDefaultChartType,
+  variant = 'featured',
+}) => {
+  const chartRef = useRef(null);
+  const isFeatured = variant === 'featured';
+  const optionCount = Object.keys(stat.data || {}).length;
+  const resolvedChartType = chartType || getDefaultChartType(questionId, optionCount);
+  const chartHeight = isFeatured
+    ? Math.min(380, Math.max(260, 100 + optionCount * 44))
+    : Math.min(280, Math.max(160, 60 + optionCount * 32));
+  const showChart = stat.statKind === 'categorical' && optionCount >= 1;
+  const longText = (stat.questionText || '').length > (isFeatured ? 120 : 80);
+  const chartData = getChartData(stat, resolvedChartType);
+  const chartOptions = getChartOptions(stat, resolvedChartType);
+  const tableMaxRows = isFeatured ? 8 : 5;
+
+  const handleDownloadChart = () => {
+    downloadChartWithData(chartRef.current, stat, questionId);
+  };
+
+  const chartBlock = showChart && (
+    <div
+      className={`relative ${isFeatured ? 'mb-4' : 'mt-3'} rounded-2xl overflow-hidden border border-indigo-200/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_8px_24px_-8px_rgba(79,70,229,0.25)]`}
+      style={{
+        height: `${chartHeight}px`,
+        background: 'linear-gradient(145deg, #ffffff 0%, #f5f3ff 45%, #eef2ff 100%)',
+      }}
+    >
+      <div
+        className="absolute inset-0 opacity-[0.35] pointer-events-none"
+        style={{
+          backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(99,102,241,0.12) 0%, transparent 50%), radial-gradient(circle at 80% 80%, rgba(168,85,247,0.1) 0%, transparent 45%)',
+        }}
+      />
+      <div
+        className="absolute inset-0 opacity-[0.04] pointer-events-none"
+        style={{
+          backgroundImage: 'linear-gradient(rgba(99,102,241,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.5) 1px, transparent 1px)',
+          backgroundSize: '20px 20px',
+        }}
+      />
+      <div className="relative h-full p-3 sm:p-4">
+        {resolvedChartType === 'bar' && <Bar ref={chartRef} data={chartData} options={chartOptions} />}
+        {resolvedChartType === 'doughnut' && <Doughnut ref={chartRef} data={chartData} options={chartOptions} />}
+        {resolvedChartType === 'line' && <Line ref={chartRef} data={chartData} options={chartOptions} />}
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      className={
+        isFeatured
+          ? 'bg-white rounded-2xl border-2 border-indigo-100/80 p-5 shadow-lg shadow-indigo-100/40 hover:shadow-xl hover:shadow-indigo-200/50 transition-all duration-300'
+          : 'bg-gray-50/80 rounded-lg border border-gray-200 p-3 shadow-sm'
+      }
+    >
+      <div className={`flex items-start justify-between gap-2 ${isFeatured ? 'mb-3' : 'mb-1.5'}`}>
+        <div className="min-w-0 flex-1">
+          <h3
+            className={`font-bold text-gray-900 ${textExpanded ? '' : isFeatured ? 'line-clamp-2' : 'line-clamp-1'} ${isFeatured ? 'text-base' : 'text-xs'}`}
+            title={stat.questionText}
+          >
+            {stat.questionText}
+          </h3>
+          {longText && (
+            <button
+              type="button"
+              onClick={onToggleText}
+              className="text-xs text-indigo-600 hover:text-indigo-800 mt-0.5"
+            >
+              {textExpanded ? 'Ver menos' : 'Ver texto completo'}
+            </button>
+          )}
+          <p className={`text-gray-500 mt-0.5 ${isFeatured ? 'text-sm' : 'text-[11px]'}`}>
+            {stat.totalAnswers} {stat.totalAnswers === 1 ? 'respuesta' : 'respuestas'}
+            {stat.statKind === 'frequency' && stat.uniqueCount != null && (
+              <span> · {stat.uniqueCount} únicas</span>
+            )}
+            {stat.statKind === 'files' && stat.totalFiles != null && (
+              <span> · {stat.totalFiles} archivos</span>
+            )}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <span
+            className={`inline-flex px-2 py-0.5 rounded-full font-bold uppercase tracking-wide border ${
+              isFeatured
+                ? 'text-[10px] bg-indigo-100 text-indigo-700 border-indigo-200'
+                : 'text-[9px] bg-gray-100 text-gray-600 border-gray-200'
+            }`}
+          >
+            {getQuestionTypeLabel(stat.questionType)}
+          </span>
+          {showChart && isFeatured && (
+            <div className="flex items-center gap-1 bg-gradient-to-br from-white to-indigo-50 rounded-xl p-1.5 border border-indigo-200/80 shadow-md shadow-indigo-100/50">
+              <button
+                type="button"
+                onClick={() => onChartTypeChange(questionId, 'bar')}
+                className={`p-2 rounded-lg transition-all duration-200 ${resolvedChartType === 'bar' ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-300/50 scale-105' : 'text-gray-500 hover:bg-white hover:text-indigo-600'}`}
+                title="Gráfico de Barras"
+              >
+                <FontAwesomeIcon icon={faChartBar} size="sm" className="fa-icon-force-current" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onChartTypeChange(questionId, 'doughnut')}
+                className={`p-2 rounded-lg transition-all duration-200 ${resolvedChartType === 'doughnut' ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-300/50 scale-105' : 'text-gray-500 hover:bg-white hover:text-indigo-600'}`}
+                title="Gráfico de Torta"
+              >
+                <FontAwesomeIcon icon={faChartPie} size="sm" className="fa-icon-force-current" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onChartTypeChange(questionId, 'line')}
+                className={`p-2 rounded-lg transition-all duration-200 ${resolvedChartType === 'line' ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-300/50 scale-105' : 'text-gray-500 hover:bg-white hover:text-indigo-600'}`}
+                title="Gráfico de Líneas"
+              >
+                <FontAwesomeIcon icon={faChartLine} size="sm" className="fa-icon-force-current" />
+              </button>
+              <span className="w-px h-6 bg-indigo-200/80 mx-0.5" />
+              <button
+                type="button"
+                onClick={handleDownloadChart}
+                className="p-2 rounded-lg transition-all duration-200 text-emerald-600 hover:bg-emerald-50 hover:shadow-md"
+                title="Descargar gráfico con datos (PNG)"
+              >
+                <FontAwesomeIcon icon={faDownload} size="sm" className="fa-icon-force-current" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isFeatured && chartBlock}
+
+      {(stat.statKind === 'categorical' || stat.statKind === 'frequency') && (
+        <DistributionTable
+          stat={stat}
+          showAll={showAllRows}
+          onToggleShowAll={onToggleAllRows}
+          maxRows={tableMaxRows}
+        />
+      )}
+
+      {stat.statKind === 'numeric' && (
+        <div className={`grid grid-cols-3 gap-2 ${isFeatured ? 'mt-2' : 'mt-1'}`}>
+          {stat.average !== undefined && (
+            <div className={`text-center rounded-lg border border-indigo-100 bg-indigo-50 ${isFeatured ? 'p-3' : 'p-2'}`}>
+              <div className={`font-bold text-indigo-600 ${isFeatured ? 'text-lg' : 'text-sm'}`}>{formatStatNumber(stat.average)}</div>
+              <div className="text-[10px] font-semibold text-gray-600 uppercase">Promedio</div>
+            </div>
+          )}
+          {stat.min !== undefined && (
+            <div className={`text-center rounded-lg border border-green-100 bg-green-50 ${isFeatured ? 'p-3' : 'p-2'}`}>
+              <div className={`font-bold text-green-600 ${isFeatured ? 'text-lg' : 'text-sm'}`}>{formatStatNumber(stat.min)}</div>
+              <div className="text-[10px] font-semibold text-gray-600 uppercase">Mínimo</div>
+            </div>
+          )}
+          {stat.max !== undefined && (
+            <div className={`text-center rounded-lg border border-blue-100 bg-blue-50 ${isFeatured ? 'p-3' : 'p-2'}`}>
+              <div className={`font-bold text-blue-600 ${isFeatured ? 'text-lg' : 'text-sm'}`}>{formatStatNumber(stat.max)}</div>
+              <div className="text-[10px] font-semibold text-gray-600 uppercase">Máximo</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isFeatured && chartBlock}
+    </div>
+  );
+};
+
+const truncateTableLabel = (text, max = 40) => {
+  const t = (text || '').trim();
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+};
+
+const TABLE_PAGE_SIZE = 50;
+
+const extractDateFromObjectId = (objectIdString) => {
+  try {
+    if (objectIdString && objectIdString.length >= 8) {
+      const timestampHex = objectIdString.substring(0, 8);
+      const timestamp = parseInt(timestampHex, 16);
+      return new Date(timestamp * 1000);
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  return null;
+};
+
+const getResponseTimestamp = (response) => {
+  const dateValue = response.created_at || response.timestamp || response.created
+    || response.date || response.submitted_at;
+  if (dateValue) {
+    const d = new Date(dateValue);
+    if (!isNaN(d.getTime())) return d;
+  }
+  const responseId = response.id || response._id;
+  if (responseId) {
+    const fromId = extractDateFromObjectId(String(responseId));
+    if (fromId && !isNaN(fromId.getTime())) return fromId;
+  }
+  return null;
+};
+
+const flattenAnswerForSearch = (answer) => {
+  if (answer == null || answer === '') return '';
+  if (typeof answer === 'string') {
+    if (answer.startsWith('data:image/')) return '';
+    return answer;
+  }
+  if (Array.isArray(answer)) return answer.map(flattenAnswerForSearch).join(' ');
+  if (typeof answer === 'object') {
+    return Object.values(answer).map(flattenAnswerForSearch).join(' ');
+  }
+  return String(answer);
+};
+
+const responseMatchesFilters = (response, filters) => {
+  const { searchQuery, statusFilter, dateFrom, dateTo, surveyorFilter } = filters;
+
+  if (statusFilter === 'synced' && !response.synced) return false;
+  if (statusFilter === 'pending' && response.synced) return false;
+
+  if (surveyorFilter && surveyorFilter !== 'all') {
+    const surveyor = response.surveyor_name || response.surveyor_id || '';
+    if (String(surveyor) !== surveyorFilter) return false;
+  }
+
+  if (dateFrom || dateTo) {
+    const ts = getResponseTimestamp(response);
+    if (!ts) return false;
+    if (dateFrom) {
+      const from = new Date(`${dateFrom}T00:00:00`);
+      if (ts < from) return false;
+    }
+    if (dateTo) {
+      const to = new Date(`${dateTo}T23:59:59.999`);
+      if (ts > to) return false;
+    }
+  }
+
+  const q = (searchQuery || '').trim().toLowerCase();
+  if (q) {
+    const haystack = [
+      response.id,
+      response._id,
+      response.device_id,
+      response.surveyor_name,
+      response.surveyor_id,
+      ...(response.answers ? Object.values(response.answers).map(flattenAnswerForSearch) : []),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    if (!haystack.includes(q)) return false;
+  }
+
+  return true;
+};
+
+const ResponsesTable = ({
+  survey,
+  responses,
+  onExportExcel,
+  formatAnswer,
+  formatDate,
+  getResponsePublicLinks,
+}) => {
+  const scrollRef = useRef(null);
+  const [page, setPage] = useState(1);
+  const [showColumnPanel, setShowColumnPanel] = useState(false);
+  const [visibleMeta, setVisibleMeta] = useState({
+    num: true,
+    id: false,
+    dispositivo: false,
+    encuestador: false,
+    estado: true,
+    fecha: true,
+    links: false,
+  });
+
+  const tableQuestions = useMemo(
+    () => (survey.questions || []).filter((q) => {
+      const t = q.type || q.question_type;
+      return t !== 'Título' && t !== 'titulo';
+    }),
+    [survey.questions]
+  );
+
+  const [visibleQuestionIds, setVisibleQuestionIds] = useState(() => new Set());
+
+  useEffect(() => {
+    const ids = tableQuestions.map((q) => String(q.id || q._id));
+    setVisibleQuestionIds(new Set(ids));
+    setPage(1);
+  }, [survey.id, survey._id, tableQuestions.length]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [responses]);
+
+  const totalPages = Math.max(1, Math.ceil(responses.length / TABLE_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const startIdx = (safePage - 1) * TABLE_PAGE_SIZE;
+  const pageResponses = responses.slice(startIdx, startIdx + TABLE_PAGE_SIZE);
+  const endIdx = Math.min(startIdx + TABLE_PAGE_SIZE, responses.length);
+
+  const scrollToTop = () => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  };
+
+  const goToPage = (p) => {
+    setPage(Math.max(1, Math.min(p, totalPages)));
+    scrollToTop();
+  };
+
+  const toggleMeta = (key) => {
+    setVisibleMeta((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleQuestion = (qid) => {
+    setVisibleQuestionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(qid)) next.delete(qid);
+      else next.add(qid);
+      return next;
+    });
+  };
+
+  const selectAllQuestions = (select) => {
+    setVisibleQuestionIds(
+      select ? new Set(tableQuestions.map((q) => String(q.id || q._id))) : new Set()
+    );
+  };
+
+  const visibleQuestions = tableQuestions.filter((q) =>
+    visibleQuestionIds.has(String(q.id || q._id))
+  );
+
+  const thClass = 'px-1.5 py-1 text-left text-[9px] font-bold text-white uppercase tracking-wide leading-tight';
+  const tdClass = 'px-1.5 py-1 text-[10px] leading-tight text-gray-700 align-middle';
+  const stickyTh = `${thClass} sticky left-0 z-30 bg-indigo-600 min-w-[28px] w-[28px]`;
+  const stickyTd = `${tdClass} sticky left-0 z-10 bg-white border-r border-gray-100 font-semibold text-gray-900 min-w-[28px] w-[28px] text-center`;
+
+  const renderCellAnswer = (answer, q) => {
+    const qType = q.type || q.question_type;
+    const isAnswerSignature = answer && typeof answer === 'string' && isStatAnswerSignature(answer);
+    const isFileUpload = (qType === 'file_upload' || qType === 'Adjuntar archivos') && Array.isArray(answer) && answer.length > 0;
+
+    if (isAnswerSignature) {
+      return (
+        <img
+          src={answer}
+          alt="Firma"
+          className="max-h-8 w-auto border border-gray-200 rounded cursor-pointer"
+          title="Firma — clic derecho para ver tamaño completo"
+        />
+      );
+    }
+    if (isFileUpload) {
+      return (
+        <span className="text-indigo-600 font-medium text-[9px]" title={`${answer.length} archivo(s)`}>
+          {answer.length} adj.
+        </span>
+      );
+    }
+    const formatted = formatAnswer(answer, qType, q);
+    return (
+      <div className="truncate max-w-[100px]" title={formatted}>
+        {formatted}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-2 w-full text-[10px]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={onExportExcel}
+          className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-[11px] font-semibold rounded-md shadow-sm hover:shadow-md transition-all"
+        >
+          <FontAwesomeIcon icon={faFileExcel} size="xs" className="fa-icon-force-white" />
+          Exportar Excel
+        </button>
+        <div className="flex items-center gap-1.5 text-[10px] text-gray-600">
+          <span>
+            {responses.length === 0
+              ? 'Sin respuestas'
+              : `Mostrando ${startIdx + 1}–${endIdx} de ${responses.length}`}
+          </span>
+          <button
+            type="button"
+            disabled={safePage <= 1}
+            onClick={() => goToPage(safePage - 1)}
+            className="px-1.5 py-0.5 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 text-[10px]"
+          >
+            ‹
+          </button>
+          <span className="font-semibold text-indigo-600 text-[10px]">
+            {safePage} / {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={safePage >= totalPages}
+            onClick={() => goToPage(safePage + 1)}
+            className="px-1.5 py-0.5 rounded border border-gray-200 disabled:opacity-40 hover:bg-gray-50 text-[10px]"
+          >
+            ›
+          </button>
+        </div>
+      </div>
+
+      <div className="border border-gray-200 rounded-lg bg-gray-50/50">
+        <button
+          type="button"
+          onClick={() => setShowColumnPanel((v) => !v)}
+          className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-100/80 rounded-lg"
+        >
+          <span>Columnas visibles</span>
+          <FontAwesomeIcon icon={showColumnPanel ? faChevronUp : faChevronDown} size="xs" className="fa-icon-force-current" />
+        </button>
+        {showColumnPanel && (
+          <div className="px-2 pb-2 space-y-1.5 border-t border-gray-200 pt-1.5">
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+              {[
+                ['num', '#'],
+                ['estado', 'Estado'],
+                ['fecha', 'Fecha'],
+                ['id', 'ID'],
+                ['dispositivo', 'Dispositivo'],
+                ['encuestador', 'Encuestador'],
+                ['links', 'Links'],
+              ].map(([key, label]) => (
+                <label key={key} className="inline-flex items-center gap-0.5 text-[9px] text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={visibleMeta[key]}
+                    onChange={() => toggleMeta(key)}
+                    className="rounded border-gray-300 text-indigo-600"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-2 text-[9px]">
+              <button type="button" onClick={() => selectAllQuestions(true)} className="text-indigo-600 hover:underline">
+                Todas las preguntas
+              </button>
+              <button type="button" onClick={() => selectAllQuestions(false)} className="text-gray-500 hover:underline">
+                Ninguna
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5 max-h-20 overflow-y-auto">
+              {tableQuestions.map((q, qi) => {
+                const qid = String(q.id || q._id);
+                const label = truncateTableLabel(q.text || q.question_text, 24);
+                return (
+                  <label key={qid} className="inline-flex items-center gap-0.5 text-[9px] text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={visibleQuestionIds.has(qid)}
+                      onChange={() => toggleQuestion(qid)}
+                      className="rounded border-gray-300 text-indigo-600"
+                    />
+                    Q{qi + 1}: {label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="max-h-[calc(100vh-220px)] overflow-auto rounded-lg border border-gray-200 bg-white"
+      >
+        <table className="w-full text-[10px] border-collapse table-auto">
+          <thead className="sticky top-0 z-20 bg-gradient-to-r from-indigo-600 to-purple-600">
+            <tr>
+              {visibleMeta.num && (
+                <th className={stickyTh}>#</th>
+              )}
+              {visibleMeta.estado && <th className={thClass}>Estado</th>}
+              {visibleMeta.fecha && <th className={thClass}>Fecha</th>}
+              {visibleMeta.id && <th className={thClass}>ID</th>}
+              {visibleMeta.dispositivo && <th className={thClass}>Disp.</th>}
+              {visibleMeta.encuestador && <th className={thClass}>Enc.</th>}
+              {visibleQuestions.map((q, qi) => {
+                const qid = q.id || q._id;
+                const fullText = q.text || q.question_text || `Pregunta ${qid}`;
+                return (
+                  <th
+                    key={qid}
+                    className={`${thClass} max-w-[100px] w-[100px]`}
+                    title={fullText}
+                  >
+                    <span className="line-clamp-2 block max-w-[96px]">
+                      Q{qi + 1}: {truncateTableLabel(fullText, 28)}
+                    </span>
+                  </th>
+                );
+              })}
+              {visibleMeta.links && <th className={thClass}>Links</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {pageResponses.map((response, index) => {
+              const globalIndex = startIdx + index;
+              const responseId = response.id || response._id;
+              const dateValue = response.created_at || response.timestamp || response.created || response.date || response.submitted_at;
+              const formattedDate = formatDate(dateValue, responseId);
+              const shortDate = formattedDate !== '-' ? formattedDate.split(' ')[0] : '-';
+
+              return (
+                <tr key={responseId || index} className="hover:bg-indigo-50/40 even:bg-gray-50/30">
+                  {visibleMeta.num && (
+                    <td
+                      className={`${stickyTd} ${index % 2 === 1 ? '!bg-gray-50' : ''}`}
+                      title={responseId ? String(responseId) : undefined}
+                    >
+                      {globalIndex + 1}
+                    </td>
+                  )}
+                  {visibleMeta.estado && (
+                    <td className={tdClass}>
+                      {response.synced ? (
+                        <span className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-bold">
+                          <FontAwesomeIcon icon={faCheck} size="xs" className="fa-icon-force-current" />
+                          OK
+                        </span>
+                      ) : (
+                        <span className="inline-flex px-1 py-0.5 bg-yellow-100 text-yellow-700 rounded text-[9px] font-bold">
+                          ⏳
+                        </span>
+                      )}
+                    </td>
+                  )}
+                  {visibleMeta.fecha && (
+                    <td className={`${tdClass} whitespace-nowrap text-[9px]`} title={formattedDate}>
+                      {shortDate}
+                    </td>
+                  )}
+                  {visibleMeta.id && (
+                    <td className={`${tdClass} font-mono text-[9px] max-w-[70px] truncate`} title={responseId}>
+                      {responseId ? String(responseId).slice(0, 10) + '…' : '-'}
+                    </td>
+                  )}
+                  {visibleMeta.dispositivo && (
+                    <td className={`${tdClass} max-w-[70px] truncate text-[9px]`} title={response.device_id}>
+                      {response.device_id || '-'}
+                    </td>
+                  )}
+                  {visibleMeta.encuestador && (
+                    <td className={`${tdClass} max-w-[70px] truncate text-[9px]`}>
+                      {(response.surveyor_name || response.surveyor_id) || '-'}
+                    </td>
+                  )}
+                  {visibleQuestions.map((q) => {
+                    const questionId = q.id || q._id;
+                    const answer = response.answers && response.answers[questionId];
+                    return (
+                      <td key={questionId} className={tdClass}>
+                        {renderCellAnswer(answer, q)}
+                      </td>
+                    );
+                  })}
+                  {visibleMeta.links && (
+                    <td className={tdClass}>
+                      {(() => {
+                        const linkList = getResponsePublicLinks(response, survey.questions);
+                        if (linkList.length === 0) return <span className="text-gray-400">—</span>;
+                        return (
+                          <a
+                            href={linkList[0]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-indigo-600 hover:underline text-[9px]"
+                            title={linkList.join('\n')}
+                          >
+                            {linkList.length > 1 ? `${linkList.length} links` : 'Link'}
+                          </a>
+                        );
+                      })()}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {pageResponses.length === 0 && (
+          <p className="text-center text-[10px] text-gray-400 py-6">No hay respuestas en esta página</p>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // --- VISTA: RESPUESTAS DE ENCUESTAS ---
 
 const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onResetResponses }) => {
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [activeTab, setActiveTab] = useState('individual'); // 'individual', 'statistics', or 'table'
   const [chartTypes, setChartTypes] = useState({}); // { questionId: 'bar' | 'doughnut' | 'line' }
+  const [expandedQuestionText, setExpandedQuestionText] = useState({});
+  const [expandedAllRows, setExpandedAllRows] = useState({});
+  const [otherStatsExpanded, setOtherStatsExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [surveyorFilter, setSurveyorFilter] = useState('all');
+
+  const filterState = useMemo(
+    () => ({ searchQuery, statusFilter, dateFrom, dateTo, surveyorFilter }),
+    [searchQuery, statusFilter, dateFrom, dateTo, surveyorFilter]
+  );
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() || statusFilter !== 'all' || dateFrom || dateTo || surveyorFilter !== 'all'
+  );
+
+  const surveyorOptions = useMemo(() => {
+    const names = new Set();
+    responses.forEach((r) => {
+      const s = r.surveyor_name || r.surveyor_id;
+      if (s) names.add(String(s));
+    });
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'es'));
+  }, [responses]);
+
+  const filteredResponses = useMemo(
+    () => responses.filter((r) => responseMatchesFilters(r, filterState)),
+    [responses, filterState]
+  );
+
+  const stats = useMemo(
+    () => calculateResponseStats(survey, filteredResponses),
+    [filteredResponses, survey]
+  );
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setDateFrom('');
+    setDateTo('');
+    setSurveyorFilter('all');
+  };
 
   if (loading) {
     return (
-      <main className="flex-1 relative z-10">
-        <header className="sticky top-0 z-40 px-4 py-4 md:px-12 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
+      <main className="flex-1 relative z-10 w-full min-w-0 overflow-x-hidden">
+        <header className="sticky top-0 z-40 w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-4 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
           <div className="flex items-center gap-3">
             <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
               <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
@@ -2349,7 +3505,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
             </div>
           </div>
         </header>
-        <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
+        <div className="w-full max-w-none px-4 sm:px-6 lg:px-10 xl:px-14 py-6 md:py-10">
           <div className="text-center py-20">
             <p className="text-gray-500">Cargando respuestas...</p>
           </div>
@@ -2455,68 +3611,31 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     return question ? (question.type || question.question_type) : null;
   };
 
-  // Calculate statistics for dashboard
-  const calculateStats = () => {
-    if (!responses.length || !survey.questions) return {};
-    
-    const stats = {};
-    survey.questions.forEach((q) => {
-      const questionId = q.id || q._id;
-      const questionType = q.type || q.question_type;
-      const questionText = q.text || q.question_text;
-      
-      if (!questionId) return;
-      if (questionType === 'titulo' || questionType === 'Título') return;
-      if (questionType === 'evaluation_table' || questionType === 'Evaluación') return; // No chart stats for evaluation table
-      
-      const answers = responses
-        .map(r => r.answers && r.answers[questionId])
-        .filter(a => a !== undefined && a !== null);
-      
-      if (answers.length === 0) return;
-      
-      stats[questionId] = {
-        questionText,
-        questionType,
-        totalAnswers: answers.length,
-        data: {}
-      };
-      
-      // Calculate statistics based on question type
-      if (['single_choice', 'Opción Única', 'dropdown', 'Desplegable'].includes(questionType)) {
-        answers.forEach(answer => {
-          const key = String(answer);
-          stats[questionId].data[key] = (stats[questionId].data[key] || 0) + 1;
-        });
-      } else if (['checkbox', 'Casillas'].includes(questionType)) {
-        answers.forEach(answer => {
-          const options = Array.isArray(answer) ? answer : [answer];
-          options.forEach(opt => {
-            const key = String(opt);
-            stats[questionId].data[key] = (stats[questionId].data[key] || 0) + 1;
-          });
-        });
-      } else if (['rating', 'Puntuación'].includes(questionType)) {
-        const ratings = answers.map(a => Number(a)).filter(n => !isNaN(n));
-        if (ratings.length > 0) {
-          stats[questionId].average = ratings.reduce((a, b) => a + b, 0) / ratings.length;
-          stats[questionId].min = Math.min(...ratings);
-          stats[questionId].max = Math.max(...ratings);
-        }
-      } else if (['number', 'Número'].includes(questionType)) {
-        const numbers = answers.map(a => Number(a)).filter(n => !isNaN(n));
-        if (numbers.length > 0) {
-          stats[questionId].average = numbers.reduce((a, b) => a + b, 0) / numbers.length;
-          stats[questionId].min = Math.min(...numbers);
-          stats[questionId].max = Math.max(...numbers);
-        }
-      }
-    });
-    
-    return stats;
-  };
+  const getResponsePreviewField = (response) => {
+    if (!response.answers || typeof response.answers !== 'object' || !survey.questions) return null;
 
-  const stats = calculateStats();
+    for (const q of survey.questions) {
+      const questionId = q.id || q._id;
+      const qType = q.type || q.question_type;
+      if (!questionId) continue;
+      if (qType === 'titulo' || qType === 'Título') continue;
+
+      const answer = response.answers[questionId];
+      if (answer === undefined || answer === null || answer === '') continue;
+      if (Array.isArray(answer) && answer.length === 0) continue;
+
+      const label = (q.text || q.question_text || 'Campo').trim();
+      if (isSignature(answer)) {
+        return { label, value: 'Firma' };
+      }
+
+      const formatted = formatAnswer(answer, qType, q);
+      if (!formatted || formatted === '—' || formatted === 'Sin respuesta' || formatted === '__SIGNATURE_IMAGE__') continue;
+
+      return { label, value: String(formatted) };
+    }
+    return null;
+  };
 
   // Función para obtener el tipo de gráfico por defecto
   const getDefaultChartType = (questionId) => {
@@ -2531,104 +3650,38 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     }));
   };
 
-  // Función para generar datos del gráfico
-  const getChartData = (stat) => {
-    const labels = Object.keys(stat.data);
-    const data = Object.values(stat.data);
-    const colors = [
-      'rgba(99, 102, 241, 0.8)', // indigo
-      'rgba(139, 92, 246, 0.8)', // purple
-      'rgba(236, 72, 153, 0.8)', // pink
-      'rgba(34, 197, 94, 0.8)',  // green
-      'rgba(59, 130, 246, 0.8)', // blue
-      'rgba(245, 158, 11, 0.8)', // amber
-      'rgba(239, 68, 68, 0.8)',  // red
-      'rgba(168, 85, 247, 0.8)', // violet
-    ];
-    
-    return {
-      labels,
-      datasets: [{
-        label: 'Respuestas',
-        data,
-        backgroundColor: labels.map((_, i) => colors[i % colors.length]),
-        borderColor: labels.map((_, i) => colors[i % colors.length].replace('0.8', '1')),
-        borderWidth: 2,
-      }]
-    };
-  };
+  // Datos y opciones deluxe para gráficos
+  const getChartData = (stat, chartType = 'bar') => buildDeluxeChartData(stat, chartType);
+  const getChartOptions = (stat, chartType = 'bar') => buildDeluxeChartOptions(stat, chartType);
 
-  // Opciones comunes para los gráficos
-  const getChartOptions = (stat) => ({
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top',
-        labels: {
-          font: {
-            size: 12,
-            weight: 'bold'
-          },
-          padding: 15,
-          usePointStyle: true,
-        }
-      },
-      tooltip: {
-        callbacks: {
-          label: function(context) {
-            const label = context.label || '';
-            const value = context.parsed.y || context.parsed;
-            const percentage = ((value / stat.totalAnswers) * 100).toFixed(1);
-            return `${label}: ${value} (${percentage}%)`;
-          }
-        }
-      }
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: {
-          stepSize: 1,
-          font: {
-            size: 11,
-            weight: 'bold'
-          }
-        },
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)'
-        }
-      },
-      x: {
-        ticks: {
-          font: {
-            size: 11,
-            weight: 'bold'
-          }
-        },
-        grid: {
-          display: false
-        }
-      }
-    }
-  });
+  const orderedStatEntries = (survey.questions || [])
+    .map((q) => {
+      const id = q.id || q._id;
+      return id && stats[id] ? [id, stats[id]] : null;
+    })
+    .filter(Boolean);
+  const chartableStatEntries = orderedStatEntries.filter(([, s]) => s.statKind === 'categorical');
+  const otherStatEntries = orderedStatEntries.filter(([, s]) => s.statKind !== 'categorical');
 
-  // Función para extraer fecha del ObjectId de MongoDB
-  const extractDateFromObjectId = (objectIdString) => {
-    try {
-      // MongoDB ObjectId contiene un timestamp en los primeros 8 caracteres (hexadecimal)
-      // Convertir a timestamp Unix (segundos desde epoch)
-      if (objectIdString && objectIdString.length >= 8) {
-        const timestampHex = objectIdString.substring(0, 8);
-        const timestamp = parseInt(timestampHex, 16);
-        // Convertir de segundos a milisegundos
-        return new Date(timestamp * 1000);
-      }
-    } catch (e) {
-      // Si falla, retornar null
-    }
-    return null;
-  };
+  const renderStatCard = (questionId, stat, variant) => (
+    <QuestionStatCard
+      key={questionId}
+      questionId={questionId}
+      stat={stat}
+      variant={variant}
+      chartType={chartTypes[questionId]}
+      onChartTypeChange={handleChartTypeChange}
+      textExpanded={!!expandedQuestionText[questionId]}
+      onToggleText={() => setExpandedQuestionText((prev) => ({ ...prev, [questionId]: !prev[questionId] }))}
+      showAllRows={!!expandedAllRows[questionId]}
+      onToggleAllRows={() => setExpandedAllRows((prev) => ({ ...prev, [questionId]: !prev[questionId] }))}
+      getChartData={getChartData}
+      getChartOptions={getChartOptions}
+      getDefaultChartType={getDefaultChartType}
+    />
+  );
+
+  // Función para extraer fecha del ObjectId de MongoDB (usa helper compartido arriba)
 
   // Función para formatear fecha
   const formatDate = (dateValue, responseId = null) => {
@@ -2696,7 +3749,8 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
 
   // Función para exportar a Excel
   const exportToExcel = () => {
-    if (!responses.length || !survey.questions) return;
+    const dataToExport = filteredResponses;
+    if (!dataToExport.length || !survey.questions) return;
 
     // Preparar datos para la tabla
     const tableData = [];
@@ -2714,7 +3768,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     headers.push('Link público');
     
     // Agregar filas de datos
-    responses.forEach((response, index) => {
+    dataToExport.forEach((response, index) => {
       // Obtener fecha de diferentes campos posibles
       const dateValue = response.created_at || 
                        response.timestamp || 
@@ -2767,7 +3821,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     
     // Generar nombre de archivo
     const surveyTitle = (survey.title || 'Encuesta').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-    const fileName = `${surveyTitle}_respuestas_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `${surveyTitle}_respuestas${hasActiveFilters ? '_filtrado' : ''}_${new Date().toISOString().split('T')[0]}.xlsx`;
     
     XLSX.writeFile(wb, fileName);
   };
@@ -2775,8 +3829,8 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
   // Vista de respuesta individual detallada
   if (selectedResponse) {
     return (
-      <main className="flex-1 relative z-10">
-        <header className="sticky top-0 z-40 px-4 py-4 md:px-12 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
+      <main className="flex-1 relative z-10 w-full min-w-0 overflow-x-hidden">
+        <header className="sticky top-0 z-40 w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-4 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
           <div className="flex items-center gap-3">
             <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={() => { setSelectedResponse(null); }} title="Volver">
               <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
@@ -2786,8 +3840,8 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
             </div>
           </div>
         </header>
-        <div className="w-full max-w-4xl mx-auto px-4 py-8 md:py-12">
-          <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+        <div className="w-full max-w-none px-4 sm:px-6 lg:px-10 xl:px-14 py-6 md:py-10">
+          <div className="bg-white rounded-2xl border border-gray-200 p-6 md:p-8 shadow-sm w-full">
             <div className="flex justify-between items-start mb-6 pb-4 border-b border-gray-200">
               <div>
                 <h3 className="font-bold text-xl text-gray-800">Respuesta Detallada</h3>
@@ -2828,16 +3882,18 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
   }
 
   return (
-    <main className="flex-1 relative z-10">
-      <header className="sticky top-0 z-40 px-4 py-4 md:px-12 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
-        <div className="flex items-center gap-3">
-          <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" onClick={onBack} title="Volver">
+    <main className="flex-1 relative z-10 w-full min-w-0 overflow-x-hidden">
+      <header className="sticky top-0 z-40 w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-4 md:py-6 flex flex-wrap justify-between items-center gap-3 bg-white/50 backdrop-blur-md border-b border-white/40">
+        <div className="flex items-center gap-3 min-w-0">
+          <button className="p-2 -ml-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors shrink-0" onClick={onBack} title="Volver">
             <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
           </button>
-          <div>
-            <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">{survey.title || 'Respuestas'}</h1>
+          <div className="min-w-0">
+            <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none truncate">{survey.title || 'Respuestas'}</h1>
             <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">
-              {responses.length} {responses.length === 1 ? 'Respuesta' : 'Respuestas'}
+              {hasActiveFilters
+                ? `${filteredResponses.length} de ${responses.length} Respuestas`
+                : `${responses.length} ${responses.length === 1 ? 'Respuesta' : 'Respuestas'}`}
             </span>
           </div>
         </div>
@@ -2845,7 +3901,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
           <button
             type="button"
             onClick={() => onResetResponses(survey)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-xl font-bold text-sm transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-xl font-bold text-sm transition-colors shrink-0"
             title="Borrar todas las respuestas de esta encuesta"
           >
             <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
@@ -2854,7 +3910,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
         )}
       </header>
 
-      <div className={`w-full ${activeTab === 'table' ? 'max-w-full' : 'max-w-7xl'} mx-auto ${activeTab === 'table' ? 'px-0' : 'px-4'} py-8 md:py-12`}>
+      <div className={`w-full max-w-none px-4 sm:px-6 lg:px-10 xl:px-14 ${activeTab === 'table' ? 'py-3 md:py-4' : 'py-6 md:py-10'} overflow-x-hidden`}>
         {responses.length === 0 ? (
           <div className="text-center py-20 border-2 border-dashed border-gray-300 rounded-3xl bg-white/30">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
@@ -2867,29 +3923,125 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
           <div className="space-y-6">
             {/* Estadísticas rápidas */}
             {activeTab !== 'table' && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg">
-                  <div className="text-3xl font-black mb-2">{responses.length}</div>
-                  <div className="text-sm opacity-90 font-medium">Total Respuestas</div>
+                  <div className="text-3xl font-black mb-2">{filteredResponses.length}</div>
+                  <div className="text-sm opacity-90 font-medium">
+                    {hasActiveFilters ? 'Respuestas filtradas' : 'Total Respuestas'}
+                  </div>
                 </div>
                 <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg">
                   <div className="text-3xl font-black mb-2">{Object.keys(stats).length}</div>
                   <div className="text-sm opacity-90 font-medium">Preguntas Respondidas</div>
                 </div>
                 <div className="bg-gradient-to-br from-blue-500 to-cyan-600 rounded-2xl p-6 text-white shadow-lg">
-                  <div className="text-3xl font-black mb-2">{responses.filter(r => r.synced).length}</div>
+                  <div className="text-3xl font-black mb-2">{filteredResponses.filter(r => r.synced).length}</div>
                   <div className="text-sm opacity-90 font-medium">En línea</div>
                 </div>
               </div>
             )}
 
+            {/* Filtros */}
+            <div className="bg-white/80 backdrop-blur-xl rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setFiltersExpanded((v) => !v)}
+                className="w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50/80"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <FontAwesomeIcon icon={faFilter} size="sm" className="text-indigo-500 fa-icon-force-current" />
+                  Filtros
+                  {hasActiveFilters && (
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold">
+                      Activos
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-gray-500 font-normal">
+                  {filteredResponses.length} de {responses.length}
+                  <FontAwesomeIcon icon={filtersExpanded ? faChevronUp : faChevronDown} size="xs" className="ml-2 fa-icon-force-current" />
+                </span>
+              </button>
+              {filtersExpanded && (
+                <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div className="sm:col-span-2 lg:col-span-2 relative">
+                      <FontAwesomeIcon
+                        icon={faSearch}
+                        size="sm"
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 fa-icon-force-current pointer-events-none"
+                      />
+                      <input
+                        type="search"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Buscar en respuestas, ID, encuestador..."
+                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="all">Todos los estados</option>
+                      <option value="synced">En línea</option>
+                      <option value="pending">Pendiente</option>
+                    </select>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                      title="Desde"
+                    />
+                    <input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                      title="Hasta"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    {surveyorOptions.length > 0 && (
+                      <select
+                        value={surveyorFilter}
+                        onChange={(e) => setSurveyorFilter(e.target.value)}
+                        className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 min-w-[160px]"
+                      >
+                        <option value="all">Todos los encuestadores</option>
+                        {surveyorOptions.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    )}
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="px-3 py-2 text-sm font-semibold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                      >
+                        Limpiar filtros
+                      </button>
+                    )}
+                    <span className="text-xs text-gray-500 ml-auto">
+                      {filteredResponses.length === responses.length
+                        ? `Mostrando las ${responses.length} respuestas`
+                        : `${filteredResponses.length} coincidencias de ${responses.length}`}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Sistema de Pestañas */}
-            <div className={`bg-white/80 backdrop-blur-xl rounded-3xl border border-white/60 shadow-lg overflow-hidden ${activeTab === 'table' ? 'mx-0 rounded-none md:rounded-3xl' : 'mx-4'}`}>
+            <div className={`bg-white/80 backdrop-blur-xl rounded-3xl border border-white/60 overflow-hidden w-full ${activeTab === 'table' ? 'shadow-sm' : 'shadow-lg'}`}>
               {/* Tabs Navigation */}
-              <div className="flex border-b border-gray-200 bg-gray-50/50">
+              <div className={`flex border-b border-gray-200 bg-gray-50/50 ${activeTab === 'table' ? 'text-xs' : ''}`}>
                 <button
                   onClick={() => setActiveTab('individual')}
-                  className={`flex-1 px-4 py-4 font-bold text-sm transition-all duration-200 relative ${
+                  className={`flex-1 px-3 py-3 font-bold text-sm transition-all duration-200 relative ${
                     activeTab === 'individual'
                       ? 'text-indigo-600 bg-white'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/50'
@@ -2906,7 +4058,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                 </button>
                 <button
                   onClick={() => setActiveTab('statistics')}
-                  className={`flex-1 px-4 py-4 font-bold text-sm transition-all duration-200 relative ${
+                  className={`flex-1 px-3 py-3 font-bold text-sm transition-all duration-200 relative ${
                     activeTab === 'statistics'
                       ? 'text-indigo-600 bg-white'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/50'
@@ -2923,7 +4075,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                 </button>
                 <button
                   onClick={() => setActiveTab('table')}
-                  className={`flex-1 px-4 py-4 font-bold text-sm transition-all duration-200 relative ${
+                  className={`flex-1 px-3 py-3 font-bold text-sm transition-all duration-200 relative ${
                     activeTab === 'table'
                       ? 'text-indigo-600 bg-white'
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/50'
@@ -2941,331 +4093,148 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
               </div>
 
               {/* Tab Content */}
-              <div className={`${activeTab === 'table' ? 'p-4 md:p-6' : 'p-6 md:p-8'}`}>
+              <div className={`${activeTab === 'table' ? 'p-2' : 'p-6 md:p-8'}`}>
                 {activeTab === 'table' ? (
-                  /* Pestaña: Tabla de Respuestas */
-                  <div className="space-y-4 w-full">
-                    {/* Botón de exportar */}
-                    <div className="flex justify-end mb-4 px-2">
-                      <button
-                        onClick={exportToExcel}
-                        className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200"
-                      >
-                        <FontAwesomeIcon icon={faFileExcel} size="sm" className="fa-icon-force-white" />
-                        <span>Exportar a Excel</span>
-                        <FontAwesomeIcon icon={faDownload} size="xs" className="fa-icon-force-white" />
-                      </button>
-                    </div>
-                    
-                    {/* Tabla de respuestas */}
-                    <div className="overflow-x-auto w-full rounded-2xl border-2 border-gray-200 bg-white shadow-lg">
-                      <table className="w-full divide-y divide-gray-200">
-                        <thead className="bg-gradient-to-r from-indigo-500 to-purple-600">
-                          <tr>
-                            <th className="px-4 py-4 text-left text-xs font-black text-white uppercase tracking-wider sticky left-0 bg-gradient-to-r from-indigo-500 to-purple-600 z-10">
-                              #
-                            </th>
-                            <th className="px-4 py-4 text-left text-xs font-black text-white uppercase tracking-wider">
-                              ID Respuesta
-                            </th>
-                            <th className="px-4 py-4 text-left text-xs font-black text-white uppercase tracking-wider">
-                              Dispositivo
-                            </th>
-                            <th className="px-4 py-4 text-left text-xs font-black text-white uppercase tracking-wider">
-                              Encuestador
-                            </th>
-                            <th className="px-4 py-4 text-left text-xs font-black text-white uppercase tracking-wider">
-                              Estado
-                            </th>
-                            {survey.questions && survey.questions.map((q) => {
-                              const questionId = q.id || q._id;
-                              const questionText = q.text || q.question_text || `Pregunta ${questionId}`;
-                              return (
-                                <th key={questionId} className="px-4 py-4 text-left text-xs font-black text-white uppercase tracking-wider min-w-[200px]">
-                                  {questionText}
-                                </th>
-                              );
-                            })}
-                            <th className="px-4 py-4 text-left text-xs font-black text-white uppercase tracking-wider min-w-[280px]">
-                              Link público
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {responses.map((response, index) => (
-                            <tr key={response.id || response._id || index} className="hover:bg-indigo-50/50 transition-colors">
-                              <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-gray-900 sticky left-0 bg-white z-10 border-r border-gray-200">
-                                {index + 1}
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700 font-mono text-xs">
-                                {(response.id || response._id || `Respuesta ${index + 1}`).substring(0, 12)}...
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700">
-                                {response.device_id || '-'}
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-700">
-                                {(response.surveyor_name || response.surveyor_id) || '-'}
-                              </td>
-                              <td className="px-4 py-4 whitespace-nowrap">
-                                {response.synced ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                                    <FontAwesomeIcon icon={faCheck} size="xs" className="fa-icon-force-current" />
-                                    En línea
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">
-                                    ⏳ Pendiente
-                                  </span>
-                                )}
-                              </td>
-                              {survey.questions && survey.questions.map((q) => {
-                                const questionId = q.id || q._id;
-                                const answer = response.answers && response.answers[questionId];
-                                const qType = q.type || q.question_type;
-                                const isAnswerSignature = answer && typeof answer === 'string' && 
-                                  (answer.startsWith('data:image/png;base64,') || 
-                                   answer.startsWith('data:image/jpeg;base64,') ||
-                                   (answer.length > 100 && /^[A-Za-z0-9+/=]+$/.test(answer.split(',')[1] || answer)));
-                                const isFileUpload = (qType === 'file_upload' || qType === 'Adjuntar archivos') && Array.isArray(answer) && answer.length > 0;
-                                return (
-                                  <td key={questionId} className="px-4 py-4 text-sm text-gray-700 max-w-xs">
-                                    {isAnswerSignature ? (
-                                      <img 
-                                        src={answer} 
-                                        alt="Firma" 
-                                        className="max-w-[200px] h-auto border border-gray-300 rounded shadow-sm"
-                                        style={{ maxHeight: '80px', objectFit: 'contain' }}
-                                      />
-                                    ) : isFileUpload ? (
-                                      <div className="flex flex-wrap gap-2">
-                                        {answer.map((id) => (
-                                          <AttachmentPreview key={id} attachmentId={id} compact />
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <div className="truncate" title={formatAnswer(answer, qType, q)}>
-                                        {formatAnswer(answer, qType, q)}
-                                      </div>
-                                    )}
-                                  </td>
-                                );
-                              })}
-                              <td className="px-4 py-4 text-sm text-gray-700 max-w-[280px]">
-                                {(() => {
-                                  const linkList = getResponsePublicLinks(response, survey.questions);
-                                  if (linkList.length === 0) return <span className="text-gray-400">—</span>;
-                                  return (
-                                    <div className="flex flex-col gap-1">
-                                      {linkList.map((url, i) => (
-                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline truncate text-xs" title={url}>
-                                          {url.length > 45 ? url.slice(0, 42) + '…' : url}
-                                        </a>
-                                      ))}
-                                    </div>
-                                  );
-                                })()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    
-                    {/* Información adicional */}
-                    <div className="text-center text-sm text-gray-500 mt-4">
-                      <p>Total de respuestas: <span className="font-bold text-indigo-600">{responses.length}</span></p>
-                    </div>
-                  </div>
+                  <ResponsesTable
+                    survey={survey}
+                    responses={filteredResponses}
+                    onExportExcel={exportToExcel}
+                    formatAnswer={formatAnswer}
+                    formatDate={formatDate}
+                    getResponsePublicLinks={getResponsePublicLinks}
+                  />
                 ) : activeTab === 'individual' ? (
                   /* Pestaña: Respuestas Individuales */
-                  <div className="space-y-4">
-                    {responses.map((response, index) => (
+                  filteredResponses.length === 0 ? (
+                    <div className="text-center py-16">
+                      <p className="text-gray-500 font-medium">Ninguna respuesta coincide con los filtros</p>
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="mt-3 text-sm text-indigo-600 font-semibold hover:underline"
+                      >
+                        Limpiar filtros
+                      </button>
+                    </div>
+                  ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+                    {filteredResponses.map((response, index) => {
+                      const dateValue = response.created_at || response.timestamp || response.created || response.date || response.submitted_at;
+                      const responseId = response.id || response._id;
+                      const formattedDate = formatDate(dateValue, responseId);
+                      const surveyor = response.surveyor_name || response.surveyor_id;
+                      const answerCount = response.answers && typeof response.answers === 'object'
+                        ? Object.keys(response.answers).length
+                        : 0;
+                      const metaParts = [
+                        formattedDate !== '-' ? formattedDate : null,
+                        surveyor || null,
+                        answerCount > 0 ? `${answerCount} preg.` : 'Sin respuestas',
+                      ].filter(Boolean);
+                      const preview = getResponsePreviewField(response);
+
+                      return (
                       <div 
                         key={response.id || response._id || index} 
-                        className="bg-white rounded-2xl border-2 border-gray-200 p-6 shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all duration-200 cursor-pointer group"
+                        className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer group"
                         onClick={() => setSelectedResponse(response)}
                       >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-lg">
-                                {index + 1}
-                              </div>
-                              <h3 className="font-black text-xl text-gray-900 group-hover:text-indigo-700 transition-colors">Respuesta #{index + 1}</h3>
-                            </div>
-                            <p className="text-sm text-gray-600 mt-2">
-                              {response.device_id && <span className="inline-flex items-center gap-1"><FontAwesomeIcon icon={faHashtag} size="xs" className="fa-icon-force-current" /> {response.device_id}</span>}
-                              {(response.surveyor_name || response.surveyor_id) && <span className="ml-4">Encuestador: {response.surveyor_name || response.surveyor_id}</span>}
-                            </p>
-                          </div>
-                          <div className="text-right flex flex-col items-end gap-2">
-                            {response.synced ? (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                                <FontAwesomeIcon icon={faCheck} size="xs" className="fa-icon-force-current" />
-                                En línea
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold">
-                                ⏳ Pendiente
-                              </span>
-                            )}
-                            <div className="text-xs text-indigo-600 font-semibold group-hover:text-indigo-700">Click para ver detalles →</div>
-                          </div>
-                        </div>
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                          <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <FontAwesomeIcon icon={faListUl} size="sm" className="fa-icon-force-current" />
-                            <span>
-                              {response.answers && typeof response.answers === 'object' 
-                                ? `${Object.keys(response.answers).length} preguntas respondidas`
-                                : 'Sin respuestas estructuradas'}
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="font-bold text-gray-900 group-hover:text-indigo-700">#{index + 1}</span>
+                          {response.synced ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-bold shrink-0">
+                              <FontAwesomeIcon icon={faCheck} size="xs" className="fa-icon-force-current" />
+                              En línea
                             </span>
-                          </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold shrink-0">
+                              ⏳ Pendiente
+                            </span>
+                          )}
                         </div>
+                        <p className="text-xs text-gray-600 truncate" title={metaParts.join(' · ')}>
+                          {metaParts.join(' · ')}
+                        </p>
+                        {preview && (
+                          <p className="text-xs text-gray-500 truncate mt-0.5" title={`${preview.label}: ${preview.value}`}>
+                            <span className="font-medium text-gray-600">{preview.label}:</span> {preview.value}
+                          </p>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
+                  )
                 ) : (
                   /* Pestaña: Estadísticas por Pregunta */
-                  <div className="space-y-6">
-                    {Object.keys(stats).length > 0 ? (
-                      Object.entries(stats).map(([questionId, stat]) => {
-                        const chartType = getDefaultChartType(questionId);
-                        const chartData = getChartData(stat);
-                        const chartOptions = getChartOptions(stat);
-                        
-                        return (
-                          <div key={questionId} className="bg-gradient-to-br from-white to-gray-50/50 rounded-2xl border-2 border-gray-200 p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
-                            <div className="flex items-start justify-between gap-4 mb-6">
-                              <div className="flex items-start gap-4 flex-1">
-                                <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-lg">
-                                  <FontAwesomeIcon icon={faChartBar} size="sm" className="fa-icon-force-white" />
-                                </div>
-                                <div className="flex-1">
-                                  <h3 className="font-black text-xl text-gray-900 mb-2">{stat.questionText}</h3>
-                                  <p className="text-sm text-gray-600">
-                                    {stat.totalAnswers} {stat.totalAnswers === 1 ? 'respuesta' : 'respuestas'}
+                  filteredResponses.length === 0 ? (
+                    <div className="text-center py-16">
+                      <p className="text-gray-500 font-medium">Ninguna respuesta coincide con los filtros</p>
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="mt-3 text-sm text-indigo-600 font-semibold hover:underline"
+                      >
+                        Limpiar filtros
+                      </button>
+                    </div>
+                  ) : (
+                  <div className="space-y-8">
+                    {orderedStatEntries.length > 0 ? (
+                      <>
+                        {chartableStatEntries.length > 0 && (
+                          <section>
+                            <div className="flex items-center gap-3 mb-4">
+                              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md">
+                                <FontAwesomeIcon icon={faChartBar} size="sm" className="fa-icon-force-white" />
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-black text-gray-900">Distribución gráfica</h3>
+                                <p className="text-sm text-gray-500">{chartableStatEntries.length} pregunta{chartableStatEntries.length === 1 ? '' : 's'} con gráficos</p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                              {chartableStatEntries.map(([questionId, stat]) => renderStatCard(questionId, stat, 'featured'))}
+                            </div>
+                          </section>
+                        )}
+
+                        {otherStatEntries.length > 0 && (
+                          <section className={chartableStatEntries.length > 0 ? 'border-t border-gray-200 pt-6' : ''}>
+                            {chartableStatEntries.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => setOtherStatsExpanded((v) => !v)}
+                                className="flex items-center justify-between w-full gap-3 mb-3 text-left group"
+                              >
+                                <div>
+                                  <h3 className="text-sm font-bold text-gray-600 group-hover:text-gray-800">
+                                    Otros campos (texto, documentos, números)
+                                  </h3>
+                                  <p className="text-xs text-gray-400">
+                                    {otherStatEntries.length} pregunta{otherStatEntries.length === 1 ? '' : 's'} sin gráfico de distribución
                                   </p>
                                 </div>
-                              </div>
-                              
-                              {/* Selector de tipo de gráfico */}
-                              {['single_choice', 'Opción Única', 'dropdown', 'Desplegable', 'checkbox', 'Casillas'].includes(stat.questionType) && (
-                                <div className="flex items-center gap-2 bg-white rounded-xl p-2 border border-gray-200 shadow-sm">
-                                  <button
-                                    onClick={() => handleChartTypeChange(questionId, 'bar')}
-                                    className={`p-2 rounded-lg transition-all duration-200 ${
-                                      chartType === 'bar'
-                                        ? 'bg-indigo-500 text-white shadow-md'
-                                        : 'text-gray-600 hover:bg-gray-100'
-                                    }`}
-                                    title="Gráfico de Barras"
-                                  >
-                                    <FontAwesomeIcon icon={faChartBar} size="sm" className="fa-icon-force-current" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleChartTypeChange(questionId, 'doughnut')}
-                                    className={`p-2 rounded-lg transition-all duration-200 ${
-                                      chartType === 'doughnut'
-                                        ? 'bg-indigo-500 text-white shadow-md'
-                                        : 'text-gray-600 hover:bg-gray-100'
-                                    }`}
-                                    title="Gráfico de Torta"
-                                  >
-                                    <FontAwesomeIcon icon={faChartPie} size="sm" className="fa-icon-force-current" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleChartTypeChange(questionId, 'line')}
-                                    className={`p-2 rounded-lg transition-all duration-200 ${
-                                      chartType === 'line'
-                                        ? 'bg-indigo-500 text-white shadow-md'
-                                        : 'text-gray-600 hover:bg-gray-100'
-                                    }`}
-                                    title="Gráfico de Líneas"
-                                  >
-                                    <FontAwesomeIcon icon={faChartLine} size="sm" className="fa-icon-force-current" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                            
-                            {['single_choice', 'Opción Única', 'dropdown', 'Desplegable', 'checkbox', 'Casillas'].includes(stat.questionType) && (
-                              <div className="mt-6">
-                                <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm" style={{ height: '400px' }}>
-                                  {chartType === 'bar' && (
-                                    <Bar data={chartData} options={chartOptions} />
-                                  )}
-                                  {chartType === 'doughnut' && (
-                                    <Doughnut 
-                                      data={chartData} 
-                                      options={{
-                                        ...chartOptions,
-                                        plugins: {
-                                          ...chartOptions.plugins,
-                                          legend: {
-                                            ...chartOptions.plugins.legend,
-                                            position: 'right'
-                                          }
-                                        }
-                                      }} 
-                                    />
-                                  )}
-                                  {chartType === 'line' && (
-                                    <Line data={chartData} options={chartOptions} />
-                                  )}
-                                </div>
-                                
-                                {/* Tabla de datos debajo del gráfico */}
-                                <div className="mt-4 bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                                  <div className="space-y-2">
-                                    {Object.entries(stat.data).map(([option, count]) => {
-                                      const percentage = (count / stat.totalAnswers) * 100;
-                                      return (
-                                        <div key={option} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-                                          <span className="text-sm font-semibold text-gray-800">{option}</span>
-                                          <div className="flex items-center gap-4">
-                                            <span className="text-sm font-bold text-indigo-600">{count}</span>
-                                            <span className="text-xs text-gray-500 w-16 text-right">{percentage.toFixed(1)}%</span>
-                                            <div className="w-24 bg-gray-200 rounded-full h-2 overflow-hidden">
-                                              <div 
-                                                className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full transition-all duration-500" 
-                                                style={{ width: `${percentage}%` }}
-                                              ></div>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
+                                <FontAwesomeIcon
+                                  icon={otherStatsExpanded ? faChevronUp : faChevronDown}
+                                  size="sm"
+                                  className="text-gray-400 shrink-0 fa-icon-force-current"
+                                />
+                              </button>
+                            ) : (
+                              <div className="mb-3">
+                                <h3 className="text-sm font-bold text-gray-600">Resumen de campos</h3>
+                                <p className="text-xs text-gray-400">{otherStatEntries.length} pregunta{otherStatEntries.length === 1 ? '' : 's'}</p>
                               </div>
                             )}
-                            
-                            {['rating', 'Puntuación', 'number', 'Número'].includes(stat.questionType) && (
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                {stat.average !== undefined && (
-                                  <div className="text-center p-6 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-xl border-2 border-indigo-200">
-                                    <div className="text-3xl font-black text-indigo-600 mb-1">{stat.average.toFixed(2)}</div>
-                                    <div className="text-sm font-semibold text-gray-700">Promedio</div>
-                                  </div>
-                                )}
-                                {stat.min !== undefined && (
-                                  <div className="text-center p-6 bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-200">
-                                    <div className="text-3xl font-black text-green-600 mb-1">{stat.min}</div>
-                                    <div className="text-sm font-semibold text-gray-700">Mínimo</div>
-                                  </div>
-                                )}
-                                {stat.max !== undefined && (
-                                  <div className="text-center p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-200">
-                                    <div className="text-3xl font-black text-blue-600 mb-1">{stat.max}</div>
-                                    <div className="text-sm font-semibold text-gray-700">Máximo</div>
-                                  </div>
-                                )}
+                            {(otherStatsExpanded || chartableStatEntries.length === 0) && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                                {otherStatEntries.map(([questionId, stat]) => renderStatCard(questionId, stat, 'compact'))}
                               </div>
                             )}
-                          </div>
-                        );
-                      })
+                          </section>
+                        )}
+                      </>
                     ) : (
                       <div className="text-center py-12">
                         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
@@ -3276,6 +4245,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                       </div>
                     )}
                   </div>
+                  )
                 )}
               </div>
             </div>
@@ -3312,6 +4282,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     name: ''
   });
   const [formError, setFormError] = useState('');
+  const { useTableLayout } = useBreakpoint();
+  const showGroupColumn = users.some(u => u.group_name || u.user_group_id);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -3710,42 +4682,47 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   }
 
   return (
-    <main className="flex-1 relative z-10">
-      <header className="sticky top-0 z-40 px-4 py-5 md:px-12 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <main className="flex-1 relative z-10 overflow-x-hidden w-full min-w-0">
+      <header className="sticky top-0 z-40 w-full px-4 sm:px-6 lg:px-10 xl:px-14 py-4 md:py-6 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-sm">
+        <div className="w-full max-w-none flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div>
             <h1 className="text-3xl md:text-4xl font-black bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent tracking-tight mb-1">
               Gestión de Usuarios
             </h1>
             <p className="text-sm text-gray-600 font-medium">Administra usuarios y grupos del sistema.</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3 w-full lg:w-auto justify-start lg:justify-end">
             {activeTab === 'usuarios' && canManageUsers && (
               <button 
                 onClick={handleNewUser} 
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
+                className="px-3 py-2 sm:px-6 sm:py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 min-h-[44px]"
               >
-                <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" /> Nuevo Usuario
+                <FontAwesomeIcon icon={faUserPlus} size="sm" className="fa-icon-force-white" />
+                <span className="hidden xs:inline sm:inline">Nuevo Usuario</span>
+                <span className="xs:hidden sm:hidden">Nuevo</span>
               </button>
             )}
             {activeTab === 'grupos' && canManageUsers && (
               <button 
                 onClick={handleNewGroup} 
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
+                className="px-3 py-2 sm:px-6 sm:py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-xl hover:shadow-2xl flex items-center gap-2 transition-all duration-200 min-h-[44px]"
               >
-                <FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-white" /> Nuevo Grupo
+                <FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-white" />
+                <span className="hidden sm:inline">Nuevo Grupo</span>
+                <span className="sm:hidden">Nuevo</span>
               </button>
             )}
             <button 
               onClick={onBack} 
-              className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-sm shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2"
+              className="px-3 py-2 sm:px-6 sm:py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-xs sm:text-sm shadow-lg flex items-center gap-2 transition-all duration-200 min-h-[44px]"
             >
-              <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" /> Volver
+              <FontAwesomeIcon icon={faChevronLeft} size="sm" className="fa-icon-force-current" />
+              Volver
             </button>
             {onLogout && (
               <button 
                 onClick={onLogout} 
-                className="px-6 py-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl font-bold text-sm shadow-xl hover:shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95"
+                className="px-3 py-2 sm:px-6 sm:py-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white rounded-xl font-bold text-xs sm:text-sm shadow-xl transition-all duration-200 min-h-[44px]"
               >
                 Salir
               </button>
@@ -3754,7 +4731,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         </div>
         
         {/* Tabs */}
-        <div className="max-w-7xl mx-auto mt-4 flex gap-4 border-b border-gray-200">
+        <div className="w-full max-w-none mt-4 flex gap-4 border-b border-gray-200">
           <button
             onClick={() => setActiveTab('usuarios')}
             className={`px-6 py-3 font-bold text-sm transition-colors ${
@@ -3778,7 +4755,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         </div>
       </header>
 
-      <div className="w-full max-w-7xl mx-auto px-4 py-8 md:py-12">
+      <div className="w-full max-w-none px-4 sm:px-6 lg:px-10 xl:px-14 py-6 md:py-10 overflow-x-hidden">
         {activeTab === 'usuarios' && showUserForm && canManageUsers ? (
           <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg">
             <div className="flex justify-between items-center mb-6">
@@ -4029,92 +5006,129 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                 </button>
                 )}
               </div>
-            ) : (
+            ) : useTableLayout ? (
               <div className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 shadow-lg overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  <table className="w-full table-fixed">
                     <thead className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b-2 border-indigo-200">
                       <tr>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">ID</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Usuario</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Nombre</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Email</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Rol</th>
-                        {users.some(u => u.group_name || u.user_group_id) && (
-                          <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Grupo</th>
+                        <th className="px-4 py-3 text-left text-xs font-black text-gray-700 uppercase w-[120px]">Usuario</th>
+                        <th className="px-4 py-3 text-left text-xs font-black text-gray-700 uppercase w-[140px]">Nombre</th>
+                        <th className="px-4 py-3 text-left text-xs font-black text-gray-700 uppercase">Email</th>
+                        <th className="px-4 py-3 text-left text-xs font-black text-gray-700 uppercase w-[100px]">Rol</th>
+                        {showGroupColumn && (
+                          <th className="px-4 py-3 text-left text-xs font-black text-gray-700 uppercase w-[130px]">Grupo</th>
                         )}
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Estado</th>
-                        <th className="px-6 py-4 text-left text-xs font-black text-gray-700 uppercase tracking-wider">Fecha de Registro</th>
-                        {canManageUsers && <th className="px-6 py-4 text-center text-xs font-black text-gray-700 uppercase tracking-wider">Acciones</th>}
+                        <th className="px-4 py-3 text-left text-xs font-black text-gray-700 uppercase w-[80px]">Estado</th>
+                        <th className="px-4 py-3 text-left text-xs font-black text-gray-700 uppercase w-[100px]">Registro</th>
+                        {canManageUsers && <th className="px-4 py-3 text-center text-xs font-black text-gray-700 uppercase w-[90px]">Acciones</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {users.map((user) => (
+                      {users.map((user) => {
+                        const fullName = user.first_name || user.last_name
+                          ? `${user.first_name || ''} ${user.last_name || ''}`.trim()
+                          : '-';
+                        return (
                         <tr key={user.id} className="hover:bg-indigo-50/50 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.id}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{user.username}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                            {user.first_name || user.last_name 
-                              ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || '-'
-                              : '-'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{user.email || '-'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${getRoleBadgeColor(user.role)}`}>
+                          <td className="px-4 py-3 text-sm font-bold text-gray-900 truncate" title={user.username}>{user.username}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700 truncate" title={fullName}>{fullName}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600 truncate" title={user.email || ''}>{user.email || '-'}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${getRoleBadgeColor(user.role)}`}>
                               {getRoleLabel(user.role)}
                             </span>
                           </td>
-                          {users.some(u => u.group_name || u.user_group_id) && (
-                            <td className="px-6 py-4 whitespace-nowrap">
+                          {showGroupColumn && (
+                            <td className="px-4 py-3">
                               {user.group_name ? (
-                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-300">
-                                  <FontAwesomeIcon icon={faUsers} size="xs" className="fa-icon-force-current" />
-                                  {user.group_name}
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-300 truncate max-w-full" title={user.group_name}>
+                                  <FontAwesomeIcon icon={faUsers} size="xs" className="fa-icon-force-current shrink-0" />
+                                  <span className="truncate">{user.group_name}</span>
                                 </span>
                               ) : (
                                 <span className="text-sm text-gray-400">-</span>
                               )}
                             </td>
                           )}
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-4 py-3">
                             {user.is_active ? (
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-300">
-                                Activo
-                              </span>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-300">Activo</span>
                             ) : (
-                              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">
-                                Inactivo
-                              </span>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">Inactivo</span>
                             )}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          <td className="px-4 py-3 text-sm text-gray-600">
                             {user.date_joined ? new Date(user.date_joined).toLocaleDateString('es-ES') : '-'}
                           </td>
                           {canManageUsers && (
-                          <td className="px-6 py-4 whitespace-nowrap text-center">
-                            <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => handleEditUser(user)}
-                                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                title="Editar usuario"
-                              >
+                          <td className="px-4 py-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => handleEditUser(user)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg min-w-[44px] min-h-[44px]" title="Editar usuario">
                                 <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
                               </button>
-                              <button
-                                onClick={() => handleDeleteUser(user.id)}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Eliminar usuario"
-                              >
+                              <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg min-w-[44px] min-h-[44px]" title="Eliminar usuario">
                                 <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
                               </button>
                             </div>
                           </td>
                           )}
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+                {users.map((user) => {
+                  const fullName = user.first_name || user.last_name
+                    ? `${user.first_name || ''} ${user.last_name || ''}`.trim()
+                    : null;
+                  return (
+                    <div key={user.id} className="bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 shadow-md p-4 flex flex-col gap-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-black text-gray-900 truncate">{user.username}</p>
+                          {fullName && <p className="text-sm text-gray-600 truncate">{fullName}</p>}
+                        </div>
+                        {canManageUsers && (
+                          <div className="flex shrink-0 gap-1">
+                            <button onClick={() => handleEditUser(user)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg min-w-[44px] min-h-[44px]" title="Editar">
+                              <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
+                            </button>
+                            <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg min-w-[44px] min-h-[44px]" title="Eliminar">
+                              <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${getRoleBadgeColor(user.role)}`}>
+                          {getRoleLabel(user.role)}
+                        </span>
+                        {user.group_name && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700 border border-purple-300">
+                            <FontAwesomeIcon icon={faUsers} size="xs" className="fa-icon-force-current" />
+                            {user.group_name}
+                          </span>
+                        )}
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${user.is_active ? 'bg-green-100 text-green-700 border-green-300' : 'bg-red-100 text-red-700 border-red-300'}`}>
+                          {user.is_active ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </div>
+                      {user.email && (
+                        <p className="text-sm text-gray-500 truncate" title={user.email}>{user.email}</p>
+                      )}
+                      {user.date_joined && (
+                        <p className="text-xs text-gray-400">
+                          Registro: {new Date(user.date_joined).toLocaleDateString('es-ES')}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>

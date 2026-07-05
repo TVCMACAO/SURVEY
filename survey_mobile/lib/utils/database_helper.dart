@@ -1,7 +1,57 @@
+import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import '../models/response.dart';
 import '../models/survey.dart';
 import 'constants.dart';
+
+class SyncStats {
+  final int pending;
+  final int synced;
+  final int total;
+
+  SyncStats({required this.pending, required this.synced, required this.total});
+}
+
+class PendingAttachment {
+  final String id;
+  final String localResponseId;
+  final String questionId;
+  final String localPath;
+  final String mimeType;
+  final String? uploadedAttachmentId;
+  final DateTime createdAt;
+
+  PendingAttachment({
+    required this.id,
+    required this.localResponseId,
+    required this.questionId,
+    required this.localPath,
+    required this.mimeType,
+    this.uploadedAttachmentId,
+    required this.createdAt,
+  });
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'local_response_id': localResponseId,
+        'question_id': questionId,
+        'local_path': localPath,
+        'mime_type': mimeType,
+        'uploaded_attachment_id': uploadedAttachmentId,
+        'created_at': createdAt.toIso8601String(),
+      };
+
+  factory PendingAttachment.fromMap(Map<String, dynamic> m) => PendingAttachment(
+        id: m['id'] as String,
+        localResponseId: m['local_response_id'] as String,
+        questionId: m['question_id'] as String,
+        localPath: m['local_path'] as String,
+        mimeType: m['mime_type'] as String? ?? 'application/octet-stream',
+        uploadedAttachmentId: m['uploaded_attachment_id'] as String?,
+        createdAt: DateTime.parse(m['created_at'] as String),
+      );
+}
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -33,6 +83,19 @@ class DatabaseHelper {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 9) {
       await _createTables(db);
+    }
+    if (oldVersion < 10) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS ${DatabaseConstants.tablePendingAttachments} (
+          id TEXT PRIMARY KEY,
+          local_response_id TEXT,
+          question_id TEXT,
+          local_path TEXT,
+          mime_type TEXT,
+          uploaded_attachment_id TEXT,
+          created_at TEXT
+        )
+      ''');
     }
   }
 
@@ -86,6 +149,17 @@ class DatabaseHelper {
       CREATE TABLE IF NOT EXISTS ${DatabaseConstants.tableSyncQueue} (
         local_id TEXT PRIMARY KEY,
         payload TEXT,
+        created_at TEXT
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ${DatabaseConstants.tablePendingAttachments} (
+        id TEXT PRIMARY KEY,
+        local_response_id TEXT,
+        question_id TEXT,
+        local_path TEXT,
+        mime_type TEXT,
+        uploaded_attachment_id TEXT,
         created_at TEXT
       )
     ''');
@@ -247,6 +321,177 @@ class DatabaseHelper {
     return Survey.fromJsonString(rows.first['data'] as String?);
   }
 
+  // ---------- Responses ----------
+  Future<void> insertResponse(SurveyResponse response) async {
+    final db = await database;
+    await db.insert(
+      DatabaseConstants.tableResponses,
+      response.toDatabaseMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<SurveyResponse?> getResponseByLocalId(String localId) async {
+    final db = await database;
+    final rows = await db.query(
+      DatabaseConstants.tableResponses,
+      where: 'local_id = ?',
+      whereArgs: [localId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return SurveyResponse.fromDatabaseMap(rows.first);
+  }
+
+  Future<List<SurveyResponse>> getResponsesBySurveyId(String surveyId) async {
+    final db = await database;
+    final rows = await db.query(
+      DatabaseConstants.tableResponses,
+      where: 'survey_id = ?',
+      whereArgs: [surveyId.trim()],
+      orderBy: 'created_at DESC',
+    );
+    return rows.map((r) => SurveyResponse.fromDatabaseMap(r)).toList();
+  }
+
+  Future<List<SurveyResponse>> getUnsyncedResponses() async {
+    final db = await database;
+    final rows = await db.query(
+      DatabaseConstants.tableResponses,
+      where: 'synced = ?',
+      whereArgs: [0],
+      orderBy: 'created_at ASC',
+    );
+    return rows.map((r) => SurveyResponse.fromDatabaseMap(r)).toList();
+  }
+
+  Future<SyncStats> getSyncStats() async {
+    final db = await database;
+    final pending = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM ${DatabaseConstants.tableResponses} WHERE synced = 0',
+        )) ??
+        0;
+    final synced = Sqflite.firstIntValue(await db.rawQuery(
+          'SELECT COUNT(*) FROM ${DatabaseConstants.tableResponses} WHERE synced = 1',
+        )) ??
+        0;
+    return SyncStats(pending: pending, synced: synced, total: pending + synced);
+  }
+
+  Future<void> markResponseSynced(String localId, String serverId) async {
+    final db = await database;
+    await db.update(
+      DatabaseConstants.tableResponses,
+      {
+        'synced': 1,
+        'server_id': serverId,
+        'synced_at': DateTime.now().toIso8601String(),
+      },
+      where: 'local_id = ?',
+      whereArgs: [localId],
+    );
+  }
+
+  Future<void> updateResponseAnswers(String localId, Map<String, dynamic> answers) async {
+    final db = await database;
+    await db.update(
+      DatabaseConstants.tableResponses,
+      {'answers_json': jsonEncode(answers)},
+      where: 'local_id = ?',
+      whereArgs: [localId],
+    );
+  }
+
+  Future<void> deleteResponse(String localId) async {
+    final db = await database;
+    await db.delete(
+      DatabaseConstants.tableResponses,
+      where: 'local_id = ?',
+      whereArgs: [localId],
+    );
+    await db.delete(
+      DatabaseConstants.tablePendingAttachments,
+      where: 'local_response_id = ?',
+      whereArgs: [localId],
+    );
+  }
+
+  // ---------- Sync queue ----------
+  Future<void> enqueueSync(String localId, Map<String, dynamic> payload) async {
+    final db = await database;
+    await db.insert(
+      DatabaseConstants.tableSyncQueue,
+      {
+        'local_id': localId,
+        'payload': jsonEncode(payload),
+        'created_at': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getAllSyncQueueItems() async {
+    final db = await database;
+    final rows = await db.query(
+      DatabaseConstants.tableSyncQueue,
+      orderBy: 'created_at ASC',
+    );
+    return rows.map((r) {
+      return {
+        'local_id': r['local_id'],
+        'payload': jsonDecode(r['payload'] as String),
+        'created_at': r['created_at'],
+      };
+    }).toList();
+  }
+
+  Future<int> getSyncQueueCount() async {
+    final db = await database;
+    return Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM ${DatabaseConstants.tableSyncQueue}'),
+        ) ??
+        0;
+  }
+
+  Future<void> dequeueSync(String localId) async {
+    final db = await database;
+    await db.delete(
+      DatabaseConstants.tableSyncQueue,
+      where: 'local_id = ?',
+      whereArgs: [localId],
+    );
+  }
+
+  // ---------- Pending attachments ----------
+  Future<void> insertPendingAttachment(PendingAttachment attachment) async {
+    final db = await database;
+    await db.insert(
+      DatabaseConstants.tablePendingAttachments,
+      attachment.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<PendingAttachment>> getPendingAttachmentsForResponse(String localResponseId) async {
+    final db = await database;
+    final rows = await db.query(
+      DatabaseConstants.tablePendingAttachments,
+      where: 'local_response_id = ?',
+      whereArgs: [localResponseId],
+    );
+    return rows.map((r) => PendingAttachment.fromMap(r)).toList();
+  }
+
+  Future<void> markAttachmentUploaded(String id, String serverAttachmentId) async {
+    final db = await database;
+    await db.update(
+      DatabaseConstants.tablePendingAttachments,
+      {'uploaded_attachment_id': serverAttachmentId},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   // ---------- clearAllData (mantiene local_users) ----------
   Future<void> clearAllData() async {
     final db = await database;
@@ -254,6 +499,6 @@ class DatabaseHelper {
     await db.delete(DatabaseConstants.tableSurveys);
     await db.delete(DatabaseConstants.tableResponses);
     await db.delete(DatabaseConstants.tableSyncQueue);
-    // No borrar tableLocalUsers para permitir login offline
+    await db.delete(DatabaseConstants.tablePendingAttachments);
   }
 }

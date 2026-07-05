@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
+import 'services/sync_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/surveys_list_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  SyncService.instance.init();
   runApp(const SurveyApp());
 }
 
