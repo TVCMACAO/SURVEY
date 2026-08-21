@@ -438,6 +438,9 @@ class SurveyListCreate(APIView):
         err = require_not_analista(request, "crear encuestas")
         if err is not None:
             return err
+
+        # Debe asignarse antes de usarse en el ajuste de grupo pre-validación
+        user_role, user_group_id = get_user_role_and_group(request)
         
         # PRE-VALIDATION: Si es group_admin o usuario de grupo, ajustar el grupo antes de validar
         # Esto evita que el serializer rechace el grupo incorrecto enviado por el frontend
@@ -557,18 +560,6 @@ class SurveyListCreate(APIView):
         
         surveys_collection = get_surveys_collection()
         validated_data = serializer.validated_data
-        
-        # Verificar permisos: si es group_admin, solo puede crear encuestas en su grupo
-        user_role = None
-        user_group_id = None
-        if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
-            try:
-                user_role = getattr(request.user, 'role', None)
-                user_group_id = getattr(request.user, 'user_group_id', None)
-            except (AttributeError, TypeError):
-                user_role = None
-                user_group_id = None
-        
         
         # Si es group_admin, forzar el grupo a su grupo
         if user_role == 'group_admin' and user_group_id:
