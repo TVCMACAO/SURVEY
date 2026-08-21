@@ -247,7 +247,7 @@ class QuestionSerializer(serializers.Serializer):
     type = serializers.CharField(max_length=50, required=False, allow_blank=True, default='short_text')
     question_type = serializers.CharField(max_length=50, required=False, allow_blank=True, source='type', default='short_text') # e.g., 'text', 'radio', 'checkbox'
     options = serializers.ListField(child=serializers.CharField(max_length=200), required=False, allow_empty=True, default=list)
-    description = serializers.CharField(max_length=1000, required=False, allow_blank=True, default='')
+    description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default='')
     required = serializers.BooleanField(required=False, default=False)
     # Section support
     section_id = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True) # ID of the section this question belongs to
@@ -325,13 +325,13 @@ class SectionSerializer(serializers.Serializer):
     """Serializer for survey sections"""
     id = serializers.CharField(max_length=255, required=False) # Section ID (generated if not provided)
     title = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
-    description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    description = serializers.CharField(max_length=10000, required=False, allow_blank=True)
     order = serializers.IntegerField(required=False, default=0) # Order of the section
 
 class SurveySerializer(serializers.Serializer):
     id = ObjectIdField(read_only=True)
     title = serializers.CharField(max_length=255)
-    description = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+    description = serializers.CharField(max_length=10000, required=False, allow_blank=True)
     group = ObjectIdField(required=False, allow_null=True) # Referencia al ObjectId de SurveyGroup (opcional, se asigna automáticamente para group_admin)
     group_name = serializers.CharField(read_only=True, required=False) # Nombre del grupo
     questions = QuestionSerializer(many=True, required=False, allow_empty=True) # Opcional para permitir encuestas sin preguntas inicialmente
