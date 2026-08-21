@@ -95,7 +95,8 @@ export const refreshAccessToken = async () => {
     }
 
     const data = await response.json();
-    setTokens(data.access, null); // Refresh token remains the same
+    // Con ROTATE_REFRESH_TOKENS el backend puede devolver un refresh nuevo
+    setTokens(data.access, data.refresh || null);
     return data.access;
   } catch (error) {
     clearTokens();
