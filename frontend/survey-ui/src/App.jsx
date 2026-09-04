@@ -12,6 +12,7 @@ import { authenticatedFetch, isAuthenticated, login, logout, ensureFreshToken } 
 import { useBreakpoint } from './hooks/useBreakpoint';
 import { APP_VERSION_LABEL, APP_VERSION, GIT_SHA, BUILD_TIME } from './version';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import {
   buildDefaultInformedConsent,
   extractConsentPlaceholders,
@@ -24,6 +25,16 @@ import {
   resolveConsentSignature,
 } from './consentDocument';
 
+const parseSignatureDataUrl = (dataUrl) => {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image')) return null;
+  const m = dataUrl.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i);
+  if (!m) return null;
+  let ext = m[1].toLowerCase();
+  if (ext === 'jpg') ext = 'jpeg';
+  // ExcelJS accepts png | jpeg | gif
+  if (ext === 'webp') ext = 'png';
+  return { extension: ext === 'jpeg' ? 'jpeg' : 'png', base64: m[2] };
+};
 const uint8ToBase64 = (bytes) => {
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   let binary = '';
@@ -1902,6 +1913,19 @@ const PublicSurveyView = ({ surveyId }) => {
     }
   };
 
+  const isQuestionAnswerMissing = (q) => {
+    const qid = q.id || q._id;
+    if (q.type === 'Adjuntar archivos') {
+      const files = fileLists[qid];
+      return !files || files.length === 0;
+    }
+    const val = answers[qid];
+    if (val === undefined || val === null) return true;
+    if (typeof val === 'string' && val.trim() === '') return true;
+    if (Array.isArray(val) && val.length === 0) return true;
+    return false;
+  };
+
   const getVisibleRequiredQuestions = () => {
     const questions = surveyData?.questions || [];
     const isVisible = (q) => {
@@ -1914,6 +1938,60 @@ const PublicSurveyView = ({ surveyId }) => {
       return true;
     };
     return questions.filter(q => q.required && q.type !== 'Título' && q.type !== 'titulo' && isVisible(q));
+  };
+
+  /** Preguntas obligatorias visibles (no bloqueadas) pendientes en una sección. */
+  const getMissingRequiredInSection = (sectionId) => {
+    const questions = surveyData?.questions || [];
+    return questions.filter((q) => {
+      if (!q.required || q.type === 'Título' || q.type === 'titulo') return false;
+      if (q.section_id !== sectionId) return false;
+      if (q.conditional_logic && !evaluateCondition(q.conditional_logic, answers)) return false;
+      const idx = questions.findIndex((qq) => (qq.id || qq._id) === (q.id || q._id));
+      if (isQuestionBlockedByConsent(idx)) return false;
+      return isQuestionAnswerMissing(q);
+    });
+  };
+
+  /**
+   * Avanza a otra sección solo si, al ir hacia adelante, todas las secciones
+   * intermedias (incluida la actual) tienen sus obligatorias completas.
+   * Retroceder siempre está permitido.
+   */
+  const tryGoToSection = (targetSectionId) => {
+    const sections = surveyData?.sections || [];
+    if (!sections.length || !targetSectionId) return false;
+    const currentIndex = sections.findIndex((s) => s.id === currentSection);
+    const targetIndex = sections.findIndex((s) => s.id === targetSectionId);
+    if (targetIndex < 0) return false;
+
+    if (targetIndex > currentIndex) {
+      for (let i = currentIndex; i < targetIndex; i += 1) {
+        if (i < 0) continue;
+        const section = sections[i];
+        const missing = getMissingRequiredInSection(section.id);
+        if (missing.length > 0) {
+          const names = missing
+            .map((q) => (q.text || q.question_text || 'Pregunta'))
+            .slice(0, 3)
+            .join(', ');
+          alert(
+            `Completa las preguntas obligatorias de «${section.title || 'esta sección'}» antes de continuar.`
+            + ` Faltan: ${names}${missing.length > 3 ? '...' : ''}`
+          );
+          if (section.id !== currentSection) {
+            setCurrentSection(section.id);
+          }
+          return false;
+        }
+      }
+      setSectionHistory((prev) => [...prev, currentSection]);
+    } else if (targetIndex < currentIndex) {
+      setSectionHistory((prev) => prev.slice(0, Math.max(0, prev.length - (currentIndex - targetIndex))));
+    }
+
+    setCurrentSection(targetSectionId);
+    return true;
   };
 
   const handleSubmit = async (e) => {
@@ -1934,17 +2012,7 @@ const PublicSurveyView = ({ surveyId }) => {
     }
 
     const requiredQuestions = getVisibleRequiredQuestions();
-    const missing = requiredQuestions.filter(q => {
-      const qid = q.id || q._id;
-      if (q.type === 'Adjuntar archivos') {
-        const files = fileLists[qid];
-        return !files || files.length === 0;
-      }
-      const val = answers[qid];
-      if (val === undefined || val === null) return true;
-      if (typeof val === 'string' && val.trim() === '') return true;
-      return false;
-    });
+    const missing = requiredQuestions.filter((q) => isQuestionAnswerMissing(q));
     if (missing.length > 0) {
       const names = missing.map(q => (q.text || q.question_text || 'Pregunta')).slice(0, 3).join(', ');
       alert(`Completa los campos obligatorios (marcados con *). Faltan: ${names}${missing.length > 3 ? '...' : ''}`);
@@ -2152,7 +2220,7 @@ const PublicSurveyView = ({ surveyId }) => {
   }
 
   // Section Navigator Component
-  const SectionNavigator = ({ sections, currentSection, onSectionChange, visibleSections }) => {
+  const SectionNavigator = ({ sections, currentSection, visibleSections }) => {
     if (!sections || sections.length === 0) return null;
     
     const currentIndex = sections.findIndex(s => s.id === currentSection);
@@ -2160,21 +2228,16 @@ const PublicSurveyView = ({ surveyId }) => {
     const canGoPrev = currentIndex > 0;
     
     const handleNext = () => {
-      if (canGoNext) {
-        const nextSection = sections[currentIndex + 1];
-        if (visibleSections.includes(nextSection.id)) {
-          setSectionHistory(prev => [...prev, currentSection]);
-          setCurrentSection(nextSection.id);
-        }
-      }
+      if (!canGoNext) return;
+      const nextSection = sections[currentIndex + 1];
+      if (!visibleSections.includes(nextSection.id)) return;
+      tryGoToSection(nextSection.id);
     };
     
     const handlePrev = () => {
-      if (canGoPrev) {
-        const prevSection = sections[currentIndex - 1];
-        setCurrentSection(prevSection.id);
-        setSectionHistory(prev => prev.slice(0, -1));
-      }
+      if (!canGoPrev) return;
+      const prevSection = sections[currentIndex - 1];
+      tryGoToSection(prevSection.id);
     };
     
     return (
@@ -2196,13 +2259,10 @@ const PublicSurveyView = ({ surveyId }) => {
             return (
               <button
                 key={section.id}
+                type="button"
                 onClick={() => {
-                  if (isVisible) {
-                    setCurrentSection(section.id);
-                    if (idx > currentIndex) {
-                      setSectionHistory(prev => [...prev, currentSection]);
-                    }
-                  }
+                  if (!isVisible) return;
+                  tryGoToSection(section.id);
                 }}
                 disabled={!isVisible}
                 className={`flex-shrink-0 px-4 py-2 rounded-lg font-medium text-sm transition-all ${
@@ -2225,6 +2285,7 @@ const PublicSurveyView = ({ surveyId }) => {
         {/* Navigation Buttons */}
         <div className="flex items-center justify-between">
           <button
+            type="button"
             onClick={handlePrev}
             disabled={!canGoPrev}
             className={`px-6 py-2 rounded-xl font-bold transition-all ${
@@ -2249,6 +2310,7 @@ const PublicSurveyView = ({ surveyId }) => {
           </div>
           
           <button
+            type="button"
             onClick={handleNext}
             disabled={!canGoNext}
             className={`px-6 py-2 rounded-xl font-bold transition-all ${
@@ -2600,7 +2662,6 @@ const PublicSurveyView = ({ surveyId }) => {
           <SectionNavigator
             sections={surveyData.sections}
             currentSection={currentSection}
-            onSectionChange={setCurrentSection}
             visibleSections={visibleSections}
           />
         )}
@@ -2665,7 +2726,6 @@ const PublicSurveyView = ({ surveyId }) => {
             <SectionNavigator
               sections={surveyData.sections}
               currentSection={currentSection}
-              onSectionChange={setCurrentSection}
               visibleSections={visibleSections}
             />
           )}
@@ -4914,18 +4974,12 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     return links;
   };
 
-  // Función para exportar a Excel
-  const exportToExcel = () => {
+  // Función para exportar a Excel (embebe firmas como imágenes con ExcelJS)
+  const exportToExcel = async () => {
     const dataToExport = filteredResponses;
     if (!dataToExport.length || !survey.questions) return;
 
-    // Preparar datos para la tabla
-    const tableData = [];
-    
-    // Obtener todas las preguntas
     const questions = survey.questions || [];
-    
-    // Crear encabezados
     const headers = [
       'ID Respuesta',
       'Dispositivo',
@@ -4938,23 +4992,43 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       'OTP verificado el',
       'Consentimiento datos personales',
     ];
-    questions.forEach(q => {
+    questions.forEach((q) => {
       const questionId = q.id || q._id;
       const questionText = q.text || q.question_text || `Pregunta ${questionId}`;
       headers.push(questionText);
     });
     headers.push('Link público');
-    
-    // Agregar filas de datos
+
+    const metaCols = 10;
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Survey App';
+    const sheet = workbook.addWorksheet('Respuestas', {
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+    sheet.addRow(headers);
+    sheet.getRow(1).font = { bold: true };
+
+    headers.forEach((_, i) => {
+      const col = sheet.getColumn(i + 1);
+      if (i === 0) col.width = 22;
+      else if (i === 1 || i === 2) col.width = 14;
+      else if (i === 3) col.width = 12;
+      else if (i === 4 || i === 8 || i === 9) col.width = 20;
+      else if (i === 5) col.width = 16;
+      else if (i === 6) col.width = 28;
+      else if (i === 7) col.width = 12;
+      else if (i === headers.length - 1) col.width = 40;
+      else col.width = 24;
+    });
+
+    const imagesToEmbed = [];
+
     dataToExport.forEach((response, index) => {
-      // Obtener fecha de diferentes campos posibles
-      const dateValue = response.created_at || 
-                       response.timestamp || 
-                       response.created || 
-                       response.date ||
-                       response.submitted_at;
-      
-      // Obtener el ID de la respuesta para usar como fallback
+      const dateValue = response.created_at
+        || response.timestamp
+        || response.created
+        || response.date
+        || response.submitted_at;
       const responseId = response.id || response._id || null;
       const otpAt = response.consent_otp_verified_at
         ? formatDate(response.consent_otp_verified_at, responseId)
@@ -4963,8 +5037,8 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       const dataConsentAt = response.signature_consent_at
         ? formatDate(response.signature_consent_at, responseId)
         : '-';
-      
-      const row = [
+
+      const rowValues = [
         responseId || `Respuesta ${index + 1}`,
         response.device_id || '-',
         (response.surveyor_name || response.surveyor_id) || '-',
@@ -4976,49 +5050,72 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
         otpAt,
         dataConsentAt,
       ];
-      
-      // Agregar respuestas por pregunta (pasamos q para evaluación: nombres de ítems/columnas)
-      questions.forEach(q => {
+
+      let rowHasSignatureImage = false;
+      questions.forEach((q, qi) => {
         const questionId = q.id || q._id;
+        const qType = q.type || q.question_type;
         const answer = response.answers && response.answers[questionId];
-        row.push(formatAnswer(answer, q.type || q.question_type, q));
+
+        if (isSignature(answer)) {
+          const parsed = parseSignatureDataUrl(answer);
+          rowValues.push('');
+          if (parsed) {
+            imagesToEmbed.push({
+              rowIndex0: index + 1,
+              colIndex0: metaCols + qi,
+              extension: parsed.extension,
+              base64: parsed.base64,
+            });
+            rowHasSignatureImage = true;
+            sheet.getColumn(metaCols + qi + 1).width = 22;
+          } else {
+            rowValues[rowValues.length - 1] = 'Firma';
+          }
+        } else {
+          const formatted = formatAnswer(answer, qType, q);
+          rowValues.push(formatted === '__SIGNATURE_IMAGE__' ? 'Firma' : formatted);
+        }
       });
-      
+
       const links = getResponsePublicLinks(response, questions);
-      row.push(links.length > 0 ? links.join('\n') : '-');
-      
-      tableData.push(row);
+      rowValues.push(links.length > 0 ? links.join('\n') : '-');
+
+      const excelRow = sheet.addRow(rowValues);
+      if (rowHasSignatureImage) excelRow.height = 42;
     });
-    
-    // Crear workbook
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...tableData]);
-    
-    // Ajustar ancho de columnas
-    const colWidths = headers.map((_, i) => {
-      if (i === 0) return { wch: 20 }; // ID Respuesta
-      if (i === 1) return { wch: 15 }; // Dispositivo
-      if (i === 2) return { wch: 15 }; // Encuestador
-      if (i === 3) return { wch: 12 }; // Estado
-      if (i === 4) return { wch: 20 }; // Fecha de Toma
-      if (i === 5) return { wch: 18 }; // Consentimiento en línea
-      if (i === 6) return { wch: 28 }; // Correo OTP
-      if (i === 7) return { wch: 14 }; // OTP aceptado
-      if (i === 8) return { wch: 20 }; // OTP verificado
-      if (i === 9) return { wch: 22 }; // Consentimiento datos personales
-      if (i === headers.length - 1) return { wch: 55 }; // Link público (URL larga)
-      return { wch: 30 }; // Columnas de preguntas
+
+    imagesToEmbed.forEach((img) => {
+      try {
+        const imageId = workbook.addImage({
+          base64: img.base64,
+          extension: img.extension,
+        });
+        sheet.addImage(imageId, {
+          tl: { col: img.colIndex0, row: img.rowIndex0 },
+          ext: { width: 140, height: 48 },
+          editAs: 'oneCell',
+        });
+      } catch (_) {
+        // Si falla una imagen, la fila ya tiene celda vacía / texto "Firma"
+      }
     });
-    ws['!cols'] = colWidths;
-    
-    // Crear workbook y descargar
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Respuestas');
-    
-    // Generar nombre de archivo
+
     const surveyTitle = (survey.title || 'Encuesta').replace(/[^a-z0-9]/gi, '_').toLowerCase();
     const fileName = `${surveyTitle}_respuestas${hasActiveFilters ? '_filtrado' : ''}_${new Date().toISOString().split('T')[0]}.xlsx`;
-    
-    XLSX.writeFile(wb, fileName);
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
   // Vista de respuesta individual detallada
