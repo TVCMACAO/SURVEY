@@ -66,7 +66,7 @@ const meta = {
   version,
   gitSha,
   buildTime,
-  label: `v${version} · ${gitSha}`,
+  label: `v${version}`,
 }
 
 writeFileSync(outPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8')
