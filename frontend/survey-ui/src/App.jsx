@@ -13,6 +13,27 @@ import { useBreakpoint } from './hooks/useBreakpoint';
 import { APP_VERSION_LABEL, APP_VERSION, GIT_SHA, BUILD_TIME } from './version';
 import * as XLSX from 'xlsx';
 import {
+  buildDefaultInformedConsent,
+  extractConsentPlaceholders,
+  mergeConsentTemplate,
+  buildConsentMeta,
+  buildPersonalDataConsentText,
+  buildConsentPdfBytes,
+  downloadConsentPdf,
+  readLetterheadPdfFile,
+  resolveConsentSignature,
+} from './consentDocument';
+
+const uint8ToBase64 = (bytes) => {
+  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < arr.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, arr.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+};
+import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
@@ -231,10 +252,19 @@ const buildDeluxeChartOptions = (stat, chartType) => {
 const generateId = () => `q_${Math.random().toString(36).substr(2, 9)}`;
 
 // --- COMPONENTE DE FIRMA ---
-const SignaturePad = ({ value, onChange }) => {
+const SignaturePad = ({
+  value,
+  onChange,
+  requirePersonalDataConsent = false,
+  personalDataConsentText = '',
+  consentAccepted = false,
+  onConsentAcceptedChange,
+}) => {
   const canvasRef = React.useRef(null);
   const [isDrawing, setIsDrawing] = React.useState(false);
   const [hasSignature, setHasSignature] = React.useState(!!value);
+  const [consentExpanded, setConsentExpanded] = React.useState(true);
+  const drawingEnabled = !requirePersonalDataConsent || consentAccepted;
 
   // Convierte coordenadas pantalla → canvas para que el punto de contacto coincida con lo dibujado/guardado
   const getCanvasCoords = (canvas, e) => {
@@ -274,6 +304,7 @@ const SignaturePad = ({ value, onChange }) => {
   }, [value]);
 
   const startDrawing = (e) => {
+    if (!drawingEnabled) return;
     if (e.touches) e.preventDefault();
     setIsDrawing(true);
     const canvas = canvasRef.current;
@@ -286,7 +317,7 @@ const SignaturePad = ({ value, onChange }) => {
   };
 
   const draw = (e) => {
-    if (!isDrawing) return;
+    if (!drawingEnabled || !isDrawing) return;
     e.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -318,14 +349,55 @@ const SignaturePad = ({ value, onChange }) => {
     }
   };
 
+  const handleConsentToggle = (checked) => {
+    if (onConsentAcceptedChange) {
+      onConsentAcceptedChange(checked ? new Date().toISOString() : null);
+    }
+    if (!checked) {
+      clearSignature();
+    }
+  };
+
   return (
-    <div className="w-full">
-      <div className="border-2 border-gray-300 rounded-xl bg-white overflow-hidden shadow-inner">
+    <div className="w-full space-y-3">
+      {requirePersonalDataConsent && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50/90 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setConsentExpanded((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-100/80"
+          >
+            <span className="text-sm font-bold text-slate-800">
+              Consentimiento de uso de datos personales (Ley 1581 de 2012)
+            </span>
+            <FontAwesomeIcon icon={consentExpanded ? faChevronUp : faChevronDown} className="text-slate-500" />
+          </button>
+          {consentExpanded && (
+            <div className="px-4 pb-3">
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                {personalDataConsentText}
+              </div>
+            </div>
+          )}
+          <label className="flex items-start gap-3 px-4 py-3 border-t border-slate-200 bg-white cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+              checked={consentAccepted}
+              onChange={(e) => handleConsentToggle(e.target.checked)}
+            />
+            <span className="text-sm text-slate-800 font-medium leading-snug">
+              He leído y acepto el tratamiento de mis datos personales conforme al texto anterior. Al firmar, autorizo su uso para las finalidades indicadas.
+            </span>
+          </label>
+        </div>
+      )}
+      <div className={`border-2 rounded-xl bg-white overflow-hidden shadow-inner ${drawingEnabled ? 'border-gray-300' : 'border-amber-200 opacity-60'}`}>
         <canvas
           ref={canvasRef}
           width={600}
           height={200}
-          className="w-full h-48 cursor-crosshair touch-none"
+          className={`w-full h-48 touch-none ${drawingEnabled ? 'cursor-crosshair' : 'cursor-not-allowed pointer-events-none'}`}
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}
@@ -335,8 +407,12 @@ const SignaturePad = ({ value, onChange }) => {
           onTouchEnd={stopDrawing}
         />
       </div>
-      <div className="flex justify-between items-center mt-3">
-        <p className="text-xs text-gray-500 italic">Firma en el área de arriba</p>
+      <div className="flex justify-between items-center">
+        <p className="text-xs text-gray-500 italic">
+          {requirePersonalDataConsent && !consentAccepted
+            ? 'Acepta el consentimiento de datos personales para habilitar la firma'
+            : 'Firma en el área de arriba'}
+        </p>
         <button
           type="button"
           onClick={clearSignature}
@@ -536,7 +612,14 @@ const mapBackendTypeToFrontend = (backendType) => {
 /** Normalize API survey shape (question_text / question_type) into editor shape (text / type) before first paint. */
 const normalizeSurveyForEditor = (raw) => {
   if (!raw) {
-    return { title: 'Mi Nueva Encuesta', description: 'Descripción breve de la encuesta', questions: [], sections: [] };
+    return {
+      title: 'Mi Nueva Encuesta',
+      description: 'Descripción breve de la encuesta',
+      questions: [],
+      sections: [],
+      informed_consent_enabled: false,
+      informed_consent: buildDefaultInformedConsent(),
+    };
   }
   const questions = (raw.questions || []).map((q) => {
     const backendType = q.question_type || q.type || 'short_text';
@@ -571,6 +654,31 @@ const normalizeSurveyForEditor = (raw) => {
     reference_row_count: raw.reference_row_count ?? 0,
     documento_empleado_question_id: raw.documento_empleado_question_id || '',
     documento_votante_question_id: raw.documento_votante_question_id || '',
+    consent_responsible: raw.consent_responsible || '',
+    consent_purpose: raw.consent_purpose || '',
+    informed_consent_enabled: Boolean(raw.informed_consent_enabled),
+    informed_consent: (() => {
+      const ic = raw.informed_consent && typeof raw.informed_consent === 'object'
+        ? raw.informed_consent
+        : {};
+      const defaults = buildDefaultInformedConsent();
+      const body = ic.body || defaults.body;
+      const keys = extractConsentPlaceholders(body);
+      const existingMaps = Array.isArray(ic.mappings) ? ic.mappings : [];
+      const mapByKey = Object.fromEntries(existingMaps.filter((m) => m?.key).map((m) => [m.key, m.question_id || '']));
+      return {
+        title: ic.title || defaults.title,
+        body,
+        letterhead: ic.letterhead || 'membrete2',
+        letterhead_pdf: ic.letterhead_pdf || '',
+        letterhead_filename: ic.letterhead_filename || '',
+        signature_question_id: ic.signature_question_id || '',
+        acceptance_question_id: ic.acceptance_question_id || '',
+        acceptance_value: ic.acceptance_value || 'SI, AUTORIZO',
+        denial_value: ic.denial_value || 'NO AUTORIZO',
+        mappings: keys.map((key) => ({ key, question_id: mapByKey[key] || '' })),
+      };
+    })(),
   };
 };
 
@@ -1383,6 +1491,125 @@ const SurveyPreview = ({ surveyData, onBack }) => {
 
 // --- VISTA: ENCUESTA PÚBLICA (SIN AUTENTICACIÓN) ---
 
+const PersonalDataConsentModal = ({ open, text, surveyTitle, onAccept }) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/60">
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="personal-data-consent-title"
+      >
+        <div className="px-5 py-4 border-b border-gray-200">
+          <h2 id="personal-data-consent-title" className="text-lg font-black text-slate-800">
+            Autorización de tratamiento de datos personales
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            {surveyTitle
+              ? `Antes de continuar con «${surveyTitle}», debes leer y aceptar esta autorización (Ley 1581 de 2012).`
+              : 'Antes de continuar, debes leer y aceptar esta autorización (Ley 1581 de 2012).'}
+          </p>
+        </div>
+        <div className="px-5 py-4 overflow-y-auto flex-1">
+          <div className="text-xs sm:text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border border-slate-200 rounded-xl bg-slate-50 p-4 max-h-[50vh] overflow-y-auto">
+            {text}
+          </div>
+        </div>
+        <div className="px-5 py-4 border-t border-gray-200 bg-white space-y-2">
+          <button
+            type="button"
+            onClick={onAccept}
+            className="w-full px-4 py-3 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700"
+          >
+            He leído y acepto el tratamiento de mis datos personales
+          </button>
+          <p className="text-[11px] text-center text-slate-500">
+            Si no aceptas, no podrás diligenciar ni enviar esta encuesta.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ConsentOtpModal = ({
+  open,
+  email,
+  otpCode,
+  sending,
+  verifying,
+  error,
+  info,
+  onEmailChange,
+  onOtpChange,
+  onSend,
+  onVerify,
+  onCancel,
+}) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/55">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-black text-gray-800">Verificación de autorización</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Ingresa tu correo, solicita el OTP y confírmalo en este mismo modal para continuar.
+          </p>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="block text-xs font-bold text-gray-600 mb-1">Correo electrónico</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => onEmailChange(e.target.value)}
+              className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500"
+              placeholder="tu@correo.com"
+              autoComplete="email"
+            />
+          </div>
+          <button
+            type="button"
+            disabled={sending || !email.trim()}
+            onClick={onSend}
+            className="w-full px-4 py-2.5 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {sending ? 'Enviando…' : 'Enviar OTP a este correo'}
+          </button>
+          <div>
+            <label className="block text-xs font-bold text-gray-600 mb-1">Código OTP recibido</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={otpCode}
+              onChange={(e) => onOtpChange(e.target.value.replace(/\D/g, '').slice(0, 8))}
+              className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl text-sm tracking-widest font-mono focus:ring-2 focus:ring-emerald-500"
+              placeholder="••••••"
+            />
+          </div>
+          {info && <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">{info}</p>}
+          {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
+        </div>
+        <div className="px-5 py-4 border-t border-gray-200 flex gap-2 justify-end">
+          <button type="button" onClick={onCancel} className="px-4 py-2 rounded-xl font-bold text-sm text-gray-600 hover:bg-gray-100">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={verifying || !otpCode.trim()}
+            onClick={onVerify}
+            className="px-4 py-2 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {verifying ? 'Verificando…' : 'Confirmar OTP y continuar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PublicSurveyView = ({ surveyId }) => {
   const [surveyData, setSurveyData] = useState(null);
   const [answers, setAnswers] = useState({});
@@ -1397,11 +1624,44 @@ const PublicSurveyView = ({ surveyId }) => {
   const [visibleSections, setVisibleSections] = useState([]);
   const [referenceLookupNotFound, setReferenceLookupNotFound] = useState(false);
   const referenceLookupDebounceRef = React.useRef(null);
+  // Consent OTP gate: locked | verified | denied
+  const [consentGate, setConsentGate] = useState('locked');
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+  const [consentEmail, setConsentEmail] = useState('');
+  const [consentOtp, setConsentOtp] = useState('');
+  const [consentToken, setConsentToken] = useState('');
+  const [consentSending, setConsentSending] = useState(false);
+  const [consentVerifying, setConsentVerifying] = useState(false);
+  const [consentError, setConsentError] = useState('');
+  const [consentInfo, setConsentInfo] = useState('');
+  const [signatureConsentAt, setSignatureConsentAt] = useState(null);
+  const [submitEmailStatus, setSubmitEmailStatus] = useState(''); // '', sending, sent, error
 
   // Function to evaluate conditional logic (shared module-level evaluateCondition)
   const getVisibleSections = (sections) => {
     if (!sections || sections.length === 0) return [];
     return [...sections];
+  };
+
+  const consentCfg = surveyData?.informed_consent_enabled ? (surveyData.informed_consent || {}) : null;
+  const personalDataConsentText = useMemo(
+    () => buildPersonalDataConsentText({ survey: surveyData }),
+    [surveyData]
+  );
+  const acceptanceQId = consentCfg?.acceptance_question_id || '';
+  const acceptanceValue = (consentCfg?.acceptance_value || 'SI, AUTORIZO').trim();
+  const denialValue = (consentCfg?.denial_value || 'NO AUTORIZO').trim();
+  const acceptanceQuestionIndex = useMemo(() => {
+    if (!surveyData?.questions || !acceptanceQId) return -1;
+    return surveyData.questions.findIndex((q) => (q.id || q._id) === acceptanceQId);
+  }, [surveyData, acceptanceQId]);
+
+  const isQuestionBlockedByConsent = (questionIndex) => {
+    if (!consentCfg || !acceptanceQId || acceptanceQuestionIndex < 0) return false;
+    if (questionIndex <= acceptanceQuestionIndex) return false;
+    if (consentGate === 'verified') return false;
+    // denied or locked: block questions after acceptance
+    return true;
   };
 
   useEffect(() => {
@@ -1495,7 +1755,91 @@ const PublicSurveyView = ({ surveyId }) => {
         referenceLookupDebounceRef.current = null;
       }, 500);
     }
+
+    if (consentCfg && acceptanceQId && questionId === acceptanceQId) {
+      const v = String(value || '').trim();
+      setConsentToken('');
+      setConsentOtp('');
+      setConsentError('');
+      setConsentInfo('');
+      if (v === acceptanceValue) {
+        setConsentGate('locked');
+        setConsentModalOpen(true);
+      } else if (v === denialValue) {
+        setConsentGate('denied');
+        setConsentModalOpen(false);
+      } else {
+        setConsentGate('locked');
+        setConsentModalOpen(false);
+      }
+    }
+
     setAnswers(prev => ({ ...prev, [questionId]: value }));
+  };
+
+  const cancelConsentModal = () => {
+    setConsentModalOpen(false);
+    setConsentError('');
+    setConsentInfo('');
+    setConsentOtp('');
+    setConsentGate('locked');
+    if (acceptanceQId) {
+      setAnswers((prev) => {
+        const next = { ...prev };
+        delete next[acceptanceQId];
+        return next;
+      });
+    }
+  };
+
+  const sendConsentOtp = async () => {
+    setConsentSending(true);
+    setConsentError('');
+    setConsentInfo('');
+    try {
+      const sid = surveyData.id || surveyData._id || surveyId;
+      const res = await fetch(`/api/public/surveys/${sid}/consent-otp/send/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: consentEmail.trim(),
+          acceptance_answer: acceptanceValue,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'No se pudo enviar el OTP');
+      setConsentInfo(data.message || 'Código enviado. Revisa tu correo e ingrésalo aquí.');
+    } catch (e) {
+      setConsentError(e.message || 'Error al enviar OTP');
+    } finally {
+      setConsentSending(false);
+    }
+  };
+
+  const verifyConsentOtp = async () => {
+    setConsentVerifying(true);
+    setConsentError('');
+    try {
+      const sid = surveyData.id || surveyData._id || surveyId;
+      const res = await fetch(`/api/public/surveys/${sid}/consent-otp/verify/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: consentEmail.trim(),
+          code: consentOtp.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'Código inválido');
+      setConsentToken(data.consent_token || '');
+      setConsentGate('verified');
+      setConsentModalOpen(false);
+      setConsentInfo('');
+    } catch (e) {
+      setConsentError(e.message || 'No se pudo verificar el OTP');
+    } finally {
+      setConsentVerifying(false);
+    }
   };
 
   const formatDateForInput = (val, includeTime) => {
@@ -1562,6 +1906,8 @@ const PublicSurveyView = ({ surveyId }) => {
     const questions = surveyData?.questions || [];
     const isVisible = (q) => {
       if (q.conditional_logic && !evaluateCondition(q.conditional_logic, answers)) return false;
+      const idx = questions.findIndex((qq) => (qq.id || qq._id) === (q.id || q._id));
+      if (isQuestionBlockedByConsent(idx)) return false;
       if (surveyData.sections && surveyData.sections.length > 0) {
         return q.section_id === currentSection;
       }
@@ -1572,6 +1918,20 @@ const PublicSurveyView = ({ surveyId }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!signatureConsentAt) {
+      alert('Debes aceptar el consentimiento de uso de datos personales para continuar con la encuesta.');
+      return;
+    }
+
+    if (consentCfg && acceptanceQId) {
+      const ans = String(answers[acceptanceQId] || '').trim();
+      if (ans === acceptanceValue && consentGate !== 'verified') {
+        alert('Debes verificar el OTP de autorización antes de enviar.');
+        setConsentModalOpen(true);
+        return;
+      }
+    }
 
     const requiredQuestions = getVisibleRequiredQuestions();
     const missing = requiredQuestions.filter(q => {
@@ -1656,7 +2016,11 @@ const PublicSurveyView = ({ surveyId }) => {
         body: JSON.stringify({
           survey: surveyData.id || surveyData._id,
           device_id: deviceId,
-          answers: formattedAnswers
+          answers: formattedAnswers,
+          ...(signatureConsentAt ? { signature_consent_at: signatureConsentAt } : {}),
+          ...(consentGate === 'verified' && consentToken
+            ? { consent_token: consentToken, consent_email: consentEmail.trim() }
+            : {}),
         })
       });
 
@@ -1665,7 +2029,65 @@ const PublicSurveyView = ({ surveyId }) => {
         throw new Error(errorData.detail || 'Error al enviar las respuestas');
       }
 
+      const saved = await response.json().catch(() => ({}));
+      const savedId = saved?.id || saved?._id || '';
+
+      const shouldEmailPdf = Boolean(
+        consentCfg
+        && consentGate === 'verified'
+        && (consentEmail || '').trim()
+        && savedId
+      );
+
       setSubmitted(true);
+
+      if (shouldEmailPdf) {
+        setSubmitEmailStatus('sending');
+        try {
+          const ic = surveyData.informed_consent || {};
+          const pdfBytes = await buildConsentPdfBytes({
+            title: ic.title || 'Consentimiento informado',
+            mergedBody: mergeConsentTemplate(ic.body || '', ic.mappings || [], answers),
+            response: {
+              id: savedId,
+              answers,
+              created_at: saved.created_at || new Date().toISOString(),
+              consent_email: consentEmail.trim(),
+              consent_otp_verified_at: saved.consent_otp_verified_at || new Date().toISOString(),
+              signature_consent_at: signatureConsentAt,
+            },
+            survey: surveyData,
+            letterheadUrl: '/membrete2.pdf',
+            letterheadPdf: ic.letterhead_pdf || '',
+            signatureDataUrl: resolveConsentSignature({
+              answers,
+              mappings: ic.mappings || [],
+              survey: surveyData,
+              signatureQuestionId: ic.signature_question_id || '',
+            }),
+          });
+          const sid = surveyData.id || surveyData._id;
+          const mailRes = await fetch(`/api/public/surveys/${sid}/consent-pdf/email/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: consentEmail.trim(),
+              response_id: savedId,
+              pdf_base64: uint8ToBase64(pdfBytes),
+            }),
+          });
+          if (!mailRes.ok) {
+            const err = await mailRes.json().catch(() => ({}));
+            throw new Error(err.detail || 'No se pudo enviar el PDF');
+          }
+          setSubmitEmailStatus('sent');
+        } catch (mailErr) {
+          console.error(mailErr);
+          setSubmitEmailStatus('error');
+        }
+      } else {
+        setSubmitEmailStatus('');
+      }
     } catch (err) {
       alert('Error al enviar las respuestas: ' + err.message);
     } finally {
@@ -1703,6 +2125,19 @@ const PublicSurveyView = ({ surveyId }) => {
           </div>
           <h2 className="text-2xl font-black text-gray-800 mb-2">¡Gracias por tu respuesta!</h2>
           <p className="text-gray-600">Tu respuesta ha sido enviada exitosamente.</p>
+          {submitEmailStatus === 'sending' && (
+            <p className="text-sm text-indigo-700 mt-3">Enviando el PDF a tu correo…</p>
+          )}
+          {submitEmailStatus === 'sent' && (
+            <p className="text-sm text-emerald-700 mt-3">
+              También enviamos el PDF de tu autorización a <span className="font-semibold">{consentEmail.trim()}</span>.
+            </p>
+          )}
+          {submitEmailStatus === 'error' && (
+            <p className="text-sm text-amber-700 mt-3">
+              Tu respuesta se guardó, pero no pudimos enviar el PDF al correo. Puedes solicitarlo a la organización.
+            </p>
+          )}
         </div>
       </div>
     );
@@ -1833,6 +2268,10 @@ const PublicSurveyView = ({ surveyId }) => {
   const renderQuestion = (question, index) => {
     const questionId = question.id || question._id;
     if (!questionId) return null;
+
+    if (isQuestionBlockedByConsent(index)) {
+      return null;
+    }
     
     // Check if question should be visible based on conditional logic
     if (question.conditional_logic && !evaluateCondition(question.conditional_logic, answers)) {
@@ -2202,6 +2641,15 @@ const PublicSurveyView = ({ surveyId }) => {
                   return surveyData.questions.map((q, index) => renderQuestion(q, index));
                 }
               })()}
+              {consentCfg && acceptanceQId && consentGate !== 'verified' && acceptanceQuestionIndex >= 0 && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  {consentGate === 'denied'
+                    ? 'Has indicado que NO autorizas. Las preguntas siguientes permanecen bloqueadas. Puedes enviar la encuesta con la información capturada.'
+                    : answers[acceptanceQId] === acceptanceValue
+                      ? 'Completa la verificación OTP en el modal para liberar el resto de la encuesta.'
+                      : 'Responde la pregunta de autorización para continuar. Si aceptas, se te pedirá un OTP por correo.'}
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-20 border-2 border-dashed border-gray-300/60 rounded-3xl bg-white/40 backdrop-blur-sm">
@@ -2252,6 +2700,26 @@ const PublicSurveyView = ({ surveyId }) => {
           )}
         </form>
       </div>
+      <PersonalDataConsentModal
+        open={Boolean(surveyData) && !signatureConsentAt}
+        text={personalDataConsentText}
+        surveyTitle={surveyData?.title || ''}
+        onAccept={() => setSignatureConsentAt(new Date().toISOString())}
+      />
+      <ConsentOtpModal
+        open={consentModalOpen}
+        email={consentEmail}
+        otpCode={consentOtp}
+        sending={consentSending}
+        verifying={consentVerifying}
+        error={consentError}
+        info={consentInfo}
+        onEmailChange={setConsentEmail}
+        onOtpChange={setConsentOtp}
+        onSend={sendConsentOtp}
+        onVerify={verifyConsentOtp}
+        onCancel={cancelConsentModal}
+      />
     </div>
   );
 };
@@ -2732,6 +3200,296 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                </div>
              </div>
            )}
+
+           {/* Consentimiento informado */}
+           <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
+             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                 <FontAwesomeIcon icon={faFileLines} size="sm" className="text-emerald-600" />
+                 Consentimiento informado
+               </h3>
+               <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                 <input
+                   type="checkbox"
+                   className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                   checked={Boolean(surveyData.informed_consent_enabled)}
+                   onChange={(e) => {
+                     const enabled = e.target.checked;
+                     setSurveyData((prev) => ({
+                       ...prev,
+                       informed_consent_enabled: enabled,
+                       informed_consent: prev.informed_consent?.body
+                         ? prev.informed_consent
+                         : buildDefaultInformedConsent(),
+                     }));
+                   }}
+                 />
+                 <span className="text-sm font-semibold text-gray-700">Incluir consentimiento informado</span>
+               </label>
+             </div>
+             <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
+               <div>
+                 <label className="block text-xs font-bold text-slate-600 mb-1">Responsable del tratamiento (Ley 1581)</label>
+                 <input
+                   type="text"
+                   value={surveyData.consent_responsible || ''}
+                   onChange={(e) => setSurveyData((prev) => ({ ...prev, consent_responsible: e.target.value }))}
+                   placeholder="Ej. SOCIEDAD MEDICA CLINICA MAICAO S.A."
+                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+                 />
+               </div>
+               <div>
+                 <label className="block text-xs font-bold text-slate-600 mb-1">Finalidad del tratamiento de datos / firma</label>
+                 <input
+                   type="text"
+                   value={surveyData.consent_purpose || ''}
+                   onChange={(e) => setSurveyData((prev) => ({ ...prev, consent_purpose: e.target.value }))}
+                   placeholder="Finalidad que verá el declarante al firmar"
+                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+                 />
+               </div>
+               <p className="md:col-span-2 text-xs text-slate-500">
+                 Este texto se muestra al firmar (datos personales) y en el PDF del consentimiento. Si lo dejas vacío se usa un texto estándar con los datos que captura la app.
+               </p>
+             </div>
+             <p className="text-sm text-gray-600 mb-3">
+               Primero se capturan las respuestas de la encuesta. Luego, en Resultados podrás ver el consentimiento ya rellenado.
+               El PDF se marcará como <strong>Consentimiento capturado en línea</strong>.
+             </p>
+             {surveyData.informed_consent_enabled && (
+               <div className="space-y-4 border-t border-gray-100 pt-4">
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Título del documento</label>
+                   <input
+                     type="text"
+                     value={surveyData.informed_consent?.title || ''}
+                     onChange={(e) => setSurveyData((prev) => ({
+                       ...prev,
+                       informed_consent: { ...(prev.informed_consent || buildDefaultInformedConsent()), title: e.target.value },
+                     }))}
+                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                   />
+                 </div>
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Plantilla (usa {'{{clave}}'} para campos)</label>
+                   <textarea
+                     rows={10}
+                     value={surveyData.informed_consent?.body || ''}
+                     onChange={(e) => {
+                       const body = e.target.value;
+                       const keys = extractConsentPlaceholders(body);
+                       setSurveyData((prev) => {
+                         const prevMaps = Array.isArray(prev.informed_consent?.mappings) ? prev.informed_consent.mappings : [];
+                         const byKey = Object.fromEntries(prevMaps.filter((m) => m?.key).map((m) => [m.key, m.question_id || '']));
+                         return {
+                           ...prev,
+                           informed_consent: {
+                             ...(prev.informed_consent || buildDefaultInformedConsent()),
+                             body,
+                             letterhead: 'membrete2',
+                             mappings: keys.map((key) => ({ key, question_id: byKey[key] || '' })),
+                           },
+                         };
+                       });
+                     }}
+                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 font-mono text-sm"
+                   />
+                 </div>
+                 <div>
+                   <p className="text-sm font-medium text-gray-700 mb-2">Mapeo de campos a preguntas</p>
+                   <div className="space-y-2">
+                     {(surveyData.informed_consent?.mappings || []).length === 0 ? (
+                       <p className="text-xs text-gray-500">No hay placeholders {'{{...}}'} en la plantilla.</p>
+                     ) : (
+                       (surveyData.informed_consent.mappings || []).map((m) => (
+                         <div key={m.key} className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
+                           <code className="text-xs bg-gray-100 px-2 py-1.5 rounded border border-gray-200">{`{{${m.key}}}`}</code>
+                           <select
+                             value={m.question_id || ''}
+                             onChange={(e) => {
+                               const qid = e.target.value;
+                               setSurveyData((prev) => ({
+                                 ...prev,
+                                 informed_consent: {
+                                   ...(prev.informed_consent || buildDefaultInformedConsent()),
+                                   mappings: (prev.informed_consent?.mappings || []).map((row) =>
+                                     row.key === m.key ? { ...row, question_id: qid } : row
+                                   ),
+                                 },
+                               }));
+                             }}
+                             className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm"
+                           >
+                             <option value="">— Seleccionar pregunta —</option>
+                             {(surveyData.questions || [])
+                               .filter((q) => q.type !== 'Título')
+                               .map((q) => (
+                                 <option key={q.id} value={q.id}>{q.text || q.id}</option>
+                               ))}
+                           </select>
+                         </div>
+                       ))
+                     )}
+                   </div>
+                 </div>
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                   <div className="md:col-span-3">
+                     <label className="block text-sm font-medium text-gray-700 mb-1">Pregunta de aceptación / negación</label>
+                     <select
+                       value={surveyData.informed_consent?.acceptance_question_id || ''}
+                       onChange={(e) => setSurveyData((prev) => ({
+                         ...prev,
+                         informed_consent: {
+                           ...(prev.informed_consent || buildDefaultInformedConsent()),
+                           acceptance_question_id: e.target.value,
+                         },
+                       }))}
+                       className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm"
+                     >
+                       <option value="">— Seleccionar pregunta (p. ej. AUTORIZA) —</option>
+                       {(surveyData.questions || [])
+                         .filter((q) => ['Opción Única', 'Casillas', 'Desplegable', 'single_choice', 'checkbox', 'dropdown'].includes(q.type))
+                         .map((q) => (
+                           <option key={q.id} value={q.id}>{q.text || q.id}</option>
+                         ))}
+                     </select>
+                   </div>
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-1">Valor que acepta (dispara OTP)</label>
+                     <input
+                       type="text"
+                       value={surveyData.informed_consent?.acceptance_value || 'SI, AUTORIZO'}
+                       onChange={(e) => setSurveyData((prev) => ({
+                         ...prev,
+                         informed_consent: {
+                           ...(prev.informed_consent || buildDefaultInformedConsent()),
+                           acceptance_value: e.target.value,
+                         },
+                       }))}
+                       className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm"
+                       placeholder="SI, AUTORIZO"
+                     />
+                   </div>
+                   <div>
+                     <label className="block text-sm font-medium text-gray-700 mb-1">Valor que niega</label>
+                     <input
+                       type="text"
+                       value={surveyData.informed_consent?.denial_value || 'NO AUTORIZO'}
+                       onChange={(e) => setSurveyData((prev) => ({
+                         ...prev,
+                         informed_consent: {
+                           ...(prev.informed_consent || buildDefaultInformedConsent()),
+                           denial_value: e.target.value,
+                         },
+                       }))}
+                       className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm"
+                       placeholder="NO AUTORIZO"
+                     />
+                   </div>
+                   <div className="md:col-span-3">
+                     <p className="text-xs text-gray-500">
+                       Al marcar el valor de aceptación se abre un modal para correo + OTP. Hasta verificar el OTP no se liberan las preguntas siguientes.
+                     </p>
+                   </div>
+                 </div>
+                 <div>
+                   <label className="block text-sm font-medium text-gray-700 mb-1">Pregunta de firma (obligatoria para el PDF)</label>
+                   <select
+                     value={surveyData.informed_consent?.signature_question_id || ''}
+                     onChange={(e) => {
+                       const qid = e.target.value;
+                       setSurveyData((prev) => {
+                         const base = prev.informed_consent || buildDefaultInformedConsent();
+                         const mappings = (base.mappings || []).map((row) =>
+                           row.key === 'firma' ? { ...row, question_id: qid } : row
+                         );
+                         const hasFirma = mappings.some((m) => m.key === 'firma');
+                         return {
+                           ...prev,
+                           informed_consent: {
+                             ...base,
+                             signature_question_id: qid,
+                             mappings: hasFirma ? mappings : [...mappings, { key: 'firma', question_id: qid }],
+                           },
+                         };
+                       });
+                     }}
+                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm"
+                   >
+                     <option value="">— Seleccionar pregunta de firma —</option>
+                     {(surveyData.questions || [])
+                       .filter((q) => q.type === 'Firma' || q.type === 'signature')
+                       .map((q) => (
+                         <option key={q.id} value={q.id}>{q.text || 'Firma'}</option>
+                       ))}
+                   </select>
+                   {!(surveyData.questions || []).some((q) => q.type === 'Firma' || q.type === 'signature') && (
+                     <p className="text-xs text-amber-700 mt-1">Añade una pregunta tipo Firma a la encuesta para incluirla en el consentimiento.</p>
+                   )}
+                 </div>
+                 <div>
+                   <p className="text-sm font-medium text-gray-700 mb-2">Membrete PDF</p>
+                   <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                     <label className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 cursor-pointer shadow-sm">
+                       <FontAwesomeIcon icon={faPaperclip} size="sm" />
+                       Subir membrete PDF
+                       <input
+                         type="file"
+                         accept="application/pdf,.pdf"
+                         className="hidden"
+                         onChange={async (e) => {
+                           const file = e.target.files?.[0];
+                           e.target.value = '';
+                           if (!file) return;
+                           try {
+                             const { dataUrl, filename } = await readLetterheadPdfFile(file);
+                             setSurveyData((prev) => ({
+                               ...prev,
+                               informed_consent: {
+                                 ...(prev.informed_consent || buildDefaultInformedConsent()),
+                                 letterhead: 'custom',
+                                 letterhead_pdf: dataUrl,
+                                 letterhead_filename: filename,
+                               },
+                             }));
+                           } catch (err) {
+                             alert(err.message || 'No se pudo cargar el PDF');
+                           }
+                         }}
+                       />
+                     </label>
+                     {surveyData.informed_consent?.letterhead_pdf ? (
+                       <div className="flex items-center gap-2 min-w-0">
+                         <span className="text-sm text-emerald-800 font-medium truncate" title={surveyData.informed_consent.letterhead_filename}>
+                           {surveyData.informed_consent.letterhead_filename || 'membrete.pdf'}
+                         </span>
+                         <button
+                           type="button"
+                           className="text-xs font-bold text-red-600 hover:underline shrink-0"
+                           onClick={() => setSurveyData((prev) => ({
+                             ...prev,
+                             informed_consent: {
+                               ...(prev.informed_consent || buildDefaultInformedConsent()),
+                               letterhead: 'membrete2',
+                               letterhead_pdf: '',
+                               letterhead_filename: '',
+                             },
+                           }))}
+                         >
+                           Quitar
+                         </button>
+                       </div>
+                     ) : (
+                       <span className="text-xs text-gray-500">Si no subes uno, se usará el membrete por defecto.</span>
+                     )}
+                   </div>
+                 </div>
+                 <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                   Sube aquí tu PDF oficial de membrete (máx. 4&nbsp;MB). Se usará al generar el consentimiento capturado en línea.
+                 </p>
+               </div>
+             )}
+           </div>
 
            {/* Section Manager */}
            {showSectionManager && (
@@ -3744,8 +4502,114 @@ const ResponsesTable = ({
 
 // --- VISTA: RESPUESTAS DE ENCUESTAS ---
 
+const ConsentPreviewModal = ({ survey, response, onClose }) => {
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState('');
+  const ic = survey?.informed_consent || {};
+  const mergedBody = useMemo(
+    () => mergeConsentTemplate(ic.body || '', ic.mappings || [], response?.answers || {}),
+    [ic.body, ic.mappings, response]
+  );
+  const meta = useMemo(() => buildConsentMeta(response), [response]);
+  const signatureUrl = useMemo(
+    () => resolveConsentSignature({
+      answers: response?.answers || {},
+      mappings: ic.mappings || [],
+      survey,
+      signatureQuestionId: ic.signature_question_id || '',
+    }),
+    [response, ic.mappings, ic.signature_question_id, survey]
+  );
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    setError('');
+    try {
+      await downloadConsentPdf({
+        title: ic.title || 'Consentimiento informado',
+        mergedBody,
+        response,
+        survey,
+        letterheadUrl: '/membrete2.pdf',
+        letterheadPdf: ic.letterhead_pdf || '',
+        signatureDataUrl: signatureUrl,
+      });
+    } catch (e) {
+      console.error(e);
+      setError(e.message || 'No se pudo generar el PDF');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-200">
+          <div className="flex-1 text-center pr-8">
+            <h2 className="text-lg font-black text-gray-800">{ic.title || 'Consentimiento informado'}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg shrink-0">
+            <FontAwesomeIcon icon={faXmark} size="sm" />
+          </button>
+        </div>
+        <div className="px-5 py-4 overflow-y-auto flex-1 bg-gradient-to-b from-emerald-50/40 to-white">
+          <div className="prose prose-sm max-w-none whitespace-pre-wrap text-gray-800 leading-relaxed border border-gray-200 rounded-xl bg-white p-5 shadow-sm">
+            {mergedBody.replace(/\[Firma capturada\]/gi, '').trim()}
+          </div>
+          <div className="mt-4 border border-gray-200 rounded-xl bg-white p-4 shadow-sm">
+            <p className="text-sm font-bold text-gray-700 mb-2">Firma del declarante</p>
+            {signatureUrl ? (
+              <img src={signatureUrl} alt="Firma" className="max-h-28 border border-gray-200 rounded-lg bg-white p-2" />
+            ) : (
+              <p className="text-sm text-amber-700">Esta respuesta no tiene firma capturada. Asegúrate de incluir una pregunta tipo Firma en la encuesta.</p>
+            )}
+          </div>
+          <div className="mt-4 border border-emerald-100 rounded-xl bg-emerald-50/60 p-4 shadow-sm">
+            <p className="text-sm font-bold text-emerald-800 mb-1">{meta.stampLine}</p>
+            <p className="text-sm font-bold text-emerald-900 mb-2">Trazabilidad OTP / captura en línea</p>
+            <ul className="text-xs text-emerald-900 space-y-1">
+              {(meta.traceLines || []).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+              {!(meta.traceLines || []).length && (
+                <>
+                  <li>Correo OTP: {meta.consentEmail || '—'}</li>
+                  <li>OTP aceptado: {meta.consentOtpCode || '—'}</li>
+                  <li>OTP verificado: {meta.otpVerifiedLabel || (meta.otpVerified ? 'Sí' : '—')}</li>
+                  <li>Fecha captura respuesta: {meta.dateLabel || '—'}</li>
+                  <li>ID respuesta: {meta.responseId || '—'}</li>
+                </>
+              )}
+            </ul>
+          </div>
+          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="px-5 py-4 border-t border-gray-200 flex flex-wrap gap-2 justify-end bg-white">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl font-bold text-sm text-gray-600 hover:bg-gray-100">
+            Cerrar
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className="px-4 py-2 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 inline-flex items-center gap-2"
+          >
+            <FontAwesomeIcon icon={faDownload} size="sm" />
+            {downloading ? 'Generando…' : 'Descargar PDF'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onResetResponses }) => {
   const [selectedResponse, setSelectedResponse] = useState(null);
+  const [consentResponse, setConsentResponse] = useState(null);
   const [activeTab, setActiveTab] = useState('individual'); // 'individual', 'statistics', or 'table'
   const [chartTypes, setChartTypes] = useState({}); // { questionId: 'bar' | 'doughnut' | 'line' }
   const [expandedQuestionText, setExpandedQuestionText] = useState({});
@@ -4062,7 +4926,18 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     const questions = survey.questions || [];
     
     // Crear encabezados
-    const headers = ['ID Respuesta', 'Dispositivo', 'Encuestador', 'Estado', 'Fecha de Toma'];
+    const headers = [
+      'ID Respuesta',
+      'Dispositivo',
+      'Encuestador',
+      'Estado',
+      'Fecha de Toma',
+      'Consentimiento en línea',
+      'Correo OTP',
+      'OTP aceptado',
+      'OTP verificado el',
+      'Consentimiento datos personales',
+    ];
     questions.forEach(q => {
       const questionId = q.id || q._id;
       const questionText = q.text || q.question_text || `Pregunta ${questionId}`;
@@ -4081,13 +4956,25 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       
       // Obtener el ID de la respuesta para usar como fallback
       const responseId = response.id || response._id || null;
+      const otpAt = response.consent_otp_verified_at
+        ? formatDate(response.consent_otp_verified_at, responseId)
+        : '-';
+      const hasConsentTrace = Boolean(response.consent_email || response.consent_otp_verified_at);
+      const dataConsentAt = response.signature_consent_at
+        ? formatDate(response.signature_consent_at, responseId)
+        : '-';
       
       const row = [
         responseId || `Respuesta ${index + 1}`,
         response.device_id || '-',
         (response.surveyor_name || response.surveyor_id) || '-',
         response.synced ? 'En línea' : 'Pendiente',
-        formatDate(dateValue, responseId)
+        formatDate(dateValue, responseId),
+        hasConsentTrace ? 'Sí' : (survey?.informed_consent_enabled ? 'No' : '-'),
+        response.consent_email || '-',
+        response.consent_otp_code || '-',
+        otpAt,
+        dataConsentAt,
       ];
       
       // Agregar respuestas por pregunta (pasamos q para evaluación: nombres de ítems/columnas)
@@ -4113,6 +5000,11 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       if (i === 2) return { wch: 15 }; // Encuestador
       if (i === 3) return { wch: 12 }; // Estado
       if (i === 4) return { wch: 20 }; // Fecha de Toma
+      if (i === 5) return { wch: 18 }; // Consentimiento en línea
+      if (i === 6) return { wch: 28 }; // Correo OTP
+      if (i === 7) return { wch: 14 }; // OTP aceptado
+      if (i === 8) return { wch: 20 }; // OTP verificado
+      if (i === 9) return { wch: 22 }; // Consentimiento datos personales
       if (i === headers.length - 1) return { wch: 55 }; // Link público (URL larga)
       return { wch: 30 }; // Columnas de preguntas
     });
@@ -4142,6 +5034,16 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
               <h1 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight leading-none">Respuesta Individual</h1>
             </div>
           </div>
+          {survey?.informed_consent_enabled && (
+            <button
+              type="button"
+              onClick={() => setConsentResponse(selectedResponse)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 rounded-xl font-bold text-sm transition-colors"
+            >
+              <FontAwesomeIcon icon={faFileLines} size="sm" />
+              Ver consentimiento
+            </button>
+          )}
         </header>
         <div className="w-full max-w-none px-4 sm:px-6 lg:px-10 xl:px-14 py-6 md:py-10">
           <div className="bg-white rounded-2xl border border-gray-200 p-6 md:p-8 shadow-sm w-full">
@@ -4152,6 +5054,15 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                   {selectedResponse.device_id && `Dispositivo: ${selectedResponse.device_id}`}
                   {(selectedResponse.surveyor_name || selectedResponse.surveyor_id) && ` • Encuestador: ${selectedResponse.surveyor_name || selectedResponse.surveyor_id}`}
                 </p>
+                {(selectedResponse.consent_email || selectedResponse.consent_otp_verified_at) && (
+                  <div className="mt-3 text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 space-y-0.5">
+                    <p className="font-bold">Trazabilidad consentimiento</p>
+                    {selectedResponse.consent_email && <p>Correo OTP: {selectedResponse.consent_email}</p>}
+                    {selectedResponse.consent_otp_verified_at && (
+                      <p>OTP verificado: {formatDate(selectedResponse.consent_otp_verified_at, selectedResponse.id || selectedResponse._id)}</p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="text-right">
                 <span className="text-xs text-gray-400">
@@ -4180,6 +5091,13 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
             </div>
           </div>
         </div>
+        {consentResponse && (
+          <ConsentPreviewModal
+            survey={survey}
+            response={consentResponse}
+            onClose={() => setConsentResponse(null)}
+          />
+        )}
       </main>
     );
   }
@@ -4463,6 +5381,18 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                             <span className="font-medium text-gray-600">{preview.label}:</span> {preview.value}
                           </p>
                         )}
+                        {survey?.informed_consent_enabled && (
+                          <button
+                            type="button"
+                            className="mt-2 w-full text-left text-xs font-bold text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 rounded-lg px-2 py-1.5 border border-emerald-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConsentResponse(response);
+                            }}
+                          >
+                            Ver consentimiento
+                          </button>
+                        )}
                       </div>
                       );
                     })}
@@ -4555,6 +5485,13 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
           </div>
         )}
       </div>
+      {consentResponse && (
+        <ConsentPreviewModal
+          survey={survey}
+          response={consentResponse}
+          onClose={() => setConsentResponse(null)}
+        />
+      )}
     </main>
   );
 };
@@ -4582,9 +5519,31 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     is_active: true
   });
   const [groupFormData, setGroupFormData] = useState({
-    name: ''
+    name: '',
+    smtp_host: '',
+    smtp_port: 465,
+    smtp_user: '',
+    smtp_password: '',
+    smtp_use_tls: true,
+    smtp_from_email: '',
+    smtp_from_name: '',
+    smtp_reply_to: '',
+    smtp_test_email: '',
+  });
+  const emptyGroupForm = () => ({
+    name: '',
+    smtp_host: '',
+    smtp_port: 465,
+    smtp_user: '',
+    smtp_password: '',
+    smtp_use_tls: true,
+    smtp_from_email: '',
+    smtp_from_name: '',
+    smtp_reply_to: '',
+    smtp_test_email: '',
   });
   const [formError, setFormError] = useState('');
+  const [smtpTesting, setSmtpTesting] = useState(false);
   const { useTableLayout } = useBreakpoint();
   const showGroupColumn = users.some(u => u.group_name || u.user_group_id);
 
@@ -4903,7 +5862,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 
       await fetchGroups();
       setShowGroupForm(false);
-      setGroupFormData({ name: '' });
+      setGroupFormData(emptyGroupForm());
       alert('Grupo creado exitosamente.');
     } catch (error) {
       console.error("Error creating group:", error);
@@ -4916,9 +5875,13 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     setFormError('');
 
     try {
+      const payload = { ...groupFormData };
+      if (!(payload.smtp_password || '').trim()) {
+        delete payload.smtp_password;
+      }
       const response = await authenticatedFetch(`/api/groups/${editingGroup.id}/`, {
         method: 'PUT',
-        body: JSON.stringify(groupFormData)
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -4929,7 +5892,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       await fetchGroups();
       setShowGroupForm(false);
       setEditingGroup(null);
-      setGroupFormData({ name: '' });
+      setGroupFormData(emptyGroupForm());
       alert('Grupo actualizado exitosamente.');
     } catch (error) {
       console.error("Error updating group:", error);
@@ -4963,7 +5926,16 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   const handleEditGroup = (group) => {
     setEditingGroup(group);
     setGroupFormData({
-      name: group.name || ''
+      name: group.name || '',
+      smtp_host: group.smtp_host || '',
+      smtp_port: group.smtp_port ?? 465,
+      smtp_user: group.smtp_user || '',
+      smtp_password: '',
+      smtp_use_tls: group.smtp_use_tls !== false,
+      smtp_from_email: group.smtp_from_email || '',
+      smtp_from_name: group.smtp_from_name || '',
+      smtp_reply_to: group.smtp_reply_to || '',
+      smtp_test_email: '',
     });
     setShowGroupForm(true);
     setFormError('');
@@ -4971,9 +5943,44 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 
   const handleNewGroup = () => {
     setEditingGroup(null);
-    setGroupFormData({ name: '' });
+    setGroupFormData(emptyGroupForm());
     setShowGroupForm(true);
     setFormError('');
+  };
+
+  const handleSmtpTest = async () => {
+    if (!editingGroup?.id) {
+      setFormError('Guarda el grupo primero para poder probar el envío SMTP.');
+      return;
+    }
+    setSmtpTesting(true);
+    setFormError('');
+    try {
+      const payload = {
+        test_email: groupFormData.smtp_test_email,
+        smtp_host: groupFormData.smtp_host,
+        smtp_port: groupFormData.smtp_port,
+        smtp_user: groupFormData.smtp_user,
+        smtp_use_tls: groupFormData.smtp_use_tls,
+        smtp_from_email: groupFormData.smtp_from_email,
+        smtp_from_name: groupFormData.smtp_from_name,
+        smtp_reply_to: groupFormData.smtp_reply_to,
+      };
+      if ((groupFormData.smtp_password || '').trim()) {
+        payload.smtp_password = groupFormData.smtp_password;
+      }
+      const response = await authenticatedFetch(`/api/groups/${editingGroup.id}/smtp-test/`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'No se pudo enviar la prueba');
+      alert(data.message || 'Correo de prueba enviado.');
+    } catch (error) {
+      setFormError(error.message);
+    } finally {
+      setSmtpTesting(false);
+    }
   };
 
   if (loading) {
@@ -5476,13 +6483,151 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                     />
                   </div>
 
-                  <div className="flex gap-3 pt-4">
+                    <div className="border-t border-gray-200 pt-4 space-y-3">
+                    <h4 className="text-sm font-black text-gray-800">Correo / SMTP (OTP de consentimiento)</h4>
+                    <p className="text-xs text-gray-500">
+                      Credenciales del servidor de correo del departamento/grupo (ej. Hostinger: smtp.hostinger.com, puerto 465).
+                    </p>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-xs text-amber-950 leading-relaxed space-y-1.5">
+                      <p className="font-bold text-amber-900">Para que el correo llegue a bandeja (no spam)</p>
+                      <p>
+                        El remitente (<span className="font-semibold">SMTP_FROM</span>) debe ser del mismo dominio autenticado
+                        en el servidor. En el panel DNS del dominio (Hostinger u otro) activa{' '}
+                        <span className="font-semibold">SPF</span>, <span className="font-semibold">DKIM</span> y{' '}
+                        <span className="font-semibold">DMARC</span>. Sin eso, Gmail/Outlook suelen filtrar el mensaje aunque el SMTP responda bien.
+                      </p>
+                    </div>
+                    {(() => {
+                      const fromAddr = (groupFormData.smtp_from_email || '').trim().toLowerCase();
+                      const userAddr = (groupFormData.smtp_user || '').trim().toLowerCase();
+                      const fromDom = fromAddr.includes('@') ? fromAddr.split('@').pop() : '';
+                      const userDom = userAddr.includes('@') ? userAddr.split('@').pop() : '';
+                      if (fromDom && userDom && fromDom !== userDom) {
+                        return (
+                          <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                            Aviso: el dominio de <span className="font-semibold">SMTP_FROM</span> ({fromDom}) no coincide con el de{' '}
+                            <span className="font-semibold">SMTP_USER</span> ({userDom}). Eso suele empeorar el filtrado antispam.
+                            Usa el mismo dominio en ambos cuando sea posible.
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Servidor SMTP (SMTP_HOST)</label>
+                        <input
+                          type="text"
+                          value={groupFormData.smtp_host}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, smtp_host: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="smtp.hostinger.com"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Puerto (SMTP_PORT)</label>
+                        <input
+                          type="number"
+                          value={groupFormData.smtp_port}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, smtp_port: Number(e.target.value) || 465 })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="465"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Usuario (SMTP_USER)</label>
+                        <input
+                          type="text"
+                          value={groupFormData.smtp_user}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, smtp_user: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="info@tudominio.com"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Contraseña (SMTP_PASS)</label>
+                        <input
+                          type="password"
+                          value={groupFormData.smtp_password}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, smtp_password: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="Dejar en blanco para mantener la contraseña guardada"
+                          autoComplete="new-password"
+                        />
+                        {editingGroup?.smtp_password_set && (
+                          <p className="text-xs text-gray-500 mt-1">Ya hay una contraseña guardada. Déjala vacía para no cambiarla.</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Correo remitente (SMTP_FROM)</label>
+                        <input
+                          type="email"
+                          value={groupFormData.smtp_from_email}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, smtp_from_email: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="info@tudominio.com"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Nombre remitente (SMTP_FROM_NAME)</label>
+                        <input
+                          type="text"
+                          value={groupFormData.smtp_from_name}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, smtp_from_name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="Clínica Maicao"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Responder a (SMTP_REPLY_TO)</label>
+                        <input
+                          type="email"
+                          value={groupFormData.smtp_reply_to}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, smtp_reply_to: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="info@tudominio.com"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Correo de prueba (solo botón Probar envío)</label>
+                        <input
+                          type="email"
+                          value={groupFormData.smtp_test_email}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, smtp_test_email: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="prueba@gmail.com"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          El OTP de consentimiento usa el correo que el encuestado escribe en el modal. Este campo solo aplica a Probar envío.
+                        </p>
+                      </div>
+                    </div>
+                    {editingGroup?.smtp_configured && (
+                      <p className="text-xs text-emerald-700">SMTP configurado en este grupo.</p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-3 pt-4">
                     <button
                       type="submit"
-                      className="flex-1 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-xl hover:shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95"
+                      className="flex-1 min-w-[140px] px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold shadow-xl hover:shadow-2xl transition-all duration-200 hover:scale-105 active:scale-95 inline-flex items-center justify-center gap-2"
                     >
-                      {editingGroup ? 'Actualizar Grupo' : 'Crear Grupo'}
+                      <FontAwesomeIcon icon={faCheck} size="sm" className="fa-icon-force-white" />
+                      {editingGroup ? 'Guardar' : 'Crear Grupo'}
                     </button>
+                    {editingGroup && (
+                      <button
+                        type="button"
+                        onClick={handleSmtpTest}
+                        disabled={smtpTesting}
+                        className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                      >
+                        <FontAwesomeIcon icon={faPaperPlane} size="sm" />
+                        {smtpTesting ? 'Enviando…' : 'Probar envío'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -5543,15 +6688,16 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              {userRole === 'root' && (
+                              {(userRole === 'root' || userRole === 'group_admin') && (
                                 <>
                                   <button
                                     onClick={() => handleEditGroup(group)}
                                     className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                    title="Editar grupo"
+                                    title="Editar grupo / SMTP"
                                   >
                                     <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
                                   </button>
+                                  {userRole === 'root' && (
                                   <button
                                     onClick={() => handleDeleteGroup(group.id)}
                                     className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -5559,6 +6705,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                                   >
                                     <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
                                   </button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -6544,7 +7691,31 @@ export default function App() {
       reference_mapping: surveyData.reference_mapping || {},
       documento_empleado_question_id: surveyData.documento_empleado_question_id || '',
       documento_votante_question_id: surveyData.documento_votante_question_id || '',
-      header_image: surveyData.header_image || ''
+      header_image: surveyData.header_image || '',
+      consent_responsible: surveyData.consent_responsible || '',
+      consent_purpose: surveyData.consent_purpose || '',
+      informed_consent_enabled: Boolean(surveyData.informed_consent_enabled),
+      informed_consent: surveyData.informed_consent_enabled
+        ? {
+            title: surveyData.informed_consent?.title || '',
+            body: surveyData.informed_consent?.body || '',
+            mappings: Array.isArray(surveyData.informed_consent?.mappings)
+              ? surveyData.informed_consent.mappings.map((m) => ({
+                  key: m.key,
+                  question_id: m.question_id || '',
+                }))
+              : [],
+            letterhead: surveyData.informed_consent?.letterhead_pdf
+              ? 'custom'
+              : (surveyData.informed_consent?.letterhead || 'membrete2'),
+            letterhead_pdf: surveyData.informed_consent?.letterhead_pdf || '',
+            letterhead_filename: surveyData.informed_consent?.letterhead_filename || '',
+            signature_question_id: surveyData.informed_consent?.signature_question_id || '',
+            acceptance_question_id: surveyData.informed_consent?.acceptance_question_id || '',
+            acceptance_value: surveyData.informed_consent?.acceptance_value || 'SI, AUTORIZO',
+            denial_value: surveyData.informed_consent?.denial_value || 'NO AUTORIZO',
+          }
+        : (surveyData.informed_consent || {}),
     };
 
     try {

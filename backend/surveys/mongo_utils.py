@@ -43,3 +43,7 @@ def get_attachments_collection():
 def get_gridfs():
     from gridfs import GridFS
     return GridFS(get_mongo_db(), collection='attachments_fs')
+
+
+def get_consent_otps_collection():
+    return get_mongo_collection('consent_otps')

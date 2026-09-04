@@ -197,6 +197,9 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 ATTACHMENTS_SUBDIR = 'attachments'  # subdir under MEDIA_ROOT for file_upload question attachments
 MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10 MB per file
+# Surveys may embed letterhead PDF (base64) inside informed_consent
+DATA_UPLOAD_MAX_MEMORY_SIZE = 12 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 12 * 1024 * 1024
 ALLOWED_ATTACHMENT_CONTENT_TYPES = (
     'image/jpeg', 'image/png', 'image/gif', 'image/webp',
     'application/pdf',

@@ -16,7 +16,26 @@ from datetime import datetime
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 
-from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection, get_mongo_collection, get_attachments_collection, get_gridfs
+from .mongo_utils import get_surveys_collection, get_responses_collection, get_survey_groups_collection, get_mongo_collection, get_attachments_collection, get_gridfs, get_consent_otps_collection
+from .email_smtp import (
+    send_smtp_email,
+    SmtpConfigError,
+    SmtpSendError,
+    group_has_smtp,
+    build_consent_otp_message,
+    build_smtp_test_message,
+    build_consent_pdf_email,
+)
+from .consent_otp import (
+    normalize_email,
+    generate_otp_code,
+    hash_otp,
+    make_consent_token,
+    verify_consent_token,
+    otp_expires_at,
+    RESEND_COOLDOWN_SECONDS,
+    MAX_ATTEMPTS,
+)
 from .throttles import (
     LoginRateThrottle, ReferenceLookupRateThrottle,
     AttachmentUploadRateThrottle, ResponseSyncRateThrottle,
@@ -347,10 +366,20 @@ class SurveyGroupListCreate(APIView):
             validated_data = serializer.validated_data
             validated_data['created_by'] = str(request.user.id) # Usar el ID del usuario autenticado como string
             
-            result = groups_collection.insert_one({
+            doc = {
                 'name': validated_data['name'],
-                'created_by': validated_data['created_by']
-            })
+                'created_by': validated_data['created_by'],
+                'smtp_host': validated_data.get('smtp_host') or '',
+                'smtp_port': validated_data.get('smtp_port') if validated_data.get('smtp_port') is not None else 465,
+                'smtp_user': validated_data.get('smtp_user') or '',
+                'smtp_use_tls': bool(validated_data.get('smtp_use_tls', True)),
+                'smtp_from_email': validated_data.get('smtp_from_email') or '',
+                'smtp_from_name': validated_data.get('smtp_from_name') or '',
+                'smtp_reply_to': validated_data.get('smtp_reply_to') or '',
+            }
+            if validated_data.get('smtp_password'):
+                doc['smtp_password'] = validated_data['smtp_password']
+            result = groups_collection.insert_one(doc)
             # Recuperar el objeto insertado para serializarlo con el ID correcto
             new_group = groups_collection.find_one({'_id': result.inserted_id})
             new_group['id'] = str(new_group['_id'])
@@ -384,11 +413,15 @@ class SurveyGroupRetrieveUpdateDestroy(APIView):
         return Response(serializer.data)
 
     def put(self, request, pk):
-        # Verificar permisos: solo root puede editar grupos
+        # root: cualquier grupo; group_admin: solo su propio grupo (SMTP/nombre)
         user_role, user_group_id = get_user_role_and_group(request)
-        if user_role != 'root':
+        if user_role == 'root':
+            pass
+        elif user_role == 'group_admin' and user_group_id and str(user_group_id) == str(pk):
+            pass
+        else:
             return Response(
-                {"detail": "Solo los usuarios con rol 'root' pueden editar grupos."},
+                {"detail": "No tienes permisos para editar este grupo."},
                 status=status.HTTP_403_FORBIDDEN
             )
         
@@ -396,12 +429,31 @@ class SurveyGroupRetrieveUpdateDestroy(APIView):
         serializer = SurveyGroupSerializer(group, data=request.data, partial=True)
         if serializer.is_valid():
             groups_collection = get_survey_groups_collection()
+            vd = serializer.validated_data
+            update_fields = {}
+            if 'name' in vd and user_role == 'root':
+                update_fields['name'] = vd.get('name') or group.get('name')
+            elif 'name' in vd and user_role == 'group_admin':
+                update_fields['name'] = vd.get('name') or group.get('name')
+            for key in ('smtp_host', 'smtp_user', 'smtp_from_email', 'smtp_from_name', 'smtp_reply_to'):
+                if key in vd:
+                    update_fields[key] = vd.get(key) or ''
+            if 'smtp_port' in vd:
+                try:
+                    update_fields['smtp_port'] = int(vd.get('smtp_port') or 465)
+                except (TypeError, ValueError):
+                    update_fields['smtp_port'] = 465
+            if 'smtp_use_tls' in vd:
+                update_fields['smtp_use_tls'] = bool(vd.get('smtp_use_tls'))
+            if 'smtp_password' in vd and (vd.get('smtp_password') or '').strip():
+                update_fields['smtp_password'] = vd.get('smtp_password')
+            if not update_fields:
+                return Response(SurveyGroupSerializer(group).data)
             groups_collection.update_one(
                 {"_id": ObjectId(pk)},
-                {"$set": {'name': serializer.validated_data.get('name', group['name'])}}
-                # 'created_by' no debería ser actualizable aquí
+                {"$set": update_fields}
             )
-            updated_group = self.get_object(pk) # Recuperar el grupo actualizado
+            updated_group = self.get_object(pk)
             return Response(SurveyGroupSerializer(updated_group).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -416,17 +468,65 @@ class SurveyGroupRetrieveUpdateDestroy(APIView):
         
         group = self.get_object(pk) # Esto también verifica si existe y convierte el ID
         groups_collection = get_survey_groups_collection()
-        
-        # Opcional: Implementar lógica para evitar eliminar grupos con encuestas asociadas
-        # surveys_collection = get_surveys_collection()
-        # if surveys_collection.count_documents({'group': ObjectId(pk)}) > 0:
-        #     return Response(
-        #         {"detail": "No se puede eliminar el grupo porque tiene encuestas asociadas."},
-        #         status=status.HTTP_409_CONFLICT # 409 Conflict
-        #     )
             
         groups_collection.delete_one({"_id": ObjectId(pk)})
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class SurveyGroupSmtpTest(APIView):
+    """POST: prueba de envío SMTP del grupo (solo root o group_admin del grupo)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        user_role, user_group_id = get_user_role_and_group(request)
+        if user_role == 'root':
+            pass
+        elif user_role == 'group_admin' and user_group_id and str(user_group_id) == str(pk):
+            pass
+        else:
+            return Response(
+                {"detail": "No tienes permisos para probar el SMTP de este grupo."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        groups_collection = get_survey_groups_collection()
+        try:
+            group = groups_collection.find_one({"_id": ObjectId(pk)})
+        except Exception:
+            group = None
+        if not group:
+            raise NotFound(detail="Grupo no encontrado.")
+
+        # Optional: merge unsaved form overrides from body (except password if blank)
+        overrides = request.data if hasattr(request, 'data') else {}
+        if isinstance(overrides, dict):
+            merged = dict(group)
+            for key in (
+                'smtp_host', 'smtp_port', 'smtp_user', 'smtp_use_tls',
+                'smtp_from_email', 'smtp_from_name', 'smtp_reply_to',
+            ):
+                if key in overrides and overrides.get(key) is not None:
+                    merged[key] = overrides.get(key)
+            if (overrides.get('smtp_password') or '').strip():
+                merged['smtp_password'] = overrides.get('smtp_password')
+            group = merged
+
+        test_to = normalize_email(request.data.get('test_email') or request.data.get('email') or '')
+        if not test_to or '@' not in test_to:
+            return Response(
+                {'detail': 'Indica un correo de prueba válido.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        subject, body_text, body_html = build_smtp_test_message(group)
+        try:
+            send_smtp_email(group, test_to, subject, body_text, body_html=body_html)
+        except SmtpConfigError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except SmtpSendError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response({'ok': True, 'message': f'Correo de prueba enviado a {test_to}.'})
 
 # Vistas para Encuestas
 class SurveyListCreate(APIView):
@@ -820,6 +920,14 @@ class SurveyListCreate(APIView):
             survey_doc['consent_responsible'] = validated_data['consent_responsible']
         if validated_data.get('consent_purpose'):
             survey_doc['consent_purpose'] = validated_data['consent_purpose']
+        if 'informed_consent_enabled' in validated_data:
+            survey_doc['informed_consent_enabled'] = bool(validated_data.get('informed_consent_enabled'))
+        else:
+            survey_doc['informed_consent_enabled'] = False
+        if 'informed_consent' in validated_data:
+            survey_doc['informed_consent'] = validated_data.get('informed_consent') or {}
+        else:
+            survey_doc['informed_consent'] = {}
 
         result = surveys_collection.insert_one(survey_doc)
         new_survey = surveys_collection.find_one({'_id': result.inserted_id})
@@ -1351,6 +1459,10 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['consent_responsible'] = validated_data.get('consent_responsible') or ''
             if 'consent_purpose' in validated_data:
                 update_fields['consent_purpose'] = validated_data.get('consent_purpose') or ''
+            if 'informed_consent_enabled' in validated_data:
+                update_fields['informed_consent_enabled'] = bool(validated_data.get('informed_consent_enabled'))
+            if 'informed_consent' in validated_data:
+                update_fields['informed_consent'] = validated_data.get('informed_consent') or {}
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
@@ -2014,6 +2126,278 @@ class PublicAttachmentRetrieveView(APIView):
             return resp
 
 
+class PublicConsentOtpSend(APIView):
+    """POST: envía OTP al correo ingresado en el modal de aceptación."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, pk):
+        email = normalize_email(request.data.get('email'))
+        acceptance_answer = request.data.get('acceptance_answer')
+        if not email or '@' not in email:
+            return Response({'detail': 'Correo electrónico inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        surveys_collection = get_surveys_collection()
+        try:
+            survey = surveys_collection.find_one({'_id': ObjectId(pk)})
+        except Exception:
+            survey = surveys_collection.find_one({'id': pk})
+        if not survey or survey.get('is_deleted'):
+            raise NotFound(detail='Encuesta no encontrada.')
+        if not survey.get('is_public', False):
+            return Response({'detail': 'Esta encuesta no es pública.'}, status=status.HTTP_403_FORBIDDEN)
+        if not survey.get('informed_consent_enabled'):
+            return Response({'detail': 'Esta encuesta no tiene consentimiento informado activo.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        ic = survey.get('informed_consent') or {}
+        accept_value = (ic.get('acceptance_value') or 'SI, AUTORIZO').strip()
+        if str(acceptance_answer or '').strip() != accept_value:
+            return Response(
+                {'detail': f'Debe aceptar con el valor configurado ({accept_value}) para solicitar OTP.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        group = None
+        group_id = survey.get('group')
+        if group_id:
+            groups_collection = get_survey_groups_collection()
+            try:
+                group = groups_collection.find_one({'_id': ObjectId(str(group_id))})
+            except Exception:
+                group = groups_collection.find_one({'_id': group_id})
+        if not group or not group_has_smtp(group):
+            return Response(
+                {'detail': 'El departamento/grupo de esta encuesta no tiene SMTP configurado.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        otps = get_consent_otps_collection()
+        survey_key = str(survey.get('_id') or pk)
+        existing = otps.find_one({'survey_id': survey_key, 'email': email, 'consumed': {'$ne': True}})
+        if existing and existing.get('sent_at'):
+            elapsed = (datetime.utcnow() - existing['sent_at']).total_seconds()
+            if elapsed < RESEND_COOLDOWN_SECONDS:
+                wait = int(RESEND_COOLDOWN_SECONDS - elapsed)
+                return Response(
+                    {'detail': f'Espera {wait}s antes de reenviar el código.'},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+
+        code = generate_otp_code(6)
+        doc = {
+            'survey_id': survey_key,
+            'email': email,
+            'code_hash': hash_otp(code),
+            'expires_at': otp_expires_at(),
+            'sent_at': datetime.utcnow(),
+            'attempts': 0,
+            'consumed': False,
+        }
+        otps.update_one(
+            {'survey_id': survey_key, 'email': email},
+            {'$set': doc},
+            upsert=True,
+        )
+
+        subject, body_text, body_html = build_consent_otp_message(
+            group, survey, code, expires_minutes=10
+        )
+        try:
+            send_smtp_email(group, email, subject, body_text, body_html=body_html)
+        except SmtpConfigError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except SmtpSendError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response({'ok': True, 'message': 'Código enviado al correo indicado.', 'expires_in': 600})
+
+
+class PublicConsentOtpVerify(APIView):
+    """POST: verifica OTP y devuelve consent_token."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, pk):
+        email = normalize_email(request.data.get('email'))
+        code = str(request.data.get('code') or '').strip()
+        if not email or not code:
+            return Response({'detail': 'Correo y código son obligatorios.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        surveys_collection = get_surveys_collection()
+        try:
+            survey = surveys_collection.find_one({'_id': ObjectId(pk)})
+        except Exception:
+            survey = surveys_collection.find_one({'id': pk})
+        if not survey or survey.get('is_deleted'):
+            raise NotFound(detail='Encuesta no encontrada.')
+        if not survey.get('is_public', False):
+            return Response({'detail': 'Esta encuesta no es pública.'}, status=status.HTTP_403_FORBIDDEN)
+
+        survey_key = str(survey.get('_id') or pk)
+        otps = get_consent_otps_collection()
+        doc = otps.find_one({'survey_id': survey_key, 'email': email})
+        if not doc or doc.get('consumed'):
+            return Response({'detail': 'No hay un código activo. Solicita uno nuevo.'}, status=status.HTTP_400_BAD_REQUEST)
+        if doc.get('expires_at') and datetime.utcnow() > doc['expires_at']:
+            return Response({'detail': 'El código expiró. Solicita uno nuevo.'}, status=status.HTTP_400_BAD_REQUEST)
+        attempts = int(doc.get('attempts') or 0)
+        if attempts >= MAX_ATTEMPTS:
+            return Response({'detail': 'Demasiados intentos. Solicita un código nuevo.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+
+        if not hmac_compare_otp(doc.get('code_hash'), code):
+            otps.update_one({'_id': doc['_id']}, {'$inc': {'attempts': 1}})
+            return Response({'detail': 'Código incorrecto.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        otps.update_one(
+            {'_id': doc['_id']},
+            {'$set': {'consumed': True, 'verified_at': datetime.utcnow()}}
+        )
+        token = make_consent_token(survey_key, email)
+        return Response({
+            'verified': True,
+            'consent_token': token,
+            'consent_email': email,
+        })
+
+
+class PublicConsentPdfEmail(APIView):
+    """
+    POST: envía por SMTP del grupo el PDF del consentimiento al correo OTP
+    usado al aceptar. Requiere response_id de una respuesta recién creada
+    con el mismo consent_email.
+    """
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    MAX_PDF_BYTES = 8 * 1024 * 1024
+
+    def post(self, request, pk):
+        import base64
+
+        email = normalize_email(request.data.get('email') or request.data.get('consent_email'))
+        response_id = str(request.data.get('response_id') or '').strip()
+        pdf_b64 = request.data.get('pdf_base64') or request.data.get('pdf') or ''
+        if isinstance(pdf_b64, str) and pdf_b64.startswith('data:') and ',' in pdf_b64:
+            pdf_b64 = pdf_b64.split(',', 1)[1]
+        pdf_b64 = str(pdf_b64).strip()
+
+        if not email or '@' not in email:
+            return Response({'detail': 'Correo electrónico inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not response_id:
+            return Response({'detail': 'Falta el ID de la respuesta.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not pdf_b64:
+            return Response({'detail': 'Falta el PDF a enviar.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        surveys_collection = get_surveys_collection()
+        try:
+            survey = surveys_collection.find_one({'_id': ObjectId(pk)})
+        except Exception:
+            survey = surveys_collection.find_one({'id': pk})
+        if not survey or survey.get('is_deleted'):
+            raise NotFound(detail='Encuesta no encontrada.')
+        if not survey.get('is_public', False):
+            return Response({'detail': 'Esta encuesta no es pública.'}, status=status.HTTP_403_FORBIDDEN)
+        if not survey.get('informed_consent_enabled'):
+            return Response(
+                {'detail': 'Esta encuesta no tiene consentimiento informado activo.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            resp_oid = ObjectId(response_id)
+        except Exception:
+            return Response({'detail': 'ID de respuesta inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        responses_collection = get_responses_collection()
+        resp = responses_collection.find_one({'_id': resp_oid})
+        if not resp:
+            return Response({'detail': 'Respuesta no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+
+        survey_key = str(survey.get('_id') or pk)
+        resp_survey_raw = resp.get('survey')
+        resp_survey = str(resp_survey_raw.get('$oid') if isinstance(resp_survey_raw, dict) else resp_survey_raw)
+        if resp_survey not in (survey_key, str(pk), str(survey.get('_id', ''))):
+            return Response(
+                {'detail': 'La respuesta no corresponde a esta encuesta.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        stored_email = normalize_email(resp.get('consent_email'))
+        if not stored_email or stored_email != email:
+            return Response(
+                {'detail': 'El correo no coincide con el registrado en la respuesta.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if resp.get('consent_pdf_emailed_at'):
+            return Response({
+                'ok': True,
+                'message': 'El PDF ya había sido enviado a este correo.',
+                'already_sent': True,
+            })
+
+        group = None
+        group_id = survey.get('group')
+        if group_id:
+            groups_collection = get_survey_groups_collection()
+            try:
+                group = groups_collection.find_one({'_id': ObjectId(str(group_id))})
+            except Exception:
+                group = groups_collection.find_one({'_id': group_id})
+        if not group or not group_has_smtp(group):
+            return Response(
+                {'detail': 'El departamento/grupo no tiene SMTP configurado.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            pdf_bytes = base64.b64decode(pdf_b64, validate=False)
+        except Exception:
+            return Response({'detail': 'PDF en base64 inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not pdf_bytes or len(pdf_bytes) < 100:
+            return Response({'detail': 'El PDF está vacío o es inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(pdf_bytes) > self.MAX_PDF_BYTES:
+            return Response({'detail': 'El PDF supera el tamaño máximo permitido.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not pdf_bytes.startswith(b'%PDF'):
+            return Response({'detail': 'El archivo no parece un PDF válido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        subject, body_text, body_html = build_consent_pdf_email(group, survey, response_id=response_id)
+        filename = f"autorizacion-{response_id[:12]}.pdf"
+        try:
+            send_smtp_email(
+                group,
+                email,
+                subject,
+                body_text,
+                body_html=body_html,
+                attachments=[{
+                    'filename': filename,
+                    'content': pdf_bytes,
+                    'maintype': 'application',
+                    'subtype': 'pdf',
+                }],
+            )
+        except SmtpConfigError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except SmtpSendError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        responses_collection.update_one(
+            {'_id': resp_oid},
+            {'$set': {'consent_pdf_emailed_at': datetime.utcnow(), 'consent_pdf_emailed_to': email}},
+        )
+        return Response({
+            'ok': True,
+            'message': f'PDF enviado a {email}.',
+        })
+
+
+def hmac_compare_otp(stored_hash, code):
+    import hmac as _hmac
+    if not stored_hash:
+        return False
+    return _hmac.compare_digest(str(stored_hash), hash_otp(str(code).strip()))
+
+
 class PublicResponseCreate(APIView):
     """
     Vista pública para crear respuestas sin autenticación.
@@ -2048,20 +2432,56 @@ class PublicResponseCreate(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
             validate_file_upload_answers(survey, validated_data['answers'])
+
+            consent_email = None
+            consent_otp_verified_at = None
+            if survey.get('informed_consent_enabled'):
+                ic = survey.get('informed_consent') or {}
+                aq = (ic.get('acceptance_question_id') or '').strip()
+                accept_value = (ic.get('acceptance_value') or 'SI, AUTORIZO').strip()
+                answers = validated_data.get('answers') or {}
+                answered = answers.get(aq) if aq else None
+                if aq and str(answered or '').strip() == accept_value:
+                    token = request.data.get('consent_token') or validated_data.get('consent_token')
+                    email_hint = request.data.get('consent_email') or validated_data.get('consent_email')
+                    survey_key = str(survey.get('_id'))
+                    ok, info = verify_consent_token(token, survey_key, email_hint)
+                    if not ok:
+                        return Response({'detail': info}, status=status.HTTP_400_BAD_REQUEST)
+                    consent_email = normalize_email(info if isinstance(info, str) else email_hint)
+                    consent_otp_verified_at = datetime.utcnow()
             
             # Para respuestas públicas, surveyor_id puede ser None o un valor opcional
             surveyor_id = validated_data.get('surveyor_id')
             if request.user and request.user.is_authenticated:
                 surveyor_id = request.user.id
 
-            result = responses_collection.insert_one({
+            insert_doc = {
                 'survey': validated_data['survey'],
                 'surveyor_id': surveyor_id,
                 'device_id': validated_data.get('device_id'),
                 'answers': validated_data['answers'],
                 'synced': True,
                 'created_at': datetime.utcnow()  # Agregar fecha de creación
-            })
+            }
+            if consent_email:
+                insert_doc['consent_email'] = consent_email
+            if consent_otp_verified_at:
+                insert_doc['consent_otp_verified_at'] = consent_otp_verified_at
+
+            sig_consent = request.data.get('signature_consent_at') or validated_data.get('signature_consent_at')
+            if sig_consent:
+                try:
+                    if isinstance(sig_consent, str):
+                        insert_doc['signature_consent_at'] = datetime.fromisoformat(
+                            sig_consent.replace('Z', '+00:00')
+                        ).replace(tzinfo=None)
+                    else:
+                        insert_doc['signature_consent_at'] = sig_consent
+                except Exception:
+                    insert_doc['signature_consent_at'] = datetime.utcnow()
+
+            result = responses_collection.insert_one(insert_doc)
             new_response = responses_collection.find_one({'_id': result.inserted_id})
             new_response['id'] = str(new_response['_id'])
             return Response(ResponseSerializer(new_response).data, status=status.HTTP_201_CREATED)
@@ -2172,14 +2592,17 @@ class ResponseListCreate(APIView):
             elif 'surveyor_id' not in validated_data:
                 validated_data['surveyor_id'] = None
 
-            result = responses_collection.insert_one({
+            insert_auth = {
                 'survey': validated_data['survey'],
                 'surveyor_id': validated_data['surveyor_id'],
                 'device_id': validated_data.get('device_id'),
                 'answers': validated_data['answers'],
                 'synced': True,  # Saved directly to server
                 'created_at': datetime.utcnow()  # Agregar fecha de creación
-            })
+            }
+            if validated_data.get('signature_consent_at'):
+                insert_auth['signature_consent_at'] = validated_data['signature_consent_at']
+            result = responses_collection.insert_one(insert_auth)
             new_response = responses_collection.find_one({'_id': result.inserted_id})
             new_response['id'] = str(new_response['_id'])
             return Response(ResponseSerializer(new_response).data, status=status.HTTP_201_CREATED)
@@ -2357,14 +2780,26 @@ class ResponseSyncView(APIView):
                 else:
                     created_at = datetime.utcnow()
                 
-                result = responses_collection.insert_one({
+                insert_batch = {
                     'survey': survey_id_to_save,
                     'surveyor_id': surveyor_id,
                     'device_id': response_data.get('device_id'),
                     'answers': response_data['answers'],
                     'synced': True,  # Marcado como sincronizado al llegar al servidor
                     'created_at': created_at  # Agregar fecha de creación
-                })
+                }
+                if response_data.get('signature_consent_at'):
+                    raw_sc = response_data.get('signature_consent_at')
+                    try:
+                        if isinstance(raw_sc, str):
+                            insert_batch['signature_consent_at'] = datetime.fromisoformat(
+                                raw_sc.replace('Z', '+00:00')
+                            ).replace(tzinfo=None)
+                        else:
+                            insert_batch['signature_consent_at'] = raw_sc
+                    except Exception:
+                        insert_batch['signature_consent_at'] = datetime.utcnow()
+                result = responses_collection.insert_one(insert_batch)
                 
                 new_response = responses_collection.find_one({'_id': result.inserted_id})
                 new_response['id'] = str(new_response['_id'])

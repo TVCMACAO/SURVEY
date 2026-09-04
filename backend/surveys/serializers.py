@@ -228,14 +228,51 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 class SurveyGroupSerializer(serializers.Serializer):
     id = ObjectIdField(read_only=True)
     name = serializers.CharField(max_length=255)
-    created_by = serializers.CharField(read_only=True, required=False) # Se establece automáticamente en la vista
+    created_by = serializers.CharField(read_only=True, required=False)
+    # SMTP (departamento / grupo) — alineado a SMTP_HOST, PORT, USER, PASS, FROM, FROM_NAME, REPLY_TO
+    smtp_host = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    smtp_port = serializers.IntegerField(required=False, default=465)
+    smtp_user = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    smtp_password = serializers.CharField(max_length=500, required=False, allow_blank=True, default='', write_only=True)
+    smtp_use_tls = serializers.BooleanField(required=False, default=True)
+    smtp_from_email = serializers.EmailField(required=False, allow_blank=True, default='')
+    smtp_from_name = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    smtp_reply_to = serializers.EmailField(required=False, allow_blank=True, default='')
+    smtp_configured = serializers.SerializerMethodField(read_only=True)
+    smtp_password_set = serializers.SerializerMethodField(read_only=True)
+
+    def get_smtp_configured(self, obj):
+        if not isinstance(obj, dict):
+            return False
+        host = (obj.get('smtp_host') or '').strip()
+        from_email = (obj.get('smtp_from_email') or obj.get('smtp_user') or '').strip()
+        return bool(host and from_email)
+
+    def get_smtp_password_set(self, obj):
+        if not isinstance(obj, dict):
+            return False
+        return bool((obj.get('smtp_password') or '').strip())
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Never expose password
+        data.pop('smtp_password', None)
+        if isinstance(instance, dict):
+            data['smtp_configured'] = self.get_smtp_configured(instance)
+            data['smtp_password_set'] = self.get_smtp_password_set(instance)
+            data['smtp_host'] = instance.get('smtp_host') or ''
+            data['smtp_port'] = instance.get('smtp_port') if instance.get('smtp_port') is not None else 465
+            data['smtp_user'] = instance.get('smtp_user') or ''
+            data['smtp_use_tls'] = bool(instance.get('smtp_use_tls', True))
+            data['smtp_from_email'] = instance.get('smtp_from_email') or ''
+            data['smtp_from_name'] = instance.get('smtp_from_name') or ''
+            data['smtp_reply_to'] = instance.get('smtp_reply_to') or ''
+        return data
 
     def create(self, validated_data):
-        # Esto será manejado en la vista, ya que no estamos usando modelos de Django para MongoDB
         pass
 
     def update(self, instance, validated_data):
-        # Esto será manejado en la vista
         pass
 
 class QuestionSerializer(serializers.Serializer):
@@ -376,6 +413,9 @@ class SurveySerializer(serializers.Serializer):
     documento_empleado_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     documento_votante_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     header_image = serializers.CharField(max_length=500000, required=False, allow_blank=True, default='')
+    # Consentimiento informado (plantilla rellenada desde respuestas; PDF en cliente)
+    informed_consent_enabled = serializers.BooleanField(required=False, default=False)
+    informed_consent = serializers.JSONField(required=False, default=dict)
 
     def to_representation(self, instance):
         # Get base representation
@@ -404,6 +444,9 @@ class SurveySerializer(serializers.Serializer):
         else:
             data['reference_data'] = None
         data['reference_row_count'] = instance.get('reference_row_count') or 0
+        data['informed_consent_enabled'] = bool(instance.get('informed_consent_enabled', False))
+        ic = instance.get('informed_consent') or {}
+        data['informed_consent'] = ic if isinstance(ic, dict) else {}
 
         return data
 
@@ -451,6 +494,9 @@ class ResponseSerializer(serializers.Serializer):
     synced = serializers.BooleanField(required=False, default=True)
     created_at = serializers.DateTimeField(read_only=True, required=False) # Fecha de creación
     signature_consent_at = serializers.DateTimeField(required=False, allow_null=True) # Timestamp del consentimiento de firma (Ley 1581/2012 Colombia)
+    consent_email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    consent_token = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    consent_otp_verified_at = serializers.DateTimeField(required=False, allow_null=True, read_only=True)
 
     def create(self, validated_data):
         pass

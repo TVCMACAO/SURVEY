@@ -3,7 +3,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     HealthCheckView,
     CustomTokenObtainPairView,
-    SurveyGroupListCreate, SurveyGroupRetrieveUpdateDestroy,
+    SurveyGroupListCreate, SurveyGroupRetrieveUpdateDestroy, SurveyGroupSmtpTest,
     SurveyListCreate, SurveyRetrieveUpdateDestroy,
     SurveyRestoreView, SurveyPermanentDeleteView,
     SurveyReferenceFileUpload,
@@ -11,6 +11,7 @@ from .views import (
     ResponseListCreate, ResponseRetrieve, ResponseResetView,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
     PublicSurveyView, ReferenceLookup, PublicResponseCreate,
+    PublicConsentOtpSend, PublicConsentOtpVerify, PublicConsentPdfEmail,
     ResponseSyncView, SyncStatusView
 )
 
@@ -28,6 +29,7 @@ urlpatterns = [
     # Rutas para Grupos de Encuestas
     path('groups/', SurveyGroupListCreate.as_view(), name='surveygroup-list-create'),
     path('groups/<str:pk>/', SurveyGroupRetrieveUpdateDestroy.as_view(), name='surveygroup-detail'),
+    path('groups/<str:pk>/smtp-test/', SurveyGroupSmtpTest.as_view(), name='surveygroup-smtp-test'),
 
     # Rutas para Encuestas
     path('surveys/', SurveyListCreate.as_view(), name='survey-list-create'),
@@ -54,6 +56,9 @@ urlpatterns = [
     # Rutas públicas (sin autenticación)
     path('public/surveys/<str:pk>/', PublicSurveyView.as_view(), name='public-survey-detail'),
     path('public/surveys/<str:pk>/reference-lookup/', ReferenceLookup.as_view(), name='reference-lookup'),
+    path('public/surveys/<str:pk>/consent-otp/send/', PublicConsentOtpSend.as_view(), name='public-consent-otp-send'),
+    path('public/surveys/<str:pk>/consent-otp/verify/', PublicConsentOtpVerify.as_view(), name='public-consent-otp-verify'),
+    path('public/surveys/<str:pk>/consent-pdf/email/', PublicConsentPdfEmail.as_view(), name='public-consent-pdf-email'),
     path('public/responses/', PublicResponseCreate.as_view(), name='public-response-create'),
     path('public/attachments/<str:pk>/', PublicAttachmentRetrieveView.as_view(), name='public-attachment-retrieve'),
 ]
