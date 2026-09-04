@@ -83,10 +83,23 @@ Thumbs.db
 # Survey app specific
 *.apk
 survey-app*.apk
-survey_mobile/
-survey-mobile/
 *.jks
-survey_mobile/android/key.properties
+# Flutter mobile: track source; override root Python `lib/` ignore
+!survey_mobile/
+!survey_mobile/**/
+!survey_mobile/lib/
+!survey_mobile/lib/**
+survey_mobile/build/
+survey_mobile/.dart_tool/
+survey_mobile/.idea/
+survey_mobile/**/key.properties
+survey_mobile/android/.gradle/
+survey_mobile/android/local.properties
+survey_mobile/android/**/Captures/
+survey_mobile/android/**/build/
+survey_mobile/*.iml
+survey_mobile/build.log
+survey-mobile/
 CONTEXTO_CONVERSACION.md
 GEMINI.md
 IMPLEMENTACION_COMPLETA.md
