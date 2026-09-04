@@ -91,6 +91,7 @@ def send_smtp_email(group, to_email, subject, body_text, body_html=None, attachm
 
     # Port 465 → implicit SSL; 587 → STARTTLS when use_tls
     use_ssl = port == 465 or (use_tls and port == 465)
+    refused = {}
 
     try:
         if use_ssl or port == 465:
@@ -98,7 +99,7 @@ def send_smtp_email(group, to_email, subject, body_text, body_html=None, attachm
             with smtplib.SMTP_SSL(host, port, timeout=30, context=context) as server:
                 if user:
                     server.login(user, password)
-                server.send_message(msg)
+                refused = server.send_message(msg) or {}
         else:
             with smtplib.SMTP(host, port, timeout=30) as server:
                 server.ehlo()
@@ -108,11 +109,16 @@ def send_smtp_email(group, to_email, subject, body_text, body_html=None, attachm
                     server.ehlo()
                 if user:
                     server.login(user, password)
-                server.send_message(msg)
+                refused = server.send_message(msg) or {}
     except SmtpConfigError:
         raise
     except Exception as exc:
         raise SmtpSendError(f'No se pudo enviar el correo: {exc}') from exc
+
+    if refused:
+        raise SmtpSendError(
+            f'El servidor SMTP rechazó destinatarios: {", ".join(str(k) for k in refused.keys())}'
+        )
 
 
 def build_consent_pdf_email(group, survey, response_id=''):

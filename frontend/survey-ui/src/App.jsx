@@ -2076,9 +2076,9 @@ const PublicSurveyView = ({ surveyId }) => {
               pdf_base64: uint8ToBase64(pdfBytes),
             }),
           });
+          const mailBody = await mailRes.json().catch(() => ({}));
           if (!mailRes.ok) {
-            const err = await mailRes.json().catch(() => ({}));
-            throw new Error(err.detail || 'No se pudo enviar el PDF');
+            throw new Error(mailBody.detail || 'No se pudo enviar el PDF');
           }
           setSubmitEmailStatus('sent');
         } catch (mailErr) {
