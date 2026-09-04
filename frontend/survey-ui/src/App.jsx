@@ -533,6 +533,47 @@ const mapBackendTypeToFrontend = (backendType) => {
   return 'Texto Corto';
 };
 
+/** Normalize API survey shape (question_text / question_type) into editor shape (text / type) before first paint. */
+const normalizeSurveyForEditor = (raw) => {
+  if (!raw) {
+    return { title: 'Mi Nueva Encuesta', description: 'Descripción breve de la encuesta', questions: [], sections: [] };
+  }
+  const questions = (raw.questions || []).map((q) => {
+    const backendType = q.question_type || q.type || 'short_text';
+    const {
+      question_text: _dropQuestionText,
+      question_type: _dropQuestionType,
+      ...rest
+    } = q;
+    return {
+      ...rest,
+      id: q.id || generateId(),
+      text: q.text || q.question_text || '',
+      type: mapBackendTypeToFrontend(backendType),
+      description: q.description || '',
+      required: q.required || false,
+      options: Array.isArray(q.options) ? q.options : [],
+      section_id: q.section_id || null,
+      conditional_logic: q.conditional_logic || null,
+    };
+  });
+  const sections = (raw.sections || []).map((s, index) => ({
+    ...s,
+    id: s.id || `section_${index}`,
+    order: s.order || index,
+  })).sort((a, b) => (a.order || 0) - (b.order || 0));
+  return {
+    ...raw,
+    questions,
+    sections,
+    reference_key_column: raw.reference_key_column || '',
+    reference_mapping: raw.reference_mapping || {},
+    reference_row_count: raw.reference_row_count ?? 0,
+    documento_empleado_question_id: raw.documento_empleado_question_id || '',
+    documento_votante_question_id: raw.documento_votante_question_id || '',
+  };
+};
+
 const compressSurveyImageFile = (file, maxWidth = 1000, quality = 0.82) => new Promise((resolve, reject) => {
   if (!file?.type?.startsWith('image/')) {
     reject(new Error('Selecciona un archivo de imagen válido (JPG, PNG, etc.)'));
@@ -919,7 +960,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
             </div>
           ) : (
             <div className="md:pr-10">
-              <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-700 mb-2 break-words">{data.text || (data.type === 'Título' ? 'Título sin texto' : 'Sin pregunta definida')}</h3>
+              <h3 className="text-base sm:text-lg md:text-xl font-semibold text-gray-700 mb-2 break-words">{(data.text || data.question_text) || ((data.type === 'Título' || data.question_type === 'titulo') ? 'Título sin texto' : 'Sin pregunta definida')}</h3>
               {data.description && <p className="text-xs sm:text-sm text-gray-400 mb-3 sm:mb-4 break-words">{data.description}</p>}
               {data.question_image && (
                 <QuestionImageDisplay src={data.question_image} className="mb-3 opacity-80" />
@@ -2218,11 +2259,16 @@ const PublicSurveyView = ({ surveyId }) => {
 const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initialSurveyData
   const [activeQuestionId, setActiveQuestionId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [surveyData, setSurveyData] = useState(initialSurveyData || { title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Initialize with initialSurveyData or default
+  const [surveyData, setSurveyData] = useState(() => normalizeSurveyForEditor(initialSurveyData));
   const [showSectionManager, setShowSectionManager] = useState(false);
   const [showReferenceSection, setShowReferenceSection] = useState(false);
   const [showGearMenu, setShowGearMenu] = useState(false);
-  const [referenceColumns, setReferenceColumns] = useState([]); // column names from last upload
+  const [referenceColumns, setReferenceColumns] = useState(() => {
+    if (!initialSurveyData) return [];
+    const refKey = initialSurveyData.reference_key_column || '';
+    const refMap = initialSurveyData.reference_mapping || {};
+    return [...new Set([refKey, ...Object.values(refMap)].filter(Boolean))];
+  });
   const [referenceUploading, setReferenceUploading] = useState(false);
   const gearMenuDesktopRef = useRef(null);
   const gearMenuMobileRef = useRef(null);
@@ -2252,54 +2298,15 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   // Update surveyData if initialSurveyData changes (e.g., when editing a new survey)
   useEffect(() => {
     if (initialSurveyData) {
-      // Ensure all questions have unique IDs and proper format
-      const questionsWithIds = initialSurveyData.questions?.map((q, index) => {
-        const backendType = q.question_type || q.type || 'short_text';
-        const frontendType = mapBackendTypeToFrontend(backendType);
-        const questionText = q.text || q.question_text || '';
+      const normalized = normalizeSurveyForEditor(initialSurveyData);
 
-        const {
-          question_text: _dropQuestionText,
-          question_type: _dropQuestionType,
-          ...rest
-        } = q;
-
-        return {
-          ...rest,
-          id: q.id || generateId(),
-          text: questionText,
-          type: frontendType,
-          description: q.description || '',
-          required: q.required || false,
-          options: Array.isArray(q.options) ? q.options : [],
-          section_id: q.section_id || null,
-          conditional_logic: q.conditional_logic || null,
-        };
-      }) || [];
-      
-      // Process sections if they exist
-      const sections = (initialSurveyData.sections || []).map((s, index) => ({
-        ...s,
-        id: s.id || `section_${index}`,
-        order: s.order || index
-      })).sort((a, b) => (a.order || 0) - (b.order || 0));
-      
-      const refKey = initialSurveyData.reference_key_column || '';
-      const refMap = initialSurveyData.reference_mapping || {};
+      const refKey = normalized.reference_key_column || '';
+      const refMap = normalized.reference_mapping || {};
       const derivedColumns = [...new Set([refKey, ...Object.values(refMap)].filter(Boolean))];
       if (derivedColumns.length > 0) setReferenceColumns(derivedColumns);
-      setSurveyData({
-        ...initialSurveyData,
-        questions: questionsWithIds,
-        sections: sections,
-        reference_key_column: refKey,
-        reference_mapping: refMap,
-        reference_row_count: initialSurveyData.reference_row_count ?? 0,
-        documento_empleado_question_id: initialSurveyData.documento_empleado_question_id || '',
-        documento_votante_question_id: initialSurveyData.documento_votante_question_id || ''
-      });
+      setSurveyData(normalized);
     } else {
-      setSurveyData({ title: "Mi Nueva Encuesta", description: "Descripción breve de la encuesta", questions: [], sections: [] }); // Reset if no initial data
+      setSurveyData(normalizeSurveyForEditor(null));
     }
   }, [initialSurveyData]);
 

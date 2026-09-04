@@ -1245,7 +1245,7 @@ class SurveyRetrieveUpdateDestroy(APIView):
         )
         if access_err is not None:
             return access_err
-        
+
         serializer = SurveySerializer(survey, data=request.data, partial=True)
         if serializer.is_valid():
             surveys_collection = get_surveys_collection()
