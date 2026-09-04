@@ -50,6 +50,46 @@ def get_user_role_and_group(request):
     return None, None
 
 
+def normalize_questions_for_mongo(questions):
+    """Canonical question shape for Mongo: text/type + stable id."""
+    if not isinstance(questions, list):
+        return []
+    normalized = []
+    for index, q in enumerate(questions):
+        if not isinstance(q, dict):
+            continue
+        item = dict(q)
+        text = item.get('text') or item.get('question_text') or ''
+        qtype = item.get('type') or item.get('question_type') or 'short_text'
+        qid = item.get('id') or f'q_{index}'
+        item['id'] = str(qid)
+        item['text'] = text
+        item['type'] = qtype
+        item.pop('question_text', None)
+        item.pop('question_type', None)
+        normalized.append(item)
+    return normalized
+
+
+def user_can_access_survey_group(user_role, user_group_id, survey_group, deny_message="No tienes permisos para acceder a esta encuesta."):
+    """
+    Same tenancy rules as SurveyDetail.get:
+    root/analista: allow; users with group: only their group; else deny.
+    Returns Response (403) or None if allowed.
+    """
+    if user_role in ('root', 'analista'):
+        return None
+    if user_role and user_group_id:
+        try:
+            if str(survey_group) != str(user_group_id) and str(survey_group) != str(ObjectId(user_group_id)):
+                return Response({"detail": deny_message}, status=status.HTTP_403_FORBIDDEN)
+        except Exception:
+            if str(survey_group) != str(user_group_id):
+                return Response({"detail": deny_message}, status=status.HTTP_403_FORBIDDEN)
+        return None
+    return Response({"detail": deny_message}, status=status.HTTP_403_FORBIDDEN)
+
+
 def require_admin_permission(request, action_description="realizar esta acción"):
     """
     Verifica que el usuario tenga permisos de 'root' o 'group_admin'.
@@ -756,7 +796,7 @@ class SurveyListCreate(APIView):
             'title': validated_data['title'],
             'description': validated_data.get('description', ''),
             'group': validated_data['group'],
-            'questions': validated_data.get('questions', []),
+            'questions': normalize_questions_for_mongo(validated_data.get('questions', [])),
             'is_public': validated_data.get('is_public', False),
             'is_deleted': False,  # Por defecto no está eliminada
             'created_by': (
@@ -1198,32 +1238,13 @@ class SurveyRetrieveUpdateDestroy(APIView):
         err = require_not_analista(request, "editar encuestas")
         if err is not None:
             return err
-        # Verificar permisos: si es group_admin, solo puede actualizar encuestas de su grupo
-        user_role = None
-        user_group_id = None
-        if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
-            try:
-                user_role = getattr(request.user, 'role', None)
-                user_group_id = getattr(request.user, 'user_group_id', None)
-            except (AttributeError, TypeError):
-                user_role = None
-                user_group_id = None
-        
-        if user_role == 'group_admin' and user_group_id:
-            # Verificar que la encuesta pertenece al grupo del admin
-            survey_group = survey.get('group')
-            try:
-                if str(survey_group) != str(user_group_id) and str(survey_group) != str(ObjectId(user_group_id)):
-                    return Response(
-                        {"detail": "No tienes permisos para actualizar esta encuesta."},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-            except Exception:
-                if str(survey_group) != str(user_group_id):
-                    return Response(
-                        {"detail": "No tienes permisos para actualizar esta encuesta."},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
+        user_role, user_group_id = get_user_role_and_group(request)
+        access_err = user_can_access_survey_group(
+            user_role, user_group_id, survey.get('group'),
+            deny_message="No tienes permisos para actualizar esta encuesta."
+        )
+        if access_err is not None:
+            return access_err
         
         serializer = SurveySerializer(survey, data=request.data, partial=True)
         if serializer.is_valid():
@@ -1304,15 +1325,7 @@ class SurveyRetrieveUpdateDestroy(APIView):
             existing = survey.get('questions') or []
             if questions_to_save == [] and len(existing) > 0:
                 questions_to_save = existing
-            if isinstance(questions_to_save, list):
-                questions_to_save = [
-                    dict(
-                        q if isinstance(q, dict) else {},
-                        text=(q.get('text') or q.get('question_text') or '') if isinstance(q, dict) else '',
-                        type=(q.get('type') or q.get('question_type') or 'short_text') if isinstance(q, dict) else 'short_text',
-                    )
-                    for q in questions_to_save
-                ]
+            questions_to_save = normalize_questions_for_mongo(questions_to_save)
             update_fields = {
                 'title': validated_data.get('title', survey['title']),
                 'description': validated_data.get('description', survey.get('description', '')),
@@ -1363,32 +1376,13 @@ class SurveyRetrieveUpdateDestroy(APIView):
         err = require_not_analista(request, "eliminar encuestas")
         if err is not None:
             return err
-        # Verificar permisos: si es group_admin, solo puede eliminar encuestas de su grupo
-        user_role = None
-        user_group_id = None
-        if request.user and hasattr(request.user, 'is_authenticated') and request.user.is_authenticated:
-            try:
-                user_role = getattr(request.user, 'role', None)
-                user_group_id = getattr(request.user, 'user_group_id', None)
-            except (AttributeError, TypeError):
-                user_role = None
-                user_group_id = None
-        
-        if user_role == 'group_admin' and user_group_id:
-            # Verificar que la encuesta pertenece al grupo del admin
-            survey_group = survey.get('group')
-            try:
-                if str(survey_group) != str(user_group_id) and str(survey_group) != str(ObjectId(user_group_id)):
-                    return Response(
-                        {"detail": "No tienes permisos para eliminar esta encuesta."},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-            except Exception:
-                if str(survey_group) != str(user_group_id):
-                    return Response(
-                        {"detail": "No tienes permisos para eliminar esta encuesta."},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
+        user_role, user_group_id = get_user_role_and_group(request)
+        access_err = user_can_access_survey_group(
+            user_role, user_group_id, survey.get('group'),
+            deny_message="No tienes permisos para eliminar esta encuesta."
+        )
+        if access_err is not None:
+            return access_err
         
         surveys_collection = get_surveys_collection()
         
@@ -2043,6 +2037,16 @@ class PublicResponseCreate(APIView):
             
             if not survey:
                 raise ValidationError(detail="La encuesta especificada no existe.")
+            if survey.get('is_deleted'):
+                return Response(
+                    {"detail": "Esta encuesta ya no está disponible."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            if not survey.get('is_public', False):
+                return Response(
+                    {"detail": "Esta encuesta no es pública."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
             validate_file_upload_answers(survey, validated_data['answers'])
             
             # Para respuestas públicas, surveyor_id puede ser None o un valor opcional
@@ -2075,12 +2079,44 @@ class ResponseListCreate(APIView):
     def get(self, request):
         responses_collection = get_responses_collection()
         survey_id = request.query_params.get('survey_id')
+        user_role, user_group_id = get_user_role_and_group(request)
         query = {}
         if survey_id:
             try:
                 query['survey'] = ObjectId(survey_id)
             except Exception:
                 raise ValidationError(detail="ID de encuesta inválido.")
+            # Scope: non-root/analista can only read responses for surveys in their group
+            if user_role not in ('root', 'analista'):
+                surveys_collection = get_surveys_collection()
+                survey_doc = None
+                try:
+                    survey_doc = surveys_collection.find_one({'_id': ObjectId(survey_id)})
+                except Exception:
+                    survey_doc = surveys_collection.find_one({'_id': survey_id})
+                if not survey_doc:
+                    raise NotFound(detail="Encuesta no encontrada.")
+                access_err = user_can_access_survey_group(
+                    user_role, user_group_id, survey_doc.get('group'),
+                    deny_message="No tienes permisos para ver respuestas de esta encuesta."
+                )
+                if access_err is not None:
+                    return access_err
+        elif user_role not in ('root', 'analista'):
+            # List without survey_id: restrict to surveys in user's group
+            if not user_group_id:
+                return Response([], status=status.HTTP_200_OK)
+            surveys_collection = get_surveys_collection()
+            try:
+                group_filter = {'group': ObjectId(user_group_id)}
+            except Exception:
+                group_filter = {'group': user_group_id}
+            allowed_ids = []
+            for s in surveys_collection.find(group_filter, {'_id': 1}):
+                allowed_ids.append(s['_id'])
+            if not allowed_ids:
+                return Response([], status=status.HTTP_200_OK)
+            query['survey'] = {'$in': allowed_ids}
 
         responses = list(responses_collection.find(query))
         surveyor_ids = set()
@@ -2954,15 +2990,9 @@ class UserRetrieveUpdateDestroy(APIView):
                 # Si es group_admin, no permitir cambiar el user_group_id
                 if user_role == 'group_admin' and user_group_id:
                     # Asegurar que el usuario actualizado mantiene su grupo
-                    from .mongo_user_utils import get_user_by_id
-                    current_user_doc = get_user_by_id(pk)
-                    if current_user_doc and 'user_group_id' in request.data:
+                    if 'user_group_id' in request.data:
                         # Remover user_group_id de los datos validados para que no se actualice
-                        validated_data = serializer.validated_data
-                        validated_data.pop('user_group_id', None)
-                        # Reasignar los datos validados sin user_group_id
-                        serializer = UserUpdateSerializer(user, data={**request.data, 'user_group_id': None}, partial=True)
-                        serializer.is_valid(raise_exception=True)
+                        serializer.validated_data.pop('user_group_id', None)
                 
                 serializer.save()
                 

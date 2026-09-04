@@ -458,6 +458,80 @@ const CONDITION_OPERATORS = [
   { value: 'less_than_or_equal', label: 'es menor o igual que' },
 ];
 
+const FRONTEND_TYPE_LABELS = [
+  'Texto Corto', 'Párrafo', 'Opción Única', 'Casillas', 'Desplegable',
+  'Número', 'Fecha', 'Puntuación', 'Firma', 'Adjuntar archivos',
+  'Correo Electrónico', 'Título', 'Evaluación',
+];
+
+const OPTION_QUESTION_TYPES = ['Opción Única', 'Casillas', 'Desplegable', 'single_choice', 'checkbox', 'dropdown'];
+
+/** Shared conditional evaluator (editor preview, public form). Handles checkbox arrays. */
+const evaluateCondition = (condition, answers) => {
+  if (!condition || !condition.question_id) return true;
+
+  const questionId = condition.question_id;
+  const answer = answers[questionId];
+  const operator = condition.operator || 'equals';
+  const value = condition.value;
+
+  if (answer === undefined || answer === null || answer === '') return false;
+  if (Array.isArray(answer)) {
+    if (answer.length === 0) return false;
+    const valStr = String(value ?? '');
+    switch (operator) {
+      case 'equals':
+        return answer.some((a) => String(a) === valStr);
+      case 'not_equals':
+        return answer.every((a) => String(a) !== valStr);
+      case 'contains':
+        return answer.some((a) => String(a).toLowerCase().includes(valStr.toLowerCase()));
+      default:
+        return answer.some((a) => String(a) === valStr);
+    }
+  }
+
+  switch (operator) {
+    case 'equals':
+      return String(answer) === String(value);
+    case 'not_equals':
+      return String(answer) !== String(value);
+    case 'contains':
+      return String(answer).toLowerCase().includes(String(value).toLowerCase());
+    case 'greater_than':
+      return Number(answer) > Number(value);
+    case 'less_than':
+      return Number(answer) < Number(value);
+    case 'greater_than_or_equal':
+      return Number(answer) >= Number(value);
+    case 'less_than_or_equal':
+      return Number(answer) <= Number(value);
+    default:
+      return true;
+  }
+};
+
+const mapBackendTypeToFrontend = (backendType) => {
+  const reverseTypeMapping = {
+    short_text: 'Texto Corto',
+    long_text: 'Párrafo',
+    single_choice: 'Opción Única',
+    checkbox: 'Casillas',
+    dropdown: 'Desplegable',
+    number: 'Número',
+    date: 'Fecha',
+    rating: 'Puntuación',
+    signature: 'Firma',
+    file_upload: 'Adjuntar archivos',
+    email: 'Correo Electrónico',
+    titulo: 'Título',
+    evaluation_table: 'Evaluación',
+  };
+  if (reverseTypeMapping[backendType]) return reverseTypeMapping[backendType];
+  if (FRONTEND_TYPE_LABELS.includes(backendType)) return backendType;
+  return 'Texto Corto';
+};
+
 const compressSurveyImageFile = (file, maxWidth = 1000, quality = 0.82) => new Promise((resolve, reject) => {
   if (!file?.type?.startsWith('image/')) {
     reject(new Error('Selecciona un archivo de imagen válido (JPG, PNG, etc.)'));
@@ -580,7 +654,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
           .map(row => (row && row[0] != null ? String(row[0]).trim() : ''))
           .filter(s => s.length > 0)
           .map(s => s.length > MAX_LEN ? s.slice(0, MAX_LEN) : s);
-        onUpdate({ ...data, options });
+        onUpdate({ options });
       } catch (err) {
         console.error(err);
         alert('No se pudo leer el archivo Excel.');
@@ -630,7 +704,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                 <textarea
                   autoFocus
                   value={data.text}
-                  onChange={(e) => onUpdate({...data, text: e.target.value})}
+                  onChange={(e) => onUpdate({ text: e.target.value })}
                   placeholder="Escribe tu pregunta de párrafo aquí..."
                   className="w-full text-lg sm:text-xl md:text-2xl font-bold bg-transparent border-none focus:ring-0 p-0 text-gray-800 placeholder-gray-300 leading-tight h-20 resize-none"
                 />
@@ -640,13 +714,13 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                   <input
                     type="text"
                     value={data.text}
-                    onChange={(e) => onUpdate({...data, text: e.target.value})}
+                    onChange={(e) => onUpdate({ text: e.target.value })}
                     placeholder="Ej: 1. OBJETIVO DE LA RONDA"
                     className="w-full text-lg sm:text-xl md:text-2xl font-bold bg-transparent border-none focus:ring-0 p-0 text-gray-800 placeholder-gray-300 leading-tight"
                   />
                   <textarea
                     value={data.description || ''}
-                    onChange={(e) => onUpdate({...data, description: e.target.value})}
+                    onChange={(e) => onUpdate({ description: e.target.value })}
                     placeholder="Párrafo informativo (ej: Realizar seguimiento continuo al comportamiento laboral...)"
                     className="w-full text-sm sm:text-base bg-transparent border-none focus:ring-0 p-0 text-gray-600 placeholder-gray-400 leading-relaxed min-h-[80px] resize-none"
                   />
@@ -656,20 +730,20 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                   autoFocus 
                   type="text"
                   value={data.text} 
-                  onChange={(e) => onUpdate({...data, text: e.target.value})} 
+                  onChange={(e) => onUpdate({ text: e.target.value })} 
                   placeholder="Escribe tu pregunta aquí..." 
                   className="w-full text-lg sm:text-xl md:text-2xl font-bold bg-transparent border-none focus:ring-0 p-0 text-gray-800 placeholder-gray-300 leading-tight" 
                 />
               )}
               
               {data.type !== 'Título' && (
-              <input type="text" value={data.description || ''} onChange={(e) => onUpdate({...data, description: e.target.value})} placeholder="Añade una descripción (opcional)" className="w-full text-xs sm:text-sm md:text-base mt-2 md:mt-3 bg-transparent border-none focus:ring-0 p-0 text-gray-500 placeholder-gray-400" />
+              <input type="text" value={data.description || ''} onChange={(e) => onUpdate({ description: e.target.value })} placeholder="Añade una descripción (opcional)" className="w-full text-xs sm:text-sm md:text-base mt-2 md:mt-3 bg-transparent border-none focus:ring-0 p-0 text-gray-500 placeholder-gray-400" />
               )}
 
               <QuestionImageEditor
                 image={data.question_image}
-                onChange={(question_image) => onUpdate({ ...data, question_image })}
-                onRemove={() => onUpdate({ ...data, question_image: '' })}
+                onChange={(question_image) => onUpdate({ question_image })}
+                onRemove={() => onUpdate({ question_image: '' })}
               />
               
               <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-100/50">
@@ -681,12 +755,12 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                          {data.type === 'Casillas' && <div className="w-4 h-4 sm:w-5 sm:h-5 rounded border-2 border-indigo-200 flex-shrink-0" />}
                          {data.type === 'Desplegable' && <span className="text-gray-400 text-xs sm:text-sm flex-shrink-0">{idx + 1}.</span>}
 
-                         <input value={opt} onChange={(e) => { const newOpts = [...data.options]; newOpts[idx] = e.target.value; onUpdate({...data, options: newOpts}); }} className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" />
-                         <button type="button" onClick={(ev) => { ev.stopPropagation(); const newOpts = data.options.filter((_, i) => i !== idx); onUpdate({...data, options: newOpts}); }} className="flex-shrink-0 p-1"><FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" /></button>
+                         <input value={opt} onChange={(e) => { const newOpts = [...(data.options || [])]; newOpts[idx] = e.target.value; onUpdate({ options: newOpts }); }} className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" />
+                         <button type="button" onClick={(ev) => { ev.stopPropagation(); onUpdate({ options: (data.options || []).filter((_, i) => i !== idx) }); }} className="flex-shrink-0 p-1"><FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" /></button>
                        </div>
                      ))}
                      <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-3">
-                       <button type="button" onClick={(ev) => { ev.stopPropagation(); onUpdate({...data, options: [...(data.options || []), `Opción ${data.options?.length + 1}`]}); }} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 pl-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-indigo-50 rounded-lg w-fit transition-colors"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /> Añadir opción</button>
+                       <button type="button" onClick={(ev) => { ev.stopPropagation(); onUpdate({ options: [...(data.options || []), `Opción ${(data.options?.length || 0) + 1}`] }); }} className="text-xs font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1 pl-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-indigo-50 rounded-lg w-fit transition-colors"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /> Añadir opción</button>
                        <input type="file" ref={fileInputRef} accept=".xlsx,.xls" className="hidden" onChange={(ev) => { ev.stopPropagation(); handleExcelImport(ev); }} />
                        <button type="button" onClick={(ev) => { ev.stopPropagation(); fileInputRef.current?.click(); }} className="text-xs font-bold text-gray-600 hover:text-gray-800 flex items-center gap-1 py-1.5 sm:py-2 px-2 sm:px-3 hover:bg-gray-100 rounded-lg w-fit transition-colors border border-gray-200"><FontAwesomeIcon icon={faFileExcel} size="sm" className="fa-icon-force-current" /> Importar desde Excel</button>
                      </div>
@@ -702,15 +776,15 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                           onChange={(e) => {
                             const items = [...(data.evaluation_items || [])];
                             items[idx] = { ...item, label: e.target.value };
-                            onUpdate({ ...data, evaluation_items: items });
+                            onUpdate({ evaluation_items: items });
                           }}
                           className="flex-1 bg-gray-50 rounded-lg px-2 py-1.5 text-sm border border-gray-200"
                           placeholder="Nombre del ítem"
                         />
-                        <button type="button" onClick={() => { const items = (data.evaluation_items || []).filter((_, i) => i !== idx); onUpdate({ ...data, evaluation_items: items }); }} className="p-1 text-gray-400 hover:text-red-500"><FontAwesomeIcon icon={faXmark} size="sm" className="fa-icon-force-current" /></button>
+                        <button type="button" onClick={() => onUpdate({ evaluation_items: (data.evaluation_items || []).filter((_, i) => i !== idx) })} className="p-1 text-gray-400 hover:text-red-500"><FontAwesomeIcon icon={faXmark} size="sm" className="fa-icon-force-current" /></button>
                       </div>
                     ))}
-                    <button type="button" onClick={() => onUpdate({ ...data, evaluation_items: [...(data.evaluation_items || []), { id: generateId(), label: `Item${(data.evaluation_items?.length || 0) + 1}` }] })} className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 rounded-lg px-2 py-1.5 flex items-center gap-1"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /> Añadir ítem</button>
+                    <button type="button" onClick={() => onUpdate({ evaluation_items: [...(data.evaluation_items || []), { id: generateId(), label: `Item${(data.evaluation_items?.length || 0) + 1}` }] })} className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 rounded-lg px-2 py-1.5 flex items-center gap-1"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /> Añadir ítem</button>
                     <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mt-4">Columnas de calificación</p>
                     {(data.evaluation_columns || []).map((col, idx) => (
                       <div key={col.id} className="flex items-center gap-2 flex-wrap">
@@ -719,7 +793,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                           onChange={(e) => {
                             const cols = [...(data.evaluation_columns || [])];
                             cols[idx] = { ...col, label: e.target.value };
-                            onUpdate({ ...data, evaluation_columns: cols });
+                            onUpdate({ evaluation_columns: cols });
                           }}
                           className="flex-1 min-w-[100px] bg-gray-50 rounded-lg px-2 py-1.5 text-sm border border-gray-200"
                           placeholder="Ej: CUMPLE"
@@ -729,17 +803,17 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                           onChange={(e) => {
                             const cols = [...(data.evaluation_columns || [])];
                             cols[idx] = { ...col, inputType: e.target.value };
-                            onUpdate({ ...data, evaluation_columns: cols });
+                            onUpdate({ evaluation_columns: cols });
                           }}
                           className="rounded-lg px-2 py-1.5 text-sm border border-gray-200 bg-white"
                         >
                           <option value="checkbox">Casilla</option>
                           <option value="text">Texto (observaciones)</option>
                         </select>
-                        <button type="button" onClick={() => { const cols = (data.evaluation_columns || []).filter((_, i) => i !== idx); onUpdate({ ...data, evaluation_columns: cols }); }} className="p-1 text-gray-400 hover:text-red-500"><FontAwesomeIcon icon={faXmark} size="sm" className="fa-icon-force-current" /></button>
+                        <button type="button" onClick={() => onUpdate({ evaluation_columns: (data.evaluation_columns || []).filter((_, i) => i !== idx) })} className="p-1 text-gray-400 hover:text-red-500"><FontAwesomeIcon icon={faXmark} size="sm" className="fa-icon-force-current" /></button>
                       </div>
                     ))}
-                    <button type="button" onClick={() => onUpdate({ ...data, evaluation_columns: [...(data.evaluation_columns || []), { id: generateId(), label: 'Nueva columna', inputType: 'checkbox' }] })} className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 rounded-lg px-2 py-1.5 flex items-center gap-1"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /> Añadir columna</button>
+                    <button type="button" onClick={() => onUpdate({ evaluation_columns: [...(data.evaluation_columns || []), { id: generateId(), label: 'Nueva columna', inputType: 'checkbox' }] })} className="text-xs font-bold text-indigo-500 hover:bg-indigo-50 rounded-lg px-2 py-1.5 flex items-center gap-1"><FontAwesomeIcon icon={faPlus} size="sm" className="fa-icon-force-current" /> Añadir columna</button>
                   </div>
                 )}
                 {data.type === 'Puntuación' && <div className="flex gap-4 justify-center py-6 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">{[1,2,3,4,5].map(i => <FontAwesomeIcon key={i} icon={faStar} size="lg" className="text-gray-300 fa-icon-force-current" />)}</div>}
@@ -763,44 +837,83 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
               <div className="mt-4 pt-3 border-t border-gray-200/80 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-gray-500">
                 {data.type !== 'Título' && (
                   <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
-                    <input type="checkbox" checked={!!data.required} onChange={() => onUpdate({ ...data, required: !data.required })} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
+                    <input type="checkbox" checked={!!data.required} onChange={() => onUpdate({ required: !data.required })} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
                     <span>Obligatorio</span>
                   </label>
                 )}
                 {data.type === 'Fecha' && (
                   <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
-                    <input type="checkbox" checked={!!data.date_include_time} onChange={() => onUpdate({ ...data, date_include_time: !data.date_include_time })} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
+                    <input type="checkbox" checked={!!data.date_include_time} onChange={() => onUpdate({ date_include_time: !data.date_include_time })} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
                     <span>Incluir hora</span>
                   </label>
                 )}
                 {sections.length > 0 && (
                   <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                     <span className="text-gray-400">Sección</span>
-                    <select value={data.section_id || ''} onChange={(e) => { onUpdate({ ...data, section_id: e.target.value || null }); if (onAssignSection) onAssignSection(e.target.value || null); }} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white focus:ring-1 focus:ring-indigo-400 min-w-0 max-w-[140px]">
+                    <select value={data.section_id || ''} onChange={(e) => onUpdate({ section_id: e.target.value || null })} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white focus:ring-1 focus:ring-indigo-400 min-w-0 max-w-[140px]">
                       <option value="">Sin sección</option>
                       {sections.map(section => <option key={section.id} value={section.id}>{section.title}</option>)}
                     </select>
                   </div>
                 )}
-                {data.type !== 'Título' && otherQuestions.length > 0 && (
+                {data.type !== 'Título' && otherQuestions.length > 0 && (() => {
+                  const refQ = otherQuestions.find(q => q.id === data.conditional_logic?.question_id) || otherQuestions[0];
+                  const refIsOption = OPTION_QUESTION_TYPES.includes(refQ?.type);
+                  const refOptions = Array.isArray(refQ?.options) ? refQ.options : [];
+                  const patchCondition = (patch) => onUpdate({
+                    conditional_logic: {
+                      type: 'show_if',
+                      question_id: data.conditional_logic?.question_id || otherQuestions[0]?.id || '',
+                      operator: data.conditional_logic?.operator || 'equals',
+                      value: data.conditional_logic?.value ?? '',
+                      ...patch,
+                    },
+                  });
+                  return (
                   <div className="w-full flex flex-wrap items-center gap-x-3 gap-y-1">
                     <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
-                      <input type="checkbox" checked={hasCondition} onChange={(e) => onUpdate({ ...data, conditional_logic: e.target.checked ? { type: 'show_if', question_id: otherQuestions[0]?.id || '', operator: 'equals', value: '' } : null })} className="rounded border-gray-300 text-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
+                      <input type="checkbox" checked={hasCondition} onChange={(e) => {
+                        if (!e.target.checked) {
+                          onUpdate({ conditional_logic: null });
+                          return;
+                        }
+                        const first = otherQuestions[0];
+                        const firstOpts = OPTION_QUESTION_TYPES.includes(first?.type) ? (first.options || []) : [];
+                        onUpdate({
+                          conditional_logic: {
+                            type: 'show_if',
+                            question_id: first?.id || '',
+                            operator: 'equals',
+                            value: firstOpts[0] || '',
+                          },
+                        });
+                      }} className="rounded border-gray-300 text-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
                       <span>Mostrar solo si…</span>
                     </label>
                     {hasCondition && (
                       <span className="flex flex-wrap items-center gap-1.5">
-                        <select value={data.conditional_logic?.question_id || ''} onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: e.target.value, operator: data.conditional_logic?.operator || 'equals', value: data.conditional_logic?.value ?? '' } })} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white min-w-0 max-w-[120px]" onClick={e => e.stopPropagation()}>
+                        <select value={data.conditional_logic?.question_id || ''} onChange={(e) => {
+                          const nextRef = otherQuestions.find(q => q.id === e.target.value);
+                          const nextOpts = OPTION_QUESTION_TYPES.includes(nextRef?.type) ? (nextRef.options || []) : [];
+                          patchCondition({ question_id: e.target.value, value: nextOpts[0] || '' });
+                        }} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white min-w-0 max-w-[120px]" onClick={e => e.stopPropagation()}>
                           {otherQuestions.map(q => { const t = (q.text || q.question_text || ''); return <option key={q.id} value={q.id}>{t.length > 25 ? t.slice(0, 25) + '…' : t || 'Pregunta'}</option>; })}
                         </select>
-                        <select value={data.conditional_logic?.operator || 'equals'} onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: data.conditional_logic?.question_id || '', operator: e.target.value, value: data.conditional_logic?.value ?? '' } })} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white" onClick={e => e.stopPropagation()}>
+                        <select value={data.conditional_logic?.operator || 'equals'} onChange={(e) => patchCondition({ operator: e.target.value })} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white" onClick={e => e.stopPropagation()}>
                           {CONDITION_OPERATORS.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
                         </select>
-                        <input type="text" value={data.conditional_logic?.value ?? ''} onChange={(e) => onUpdate({ ...data, conditional_logic: { ...data.conditional_logic, type: 'show_if', question_id: data.conditional_logic?.question_id || '', operator: data.conditional_logic?.operator || 'equals', value: e.target.value } })} placeholder="Valor" className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] w-20" onClick={e => e.stopPropagation()} />
+                        {refIsOption && refOptions.length > 0 ? (
+                          <select value={data.conditional_logic?.value ?? ''} onChange={(e) => patchCondition({ value: e.target.value })} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white min-w-0 max-w-[140px]" onClick={e => e.stopPropagation()}>
+                            {refOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        ) : (
+                          <input type="text" value={data.conditional_logic?.value ?? ''} onChange={(e) => patchCondition({ value: e.target.value })} placeholder="Valor" className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] w-20" onClick={e => e.stopPropagation()} />
+                        )}
                       </span>
                     )}
                   </div>
-                )}
+                  );
+                })()}
               </div>
             </div>
           ) : (
@@ -998,6 +1111,9 @@ const SurveyPreview = ({ surveyData, onBack }) => {
 
   const renderQuestion = (question) => {
     const questionId = question.id;
+    if (question.conditional_logic && !evaluateCondition(question.conditional_logic, answers)) {
+      return null;
+    }
     if (question.type === 'Título') {
       return (
         <div key={questionId} className="mb-8 bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
@@ -1240,40 +1356,7 @@ const PublicSurveyView = ({ surveyId }) => {
   const [referenceLookupNotFound, setReferenceLookupNotFound] = useState(false);
   const referenceLookupDebounceRef = React.useRef(null);
 
-  // Function to evaluate conditional logic
-  const evaluateCondition = (condition, answers) => {
-    if (!condition || !condition.question_id) return true;
-    
-    const questionId = condition.question_id;
-    const answer = answers[questionId];
-    const operator = condition.operator || 'equals';
-    const value = condition.value;
-    
-    if (answer === undefined || answer === null || answer === '') {
-      return false;
-    }
-    
-    switch (operator) {
-      case 'equals':
-        return String(answer) === String(value);
-      case 'not_equals':
-        return String(answer) !== String(value);
-      case 'contains':
-        return String(answer).toLowerCase().includes(String(value).toLowerCase());
-      case 'greater_than':
-        return Number(answer) > Number(value);
-      case 'less_than':
-        return Number(answer) < Number(value);
-      case 'greater_than_or_equal':
-        return Number(answer) >= Number(value);
-      case 'less_than_or_equal':
-        return Number(answer) <= Number(value);
-      default:
-        return true;
-    }
-  };
-
-  // Todas las secciones son navegables; la lógica condicional solo oculta preguntas concretas, no secciones enteras.
+  // Function to evaluate conditional logic (shared module-level evaluateCondition)
   const getVisibleSections = (sections) => {
     if (!sections || sections.length === 0) return [];
     return [...sections];
@@ -1295,28 +1378,11 @@ const PublicSurveyView = ({ surveyId }) => {
         }
         const data = await response.json();
         
-        // Map backend types to frontend types
-        const reverseTypeMapping = {
-          'short_text': 'Texto Corto',
-          'long_text': 'Párrafo',
-          'single_choice': 'Opción Única',
-          'checkbox': 'Casillas',
-          'dropdown': 'Desplegable',
-          'number': 'Número',
-          'date': 'Fecha',
-          'rating': 'Puntuación',
-          'signature': 'Firma',
-          'email': 'Correo Electrónico',
-          'titulo': 'Título',
-          'evaluation_table': 'Evaluación',
-          'file_upload': 'Adjuntar archivos'
-        };
-        
         const questionsWithIds = (data.questions || []).map((q, index) => ({
           ...q,
           id: q.id || `q_${index}`,
-          type: reverseTypeMapping[q.question_type] || q.question_type || q.type,
-          text: q.question_text || q.text,
+          type: mapBackendTypeToFrontend(q.question_type || q.type),
+          text: q.text || q.question_text || '',
           options: q.options || [],
           section_id: q.section_id || null,
           conditional_logic: q.conditional_logic || null,
@@ -2185,42 +2251,28 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   // Update surveyData if initialSurveyData changes (e.g., when editing a new survey)
   useEffect(() => {
     if (initialSurveyData) {
-      // Reverse mapping: backend types to frontend types
-      const reverseTypeMapping = {
-        'short_text': 'Texto Corto',
-        'long_text': 'Párrafo',
-        'single_choice': 'Opción Única',
-        'checkbox': 'Casillas',
-        'dropdown': 'Desplegable',
-        'number': 'Número',
-        'date': 'Fecha',
-        'rating': 'Puntuación',
-        'signature': 'Firma',
-        'file_upload': 'Adjuntar archivos',
-        'email': 'Correo Electrónico',
-        'titulo': 'Título',
-        'evaluation_table': 'Evaluación'
-      };
-      
       // Ensure all questions have unique IDs and proper format
       const questionsWithIds = initialSurveyData.questions?.map((q, index) => {
-        // Get the type from backend format and convert to frontend format
-        // Backend returns question_type, but we also check type for compatibility
         const backendType = q.question_type || q.type || 'short_text';
-        const frontendType = reverseTypeMapping[backendType] || 'Texto Corto';
-        
-        // Get text from either question_text or text field
-        const questionText = q.question_text || q.text || '';
-        
+        const frontendType = mapBackendTypeToFrontend(backendType);
+        const questionText = q.text || q.question_text || '';
+
+        const {
+          question_text: _dropQuestionText,
+          question_type: _dropQuestionType,
+          ...rest
+        } = q;
+
         return {
-          ...q,
-          id: q.id || generateId(), // Generate ID if missing
-          // Map backend format to frontend format
+          ...rest,
+          id: q.id || generateId(),
           text: questionText,
-          type: frontendType, // Use mapped frontend type
+          type: frontendType,
           description: q.description || '',
           required: q.required || false,
-          options: Array.isArray(q.options) ? q.options : [] // Ensure options array exists and is an array
+          options: Array.isArray(q.options) ? q.options : [],
+          section_id: q.section_id || null,
+          conditional_logic: q.conditional_logic || null,
         };
       }) || [];
       
@@ -2231,20 +2283,13 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         order: s.order || index
       })).sort((a, b) => (a.order || 0) - (b.order || 0));
       
-      // Ensure questions have section_id
-      const questionsWithSections = questionsWithIds.map(q => ({
-        ...q,
-        section_id: q.section_id || null,
-        conditional_logic: q.conditional_logic || null
-      }));
-      
       const refKey = initialSurveyData.reference_key_column || '';
       const refMap = initialSurveyData.reference_mapping || {};
       const derivedColumns = [...new Set([refKey, ...Object.values(refMap)].filter(Boolean))];
       if (derivedColumns.length > 0) setReferenceColumns(derivedColumns);
       setSurveyData({
         ...initialSurveyData,
-        questions: questionsWithSections,
+        questions: questionsWithIds,
         sections: sections,
         reference_key_column: refKey,
         reference_mapping: refMap,
@@ -2345,8 +2390,14 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     setSurveyData(prev => {
       const updatedQuestions = prev.questions.map(q => {
         if (q.id === id) {
-          // Fusionar con la pregunta actual para no perder type, options, etc. si newData solo trae text
-          return { ...q, ...newData, id };
+          const merged = { ...q, ...newData, id };
+          if (newData.text !== undefined) {
+            delete merged.question_text;
+          }
+          if (newData.type !== undefined) {
+            delete merged.question_type;
+          }
+          return merged;
         }
         return q;
       });
@@ -6253,6 +6304,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [editingSurveyId, setEditingSurveyId] = useState(null); // State to hold the ID of the survey being edited
   const [surveyToEdit, setSurveyToEdit] = useState(null); // State to hold the fetched survey data
+  const [editSurveyLoading, setEditSurveyLoading] = useState(false);
   const [surveyForResponses, setSurveyForResponses] = useState(null); // Survey to view responses for
   const [responses, setResponses] = useState([]); // Responses for the selected survey
   const [responsesLoading, setResponsesLoading] = useState(false);
@@ -6290,7 +6342,8 @@ export default function App() {
   };
 
   const fetchSurveyToEdit = async (id) => {
-      setLoading(true);
+      setEditSurveyLoading(true);
+      setSurveyToEdit(null);
       try {
           if (!id || id === 'undefined') {
             throw new Error('ID de encuesta inválido');
@@ -6308,8 +6361,10 @@ export default function App() {
       } catch (error) {
           console.error("Error fetching survey for edit:", error);
           alert('No se pudo cargar la encuesta para editar. ' + error.message);
+          setEditingSurveyId(null);
+          setView('dashboard');
       } finally {
-          setLoading(false);
+          setEditSurveyLoading(false);
       }
   };
 
@@ -6416,7 +6471,7 @@ export default function App() {
       return;
     }
 
-    // Validate conditional logic: ensure referenced questions exist
+    // Validate conditional logic: referenced questions exist and value is set
     const questionIds = surveyData.questions.map(q => q.id);
     const invalidConditionRefs = surveyData.questions.filter(q => {
       if (!q.conditional_logic || !q.conditional_logic.question_id) return false;
@@ -6426,13 +6481,23 @@ export default function App() {
       alert('Error: Algunas preguntas tienen lógica condicional que referencia preguntas que no existen.');
       return;
     }
+    const incompleteConditions = surveyData.questions.filter(q => {
+      const cl = q.conditional_logic;
+      if (!cl || !cl.question_id) return false;
+      const val = cl.value;
+      return val === undefined || val === null || String(val).trim() === '';
+    });
+    if (incompleteConditions.length > 0) {
+      alert('Error: Completa el valor de "Mostrar solo si…" en todas las preguntas con lógica condicional.');
+      return;
+    }
 
     const surveyPayload = { 
       title: surveyData.title, 
       description: surveyData.description || '', 
       group: DEFAULT_GROUP_ID, 
       questions: surveyData.questions.map((q, index) => {
-        const questionText = q.question_text ?? q.text ?? '';
+        const questionText = q.text ?? q.question_text ?? '';
         const displayType = q.type || q.question_type;
         const backendType = typeMapping[displayType] ?? displayType ?? 'short_text';
         const payload = {
@@ -6812,11 +6877,16 @@ export default function App() {
               userRole={currentUser?.role}
               onResetResponses={handleResetResponses}
           />
+      ) : editSurveyLoading || (editingSurveyId && !surveyToEdit) ? (
+          <div className="min-h-screen flex items-center justify-center">
+            <p className="text-lg font-semibold text-gray-600">Cargando encuesta…</p>
+          </div>
       ) : (
           <SurveyEditor 
+              key={editingSurveyId || 'new'}
               onSave={handleSaveSurvey}
               onBack={handleBackToDashboard}
-              initialSurveyData={surveyToEdit} // Pass the fetched survey data to the editor
+              initialSurveyData={surveyToEdit}
           />
       )}
 

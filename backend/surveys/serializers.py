@@ -169,14 +169,13 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', None)
         validated_data.pop('password_confirm', None)
         
-        # Manejar user_group_id: convertir string a ObjectId si es necesario
-        user_group_id = validated_data.pop('user_group_id', None)
-        if user_group_id:
-            # Si viene como string vacío, establecer como None
-            if user_group_id == '':
+        # Manejar user_group_id solo si viene en el request (partial update seguro)
+        user_group_id_provided = 'user_group_id' in validated_data
+        user_group_id = validated_data.pop('user_group_id', None) if user_group_id_provided else None
+        if user_group_id_provided:
+            if user_group_id == '' or user_group_id is None:
                 user_group_id = None
             else:
-                # Intentar convertir a ObjectId si es un string válido
                 try:
                     if ObjectId.is_valid(str(user_group_id)):
                         user_group_id = ObjectId(user_group_id)
@@ -199,8 +198,9 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         for attr, value in validated_data.items():
             update_data[attr] = value
         
-        # Agregar user_group_id al update_data (puede ser None para limpiar el grupo)
-        update_data['user_group_id'] = user_group_id
+        # Solo escribir user_group_id si el cliente lo envió
+        if user_group_id_provided:
+            update_data['user_group_id'] = user_group_id
         
         if password:
             update_data['password'] = make_password(password)
@@ -215,8 +215,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         
-        # Actualizar user_group_id en el instance
-        if hasattr(instance, 'user_group_id'):
+        # Actualizar user_group_id en el instance solo si se envió
+        if user_group_id_provided and hasattr(instance, 'user_group_id'):
             instance.user_group_id = user_group_id
         
         if password:
@@ -239,13 +239,12 @@ class SurveyGroupSerializer(serializers.Serializer):
         pass
 
 class QuestionSerializer(serializers.Serializer):
-    # Support both formats: 'text'/'type' (from MongoDB) and 'question_text'/'question_type' (from API)
+    # Canonical write fields: text / type. Aliases question_text / question_type
+    # are accepted only via to_internal_value (no dual source+default wipe).
     # IMPORTANT: allow explicit question IDs so conditional_logic can reference stable IDs.
     id = serializers.CharField(max_length=255, required=False, allow_blank=True)
-    text = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
-    question_text = serializers.CharField(max_length=500, required=False, allow_blank=True, source='text', default='')
+    text = serializers.CharField(max_length=10000, required=False, allow_blank=True, default='')
     type = serializers.CharField(max_length=50, required=False, allow_blank=True, default='short_text')
-    question_type = serializers.CharField(max_length=50, required=False, allow_blank=True, source='type', default='short_text') # e.g., 'text', 'radio', 'checkbox'
     options = serializers.ListField(child=serializers.CharField(max_length=200), required=False, allow_empty=True, default=list)
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default='')
     required = serializers.BooleanField(required=False, default=False)
@@ -260,20 +259,47 @@ class QuestionSerializer(serializers.Serializer):
     accept = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')  # For file_upload: e.g. "image/*,application/pdf"
     question_image = serializers.CharField(max_length=500000, required=False, allow_blank=True, default='')
 
+    CONDITION_OPERATORS = {
+        'equals', 'not_equals', 'contains',
+        'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal',
+    }
+
     def to_internal_value(self, data):
-        # Normalizar los datos para aceptar tanto question_text como text, y question_type como type
-        normalized_data = dict(data)
-        
-        # Si viene question_text pero no text, mapear question_text a text
-        if 'question_text' in normalized_data and 'text' not in normalized_data:
-            normalized_data['text'] = normalized_data.get('question_text', '')
-        
-        # Si viene question_type pero no type, mapear question_type a type
-        if 'question_type' in normalized_data and 'type' not in normalized_data:
-            normalized_data['type'] = normalized_data.get('question_type', '')
-        
-        # Llamar al método padre con los datos normalizados
+        # Normalizar aliases sin campos dual-source
+        normalized_data = dict(data) if not isinstance(data, dict) else dict(data)
+
+        if 'question_text' in normalized_data:
+            if 'text' not in normalized_data or normalized_data.get('text') in (None, ''):
+                normalized_data['text'] = normalized_data.get('question_text') or ''
+            normalized_data.pop('question_text', None)
+
+        if 'question_type' in normalized_data:
+            if 'type' not in normalized_data or normalized_data.get('type') in (None, ''):
+                normalized_data['type'] = normalized_data.get('question_type') or 'short_text'
+            normalized_data.pop('question_type', None)
+
         return super().to_internal_value(normalized_data)
+
+    def validate_conditional_logic(self, value):
+        if value is None:
+            return value
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('conditional_logic debe ser un objeto.')
+        question_id = value.get('question_id')
+        if not question_id:
+            raise serializers.ValidationError('conditional_logic requiere question_id.')
+        operator = value.get('operator') or 'equals'
+        if operator not in self.CONDITION_OPERATORS:
+            raise serializers.ValidationError(f'Operador de condición no válido: {operator}')
+        raw_val = value.get('value')
+        if raw_val is None or (isinstance(raw_val, str) and raw_val.strip() == ''):
+            raise serializers.ValidationError('conditional_logic requiere un valor no vacío.')
+        return {
+            'type': value.get('type') or 'show_if',
+            'question_id': str(question_id),
+            'operator': operator,
+            'value': raw_val if not isinstance(raw_val, str) else raw_val,
+        }
     
     def to_representation(self, instance):
         # Normalize the data structure for output
@@ -285,8 +311,6 @@ class QuestionSerializer(serializers.Serializer):
             result['id'] = str(data['id'])
         elif '_id' in data:
             result['id'] = str(data['_id'])
-        # If no ID and we have a parent survey context, use index-based ID
-        # (This will be handled by SurveySerializer if needed)
         
         # Map 'text' to 'question_text' for API consistency
         if 'text' in data:
@@ -382,6 +406,28 @@ class SurveySerializer(serializers.Serializer):
         data['reference_row_count'] = instance.get('reference_row_count') or 0
 
         return data
+
+    def validate(self, attrs):
+        questions = attrs.get('questions') or []
+        if not isinstance(questions, list):
+            return attrs
+        question_ids = {str(q.get('id')) for q in questions if isinstance(q, dict) and q.get('id')}
+        for idx, q in enumerate(questions):
+            if not isinstance(q, dict):
+                continue
+            cl = q.get('conditional_logic')
+            if not cl:
+                continue
+            ref = str(cl.get('question_id') or '')
+            if ref and question_ids and ref not in question_ids:
+                raise serializers.ValidationError({
+                    'questions': {
+                        idx: {
+                            'conditional_logic': f'question_id "{ref}" no existe en esta encuesta.'
+                        }
+                    }
+                })
+        return attrs
 
     def create(self, validated_data):
         pass
