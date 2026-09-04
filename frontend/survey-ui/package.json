@@ -1,13 +1,16 @@
 {
   "name": "survey-ui",
   "private": true,
-  "version": "1.0.74",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
+    "prebuild": "node scripts/write-build-meta.mjs",
+    "predev": "node scripts/write-build-meta.mjs",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "version:sync": "node scripts/write-build-meta.mjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.1.0",

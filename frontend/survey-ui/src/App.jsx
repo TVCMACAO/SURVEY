@@ -10,6 +10,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout, ensureFreshToken } from './auth';
 import { useBreakpoint } from './hooks/useBreakpoint';
+import { APP_VERSION_LABEL, APP_VERSION, GIT_SHA, BUILD_TIME } from './version';
 import * as XLSX from 'xlsx';
 import {
   Chart as ChartJS,
@@ -6004,6 +6005,12 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                      <span className="font-semibold text-gray-700">{displayName || currentUser.username}</span>
                      {currentUser.email && <span>{currentUser.email}</span>}
                      {roleLabel && <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-medium">{roleLabel}</span>}
+                     <span
+                       className="inline-flex items-center px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 font-mono text-[11px] sm:text-xs border border-gray-200/80"
+                       title={`Versión ${APP_VERSION}\nCommit ${GIT_SHA}\nBuild ${BUILD_TIME || '—'}`}
+                     >
+                       {APP_VERSION_LABEL}
+                     </span>
                    </div>
                  )}
                </div>
