@@ -2,6 +2,7 @@
 import html
 import smtplib
 import ssl
+import time
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 
@@ -11,7 +12,10 @@ class SmtpConfigError(Exception):
 
 
 class SmtpSendError(Exception):
-    pass
+    def __init__(self, message, smtp_ms=None, message_id=None):
+        super().__init__(message)
+        self.smtp_ms = smtp_ms
+        self.message_id = message_id
 
 
 def group_has_smtp(group):
@@ -36,6 +40,7 @@ def send_smtp_email(group, to_email, subject, body_text, body_html=None, attachm
     attachments: optional list of dicts {filename, content (bytes), maintype, subtype}
       or tuples (filename, bytes, mime_main, mime_sub).
     Supports Hostinger-style SSL on port 465 and STARTTLS on 587.
+    Returns dict: {message_id, smtp_ms}.
     Raises SmtpConfigError or SmtpSendError.
     """
     if not group_has_smtp(group):
@@ -63,7 +68,8 @@ def send_smtp_email(group, to_email, subject, body_text, body_html=None, attachm
     if reply_to:
         msg['Reply-To'] = reply_to
     msg['Date'] = formatdate(localtime=True)
-    msg['Message-ID'] = make_msgid(domain=_email_domain(from_email))
+    message_id = make_msgid(domain=_email_domain(from_email))
+    msg['Message-ID'] = message_id
     msg['Auto-Submitted'] = 'auto-generated'
     msg['X-Auto-Response-Suppress'] = 'All'
 
@@ -92,6 +98,7 @@ def send_smtp_email(group, to_email, subject, body_text, body_html=None, attachm
     # Port 465 → implicit SSL; 587 → STARTTLS when use_tls
     use_ssl = port == 465 or (use_tls and port == 465)
     refused = {}
+    t0 = time.perf_counter()
 
     try:
         if use_ssl or port == 465:
@@ -113,12 +120,26 @@ def send_smtp_email(group, to_email, subject, body_text, body_html=None, attachm
     except SmtpConfigError:
         raise
     except Exception as exc:
-        raise SmtpSendError(f'No se pudo enviar el correo: {exc}') from exc
+        smtp_ms = int((time.perf_counter() - t0) * 1000)
+        raise SmtpSendError(
+            f'No se pudo enviar el correo: {exc}',
+            smtp_ms=smtp_ms,
+            message_id=message_id,
+        ) from exc
+
+    smtp_ms = int((time.perf_counter() - t0) * 1000)
 
     if refused:
         raise SmtpSendError(
-            f'El servidor SMTP rechazó destinatarios: {", ".join(str(k) for k in refused.keys())}'
+            f'El servidor SMTP rechazó destinatarios: {", ".join(str(k) for k in refused.keys())}',
+            smtp_ms=smtp_ms,
+            message_id=message_id,
         )
+
+    return {
+        'message_id': message_id,
+        'smtp_ms': smtp_ms,
+    }
 
 
 def build_consent_pdf_email(group, survey, response_id=''):

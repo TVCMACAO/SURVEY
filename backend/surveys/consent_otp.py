@@ -1,4 +1,4 @@
-"""Consent OTP helpers: hashing, tokens, rate limits."""
+"""Consent OTP helpers: hashing, tokens, rate limits, reversible code for resend."""
 import hashlib
 import hmac
 import secrets
@@ -6,11 +6,13 @@ import time
 from datetime import datetime, timedelta
 
 from django.conf import settings
+from django.core import signing
 
 OTP_TTL_SECONDS = 10 * 60
 TOKEN_TTL_SECONDS = 2 * 60 * 60
 MAX_ATTEMPTS = 5
 RESEND_COOLDOWN_SECONDS = 45
+_OTP_CODE_SALT = 'consent-otp-code-v1'
 
 
 def normalize_email(email):
@@ -25,6 +27,20 @@ def generate_otp_code(length=6):
 def hash_otp(code):
     raw = f"{settings.SECRET_KEY}:consent-otp:{code}"
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def encrypt_otp_code(code):
+    """Store reversible OTP for same-code resend (not for verification)."""
+    return signing.dumps(str(code).strip(), salt=_OTP_CODE_SALT)
+
+
+def decrypt_otp_code(code_enc):
+    if not code_enc:
+        return None
+    try:
+        return str(signing.loads(code_enc, salt=_OTP_CODE_SALT, max_age=OTP_TTL_SECONDS + 120))
+    except signing.BadSignature:
+        return None
 
 
 def make_consent_token(survey_id, email, exp_ts=None):
@@ -69,3 +85,17 @@ def verify_consent_token(token, survey_id, email=None):
 
 def otp_expires_at():
     return datetime.utcnow() + timedelta(seconds=OTP_TTL_SECONDS)
+
+
+def otp_is_reusable(existing):
+    """True if an active OTP can be resent with the same code."""
+    if not existing or existing.get('consumed'):
+        return False
+    if int(existing.get('attempts') or 0) >= MAX_ATTEMPTS:
+        return False
+    expires = existing.get('expires_at')
+    if expires and datetime.utcnow() > expires:
+        return False
+    if not existing.get('code_enc'):
+        return False
+    return True

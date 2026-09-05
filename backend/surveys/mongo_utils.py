@@ -47,3 +47,7 @@ def get_gridfs():
 
 def get_consent_otps_collection():
     return get_mongo_collection('consent_otps')
+
+
+def get_email_outbox_collection():
+    return get_mongo_collection('email_outbox')

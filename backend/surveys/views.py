@@ -26,8 +26,12 @@ from .email_smtp import (
     build_smtp_test_message,
     build_consent_pdf_email,
 )
+from .email_outbox import deliver_or_enqueue
 from .consent_otp import (
     normalize_email,
+    encrypt_otp_code,
+    decrypt_otp_code,
+    otp_is_reusable,
     generate_otp_code,
     hash_otp,
     make_consent_token,
@@ -520,13 +524,18 @@ class SurveyGroupSmtpTest(APIView):
 
         subject, body_text, body_html = build_smtp_test_message(group)
         try:
-            send_smtp_email(group, test_to, subject, body_text, body_html=body_html)
+            result = send_smtp_email(group, test_to, subject, body_text, body_html=body_html)
         except SmtpConfigError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except SmtpSendError as e:
             return Response({'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
-        return Response({'ok': True, 'message': f'Correo de prueba enviado a {test_to}.'})
+        return Response({
+            'ok': True,
+            'message': f'Correo de prueba enviado a {test_to}.',
+            'smtp_ms': (result or {}).get('smtp_ms'),
+            'message_id': (result or {}).get('message_id'),
+        })
 
 # Vistas para Encuestas
 class SurveyListCreate(APIView):
@@ -2179,20 +2188,52 @@ class PublicConsentOtpSend(APIView):
             if elapsed < RESEND_COOLDOWN_SECONDS:
                 wait = int(RESEND_COOLDOWN_SECONDS - elapsed)
                 return Response(
-                    {'detail': f'Espera {wait}s antes de reenviar el código.'},
+                    {
+                        'detail': f'Espera {wait}s antes de reenviar el código.',
+                        'retry_after': wait,
+                        'cooldown_seconds': RESEND_COOLDOWN_SECONDS,
+                    },
                     status=status.HTTP_429_TOO_MANY_REQUESTS
                 )
 
-        code = generate_otp_code(6)
-        doc = {
-            'survey_id': survey_key,
-            'email': email,
-            'code_hash': hash_otp(code),
-            'expires_at': otp_expires_at(),
-            'sent_at': datetime.utcnow(),
-            'attempts': 0,
-            'consumed': False,
-        }
+        reused = False
+        code = None
+        if otp_is_reusable(existing):
+            code = decrypt_otp_code(existing.get('code_enc'))
+            if code:
+                reused = True
+
+        if not code:
+            code = generate_otp_code(6)
+            reused = False
+
+        if reused:
+            doc = {
+                'survey_id': survey_key,
+                'email': email,
+                'code_hash': existing.get('code_hash') or hash_otp(code),
+                'code_enc': encrypt_otp_code(code),
+                'expires_at': existing.get('expires_at') or otp_expires_at(),
+                'sent_at': datetime.utcnow(),
+                'attempts': int(existing.get('attempts') or 0),
+                'consumed': False,
+                'smtp_status': 'pending',
+                'smtp_error': None,
+            }
+        else:
+            doc = {
+                'survey_id': survey_key,
+                'email': email,
+                'code_hash': hash_otp(code),
+                'code_enc': encrypt_otp_code(code),
+                'expires_at': otp_expires_at(),
+                'sent_at': datetime.utcnow(),
+                'attempts': 0,
+                'consumed': False,
+                'smtp_status': 'pending',
+                'smtp_error': None,
+            }
+
         otps.update_one(
             {'survey_id': survey_key, 'email': email},
             {'$set': doc},
@@ -2203,13 +2244,58 @@ class PublicConsentOtpSend(APIView):
             group, survey, code, expires_minutes=10
         )
         try:
-            send_smtp_email(group, email, subject, body_text, body_html=body_html)
+            delivery = deliver_or_enqueue(
+                'otp',
+                group=group,
+                to_email=email,
+                subject=subject,
+                body_text=body_text,
+                body_html=body_html,
+                survey_id=survey_key,
+                otp_survey_id=survey_key,
+                otp_email=email,
+            )
         except SmtpConfigError as e:
+            otps.update_one(
+                {'survey_id': survey_key, 'email': email},
+                {'$set': {'smtp_status': 'failed', 'smtp_error': str(e)[:500]}},
+            )
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except SmtpSendError as e:
+            otps.update_one(
+                {'survey_id': survey_key, 'email': email},
+                {'$set': {
+                    'smtp_status': 'failed',
+                    'smtp_error': str(e)[:500],
+                    'smtp_ms': getattr(e, 'smtp_ms', None),
+                    'smtp_message_id': getattr(e, 'message_id', None),
+                }},
+            )
             return Response({'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
-        return Response({'ok': True, 'message': 'Código enviado al correo indicado.', 'expires_in': 600})
+        queued = bool(delivery.get('queued'))
+        msg = (
+            'Código encolado; llegará a tu correo en breve.'
+            if queued
+            else 'Código enviado al correo indicado.'
+        )
+        if reused:
+            msg = (
+                'Se reenvió el mismo código vigente. '
+                + ('Llegará en breve.' if queued else 'Revisa tu correo.')
+            )
+
+        return Response({
+            'ok': True,
+            'message': msg,
+            'expires_in': 600,
+            'queued': queued,
+            'reused_code': reused,
+            'smtp_ms': delivery.get('smtp_ms'),
+            'message_id': delivery.get('message_id'),
+            'sent_at': datetime.utcnow().isoformat() + 'Z',
+            'resend_cooldown': RESEND_COOLDOWN_SECONDS,
+        })
 
 
 class PublicConsentOtpVerify(APIView):
@@ -2335,6 +2421,14 @@ class PublicConsentPdfEmail(APIView):
                 'already_sent': True,
             })
 
+        if resp.get('consent_pdf_smtp_status') == 'queued':
+            return Response({
+                'ok': True,
+                'message': 'El PDF ya está en cola de envío.',
+                'queued': True,
+                'already_queued': True,
+            })
+
         group = None
         group_id = survey.get('group')
         if group_id:
@@ -2363,12 +2457,17 @@ class PublicConsentPdfEmail(APIView):
         subject, body_text, body_html = build_consent_pdf_email(group, survey, response_id=response_id)
         filename = f"autorizacion-{response_id[:12]}.pdf"
         try:
-            send_smtp_email(
-                group,
-                email,
-                subject,
-                body_text,
+            delivery = deliver_or_enqueue(
+                'pdf',
+                group=group,
+                to_email=email,
+                subject=subject,
+                body_text=body_text,
                 body_html=body_html,
+                survey_id=survey_key,
+                response_id=response_id,
+                pdf_base64=pdf_b64,
+                pdf_filename=filename,
                 attachments=[{
                     'filename': filename,
                     'content': pdf_bytes,
@@ -2379,15 +2478,28 @@ class PublicConsentPdfEmail(APIView):
         except SmtpConfigError as e:
             return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except SmtpSendError as e:
+            responses_collection.update_one(
+                {'_id': resp_oid},
+                {'$set': {
+                    'consent_pdf_smtp_status': 'failed',
+                    'consent_pdf_smtp_error': str(e)[:500],
+                    'consent_pdf_smtp_ms': getattr(e, 'smtp_ms', None),
+                    'consent_pdf_smtp_message_id': getattr(e, 'message_id', None),
+                }},
+            )
             return Response({'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
-        responses_collection.update_one(
-            {'_id': resp_oid},
-            {'$set': {'consent_pdf_emailed_at': datetime.utcnow(), 'consent_pdf_emailed_to': email}},
-        )
+        queued = bool(delivery.get('queued'))
         return Response({
             'ok': True,
-            'message': f'PDF enviado a {email}.',
+            'message': (
+                f'PDF encolado para envío a {email}.'
+                if queued
+                else f'PDF enviado a {email}.'
+            ),
+            'queued': queued,
+            'smtp_ms': delivery.get('smtp_ms'),
+            'message_id': delivery.get('message_id'),
         })
 
 

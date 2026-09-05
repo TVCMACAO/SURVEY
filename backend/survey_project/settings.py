@@ -320,6 +320,9 @@ else:
 
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'survey_db')
 
+# EMAIL_SYNC=1 envía SMTP en el request (debug). Por defecto: cola Mongo (outbox).
+EMAIL_SYNC = os.environ.get('EMAIL_SYNC', '0').lower() in ('true', '1', 'yes')
+
 # Log MongoDB URI configuration (ocultar contraseña) — solo en DEBUG
 if DEBUG:
     if 'MONGO_URI' in os.environ:

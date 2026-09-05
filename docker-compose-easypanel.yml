@@ -22,6 +22,7 @@ services:
       - BASE_URL=${BASE_URL:-https://chat-survey-app.rhfh8t.easypanel.host}
       - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID:-}
       - GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64=${GOOGLE_DRIVE_CREDENTIALS_JSON_BASE64:-}
+      - EMAIL_SYNC=${EMAIL_SYNC:-0}
     restart: unless-stopped
     networks:
       - survey-network
@@ -31,6 +32,28 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  email-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: survey-email-worker
+    command: python manage.py process_email_outbox --interval 5 --batch 20
+    volumes:
+      - ./backend:/app
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=${DEBUG:-0}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-survey_db}
+      - EMAIL_SYNC=0
+    depends_on:
+      django:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - survey-network
 
   nginx:
     build:

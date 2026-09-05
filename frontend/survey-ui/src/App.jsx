@@ -1553,6 +1553,8 @@ const ConsentOtpModal = ({
   verifying,
   error,
   info,
+  sentAtLabel,
+  resendCooldownLeft,
   onEmailChange,
   onOtpChange,
   onSend,
@@ -1560,13 +1562,14 @@ const ConsentOtpModal = ({
   onCancel,
 }) => {
   if (!open) return null;
+  const canResend = !sending && email.trim() && (resendCooldownLeft == null || resendCooldownLeft <= 0);
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/55">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-200">
           <h2 className="text-lg font-black text-gray-800">Verificación de autorización</h2>
           <p className="text-xs text-gray-500 mt-1">
-            Ingresa tu correo, solicita el OTP y confírmalo en este mismo modal para continuar.
+            Ingresa tu correo, solicita el código y confírmalo aquí para continuar.
           </p>
         </div>
         <div className="px-5 py-4 space-y-3">
@@ -1583,14 +1586,25 @@ const ConsentOtpModal = ({
           </div>
           <button
             type="button"
-            disabled={sending || !email.trim()}
+            disabled={!canResend}
             onClick={onSend}
             className="w-full px-4 py-2.5 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
           >
-            {sending ? 'Enviando…' : 'Enviar OTP a este correo'}
+            {sending
+              ? 'Enviando…'
+              : resendCooldownLeft > 0
+                ? `Reenviar en ${resendCooldownLeft}s`
+                : 'Enviar código a este correo'}
           </button>
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            El código puede tardar 1–2 minutos. Revisa también Spam o Promociones.
+            Si reenvías antes de que expire, se manda el mismo código vigente.
+          </p>
+          {sentAtLabel && (
+            <p className="text-[11px] text-slate-600">Último envío: {sentAtLabel}</p>
+          )}
           <div>
-            <label className="block text-xs font-bold text-gray-600 mb-1">Código OTP recibido</label>
+            <label className="block text-xs font-bold text-gray-600 mb-1">Código recibido</label>
             <input
               type="text"
               inputMode="numeric"
@@ -1613,7 +1627,7 @@ const ConsentOtpModal = ({
             onClick={onVerify}
             className="px-4 py-2 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
           >
-            {verifying ? 'Verificando…' : 'Confirmar OTP y continuar'}
+            {verifying ? 'Verificando…' : 'Confirmar código y continuar'}
           </button>
         </div>
       </div>
@@ -1645,8 +1659,18 @@ const PublicSurveyView = ({ surveyId }) => {
   const [consentVerifying, setConsentVerifying] = useState(false);
   const [consentError, setConsentError] = useState('');
   const [consentInfo, setConsentInfo] = useState('');
+  const [consentSentAt, setConsentSentAt] = useState(null);
+  const [consentResendCooldown, setConsentResendCooldown] = useState(0);
   const [signatureConsentAt, setSignatureConsentAt] = useState(null);
-  const [submitEmailStatus, setSubmitEmailStatus] = useState(''); // '', sending, sent, error
+  const [submitEmailStatus, setSubmitEmailStatus] = useState(''); // '', sending, queued, sent, error
+
+  useEffect(() => {
+    if (consentResendCooldown <= 0) return undefined;
+    const t = setInterval(() => {
+      setConsentResendCooldown((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [consentResendCooldown]);
 
   // Function to evaluate conditional logic (shared module-level evaluateCondition)
   const getVisibleSections = (sections) => {
@@ -1818,10 +1842,24 @@ const PublicSurveyView = ({ surveyId }) => {
         }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || 'No se pudo enviar el OTP');
-      setConsentInfo(data.message || 'Código enviado. Revisa tu correo e ingrésalo aquí.');
+      if (!res.ok) {
+        if (res.status === 429) {
+          const wait = Number(data.retry_after) || Number(data.cooldown_seconds) || 45;
+          setConsentResendCooldown(wait);
+        }
+        throw new Error(data.detail || 'No se pudo enviar el código');
+      }
+      const cooldown = Number(data.resend_cooldown) || 45;
+      setConsentResendCooldown(cooldown);
+      setConsentSentAt(new Date());
+      setConsentInfo(
+        data.message
+        || (data.queued
+          ? 'Código encolado. Puede tardar 1–2 minutos; revisa también Spam.'
+          : 'Código enviado. Revisa tu correo (y Spam) e ingrésalo aquí.')
+      );
     } catch (e) {
-      setConsentError(e.message || 'Error al enviar OTP');
+      setConsentError(e.message || 'Error al enviar el código');
     } finally {
       setConsentSending(false);
     }
@@ -2148,7 +2186,7 @@ const PublicSurveyView = ({ surveyId }) => {
           if (!mailRes.ok) {
             throw new Error(mailBody.detail || 'No se pudo enviar el PDF');
           }
-          setSubmitEmailStatus('sent');
+          setSubmitEmailStatus(mailBody.queued ? 'queued' : 'sent');
         } catch (mailErr) {
           console.error(mailErr);
           setSubmitEmailStatus('error');
@@ -2194,7 +2232,13 @@ const PublicSurveyView = ({ surveyId }) => {
           <h2 className="text-2xl font-black text-gray-800 mb-2">¡Gracias por tu respuesta!</h2>
           <p className="text-gray-600">Tu respuesta ha sido enviada exitosamente.</p>
           {submitEmailStatus === 'sending' && (
-            <p className="text-sm text-indigo-700 mt-3">Enviando el PDF a tu correo…</p>
+            <p className="text-sm text-indigo-700 mt-3">Preparando el PDF de autorización…</p>
+          )}
+          {submitEmailStatus === 'queued' && (
+            <p className="text-sm text-indigo-700 mt-3">
+              Tu autorización se enviará por correo a <span className="font-semibold">{consentEmail.trim()}</span> en breve.
+              Revisa también Spam si no lo ves pronto.
+            </p>
           )}
           {submitEmailStatus === 'sent' && (
             <p className="text-sm text-emerald-700 mt-3">
@@ -2774,6 +2818,12 @@ const PublicSurveyView = ({ surveyId }) => {
         verifying={consentVerifying}
         error={consentError}
         info={consentInfo}
+        sentAtLabel={
+          consentSentAt
+            ? consentSentAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            : ''
+        }
+        resendCooldownLeft={consentResendCooldown}
         onEmailChange={setConsentEmail}
         onOtpChange={setConsentOtp}
         onSend={sendConsentOtp}
@@ -6588,10 +6638,16 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                     <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-xs text-amber-950 leading-relaxed space-y-1.5">
                       <p className="font-bold text-amber-900">Para que el correo llegue a bandeja (no spam)</p>
                       <p>
-                        El remitente (<span className="font-semibold">SMTP_FROM</span>) debe ser del mismo dominio autenticado
-                        en el servidor. En el panel DNS del dominio (Hostinger u otro) activa{' '}
+                        Usa un remitente dedicado (p. ej. <span className="font-semibold">noreply@</span> o{' '}
+                        <span className="font-semibold">autorizaciones@</span> del dominio), no una casilla genérica tipo{' '}
+                        <span className="font-semibold">info@</span> si se puede evitar. El dominio de{' '}
+                        <span className="font-semibold">SMTP_FROM</span> debe coincidir con el autenticado en el servidor.
+                      </p>
+                      <p>
+                        En el panel DNS del dominio (Hostinger u otro) activa{' '}
                         <span className="font-semibold">SPF</span>, <span className="font-semibold">DKIM</span> y{' '}
-                        <span className="font-semibold">DMARC</span>. Sin eso, Gmail/Outlook suelen filtrar el mensaje aunque el SMTP responda bien.
+                        <span className="font-semibold">DMARC</span>. Sin eso, Gmail/Outlook suelen filtrar o demorar el mensaje
+                        aunque el SMTP responda bien. Checklist: <span className="font-mono">docs/EMAIL_DELIVERABILITY_CHECKLIST.md</span>.
                       </p>
                     </div>
                     {(() => {
