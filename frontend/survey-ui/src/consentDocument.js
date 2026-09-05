@@ -174,6 +174,97 @@ export const mergeConsentTemplate = (body, mappings, answers = {}) => {
   });
 };
 
+const _normLabel = (s) => String(s || '')
+  .toLowerCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '');
+
+const _answerByMappedKeys = (mappings, answers, keys) => {
+  const keySet = new Set(keys.map((k) => _normLabel(k)));
+  for (const m of mappings || []) {
+    if (!m?.key || !m.question_id) continue;
+    if (!keySet.has(_normLabel(m.key))) continue;
+    const val = formatAnswerValue(answers[m.question_id]);
+    if (val && val !== '________') return val;
+  }
+  return '';
+};
+
+const _answerByQuestionText = (survey, answers, keywords) => {
+  const questions = survey?.questions || [];
+  for (const q of questions) {
+    const label = _normLabel(q.text || q.question_text || q.label || '');
+    if (!keywords.some((k) => label.includes(_normLabel(k)))) continue;
+    const qid = q.id || q._id;
+    const val = formatAnswerValue(answers[qid]);
+    if (val && val !== '________') return val;
+  }
+  return '';
+};
+
+/** Sanitize a fragment for use in filenames (keep letters, digits, dash/underscore). */
+export const sanitizeConsentFilePart = (value, { maxLen = 60 } = {}) => {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  if (!cleaned) return '';
+  return cleaned.slice(0, maxLen);
+};
+
+/**
+ * Resolve cédula + nombre from consent mappings (cc/nombre) or question labels.
+ * Returns { cedula, nombre }.
+ */
+export const resolveConsentIdentityFields = ({ survey = null, response = null, answers = null } = {}) => {
+  const ans = answers || response?.answers || {};
+  const ic = survey?.informed_consent || {};
+  const mappings = ic.mappings || [];
+
+  let cedula = _answerByMappedKeys(mappings, ans, ['cc', 'cedula', 'cédula', 'documento', 'documento_identidad', 'nit']);
+  let nombre = _answerByMappedKeys(mappings, ans, ['nombre', 'name', 'nombres', 'nombre_completo']);
+
+  if (!cedula) {
+    const docQid = survey?.documento_votante_question_id || survey?.documento_empleado_question_id || '';
+    if (docQid) {
+      const v = formatAnswerValue(ans[docQid]);
+      if (v && v !== '________') cedula = v;
+    }
+  }
+  if (!cedula) {
+    cedula = _answerByQuestionText(survey, ans, [
+      'cedula', 'cédula', 'documento', 'identificacion', 'identificación', 'cc', 'nit',
+    ]);
+  }
+  if (!nombre) {
+    nombre = _answerByQuestionText(survey, ans, [
+      'nombre completo', 'nombres y apellidos', 'nombre y apellido', 'nombre', 'nombres',
+    ]);
+  }
+
+  return {
+    cedula: String(cedula || '').trim(),
+    nombre: String(nombre || '').trim(),
+  };
+};
+
+/**
+ * Build PDF basename: consentimiento-{cedula}_{nombre} (fallback to response id).
+ */
+export const buildConsentPdfFileBaseName = ({ survey = null, response = null } = {}) => {
+  const { cedula, nombre } = resolveConsentIdentityFields({ survey, response });
+  const idPart = sanitizeConsentFilePart(cedula, { maxLen: 40 });
+  const namePart = sanitizeConsentFilePart(nombre, { maxLen: 80 });
+  const responseId = String(response?.id || response?._id || 'respuesta');
+  const parts = [idPart, namePart].filter(Boolean);
+  if (parts.length) {
+    return `consentimiento-${parts.join('_')}`;
+  }
+  return `consentimiento-${sanitizeConsentFilePart(responseId) || 'respuesta'}`;
+};
+
 export const formatConsentDate = (rawDate) => {
   if (!rawDate) return '';
   try {
@@ -430,9 +521,8 @@ export const downloadConsentPdf = async (opts) => {
   const blob = new Blob([bytes], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const id = opts.response?.id || opts.response?._id || 'respuesta';
   a.href = url;
-  a.download = `consentimiento-${id}.pdf`;
+  a.download = `${buildConsentPdfFileBaseName({ survey: opts.survey, response: opts.response })}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

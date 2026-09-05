@@ -13,6 +13,7 @@ import { useBreakpoint } from './hooks/useBreakpoint';
 import { APP_VERSION_LABEL, APP_VERSION, GIT_SHA, BUILD_TIME } from './version';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 import {
   buildDefaultInformedConsent,
   extractConsentPlaceholders,
@@ -21,6 +22,7 @@ import {
   buildPersonalDataConsentText,
   buildConsentPdfBytes,
   downloadConsentPdf,
+  buildConsentPdfFileBaseName,
   readLetterheadPdfFile,
   resolveConsentSignature,
 } from './consentDocument';
@@ -4731,6 +4733,8 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [surveyorFilter, setSurveyorFilter] = useState('all');
+  const [zippingConsents, setZippingConsents] = useState(false);
+  const [zipProgress, setZipProgress] = useState({ done: 0, total: 0 });
 
   const filterState = useMemo(
     () => ({ searchQuery, statusFilter, dateFrom, dateTo, surveyorFilter }),
@@ -4766,6 +4770,101 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     setDateFrom('');
     setDateTo('');
     setSurveyorFilter('all');
+  };
+
+  const downloadAllConsentPdfsZip = async () => {
+    if (!survey?.informed_consent_enabled) {
+      alert('Esta encuesta no tiene consentimiento informado activo.');
+      return;
+    }
+    const list = filteredResponses;
+    if (!list.length) {
+      alert('No hay respuestas (con los filtros actuales) para generar consentimientos.');
+      return;
+    }
+    if (zippingConsents) return;
+
+    const ic = survey.informed_consent || {};
+    const confirmed = window.confirm(
+      `Se generarán ${list.length} PDF(s) de consentimiento${hasActiveFilters ? ' (según filtros activos)' : ''} y se descargarán en un ZIP. ¿Continuar?`
+    );
+    if (!confirmed) return;
+
+    setZippingConsents(true);
+    setZipProgress({ done: 0, total: list.length });
+    try {
+      const zip = new JSZip();
+      const usedNames = new Set();
+      let okCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < list.length; i += 1) {
+        const response = list[i];
+        const responseId = String(response.id || response._id || `idx-${i + 1}`);
+        try {
+          const mergedBody = mergeConsentTemplate(
+            ic.body || '',
+            ic.mappings || [],
+            response.answers || {}
+          );
+          const signatureDataUrl = resolveConsentSignature({
+            answers: response.answers || {},
+            mappings: ic.mappings || [],
+            survey,
+            signatureQuestionId: ic.signature_question_id || '',
+          });
+          const pdfBytes = await buildConsentPdfBytes({
+            title: ic.title || 'Consentimiento informado',
+            mergedBody,
+            response,
+            survey,
+            letterheadUrl: '/membrete2.pdf',
+            letterheadPdf: ic.letterhead_pdf || '',
+            signatureDataUrl,
+          });
+          let baseName = buildConsentPdfFileBaseName({ survey, response });
+          let fileName = `${baseName}.pdf`;
+          let n = 2;
+          while (usedNames.has(fileName)) {
+            fileName = `${baseName}-${n}.pdf`;
+            n += 1;
+          }
+          usedNames.add(fileName);
+          zip.file(fileName, pdfBytes);
+          okCount += 1;
+        } catch (err) {
+          console.error('ZIP consentimiento falló para', responseId, err);
+          failCount += 1;
+        }
+        setZipProgress({ done: i + 1, total: list.length });
+      }
+
+      if (okCount === 0) {
+        throw new Error('No se pudo generar ningún PDF de consentimiento.');
+      }
+
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const surveyTitle = (survey.title || 'consentimientos').replace(/[^a-z0-9]+/gi, '_').toLowerCase();
+      const fileName = `${surveyTitle}_consentimientos${hasActiveFilters ? '_filtrado' : ''}_${new Date().toISOString().split('T')[0]}.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      if (failCount > 0) {
+        alert(`ZIP listo con ${okCount} PDF(s). ${failCount} respuesta(s) no se pudieron incluir.`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'No se pudo generar el ZIP de consentimientos.');
+    } finally {
+      setZippingConsents(false);
+      setZipProgress({ done: 0, total: 0 });
+    }
   };
 
   if (loading) {
@@ -5265,17 +5364,33 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
             </span>
           </div>
         </div>
-        {userRole === 'group_admin' && responses.length > 0 && onResetResponses && (
-          <button
-            type="button"
-            onClick={() => onResetResponses(survey)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-xl font-bold text-sm transition-colors shrink-0"
-            title="Borrar todas las respuestas de esta encuesta"
-          >
-            <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
-            Reiniciar respuestas
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {survey?.informed_consent_enabled && filteredResponses.length > 0 && (
+            <button
+              type="button"
+              onClick={downloadAllConsentPdfsZip}
+              disabled={zippingConsents}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 disabled:opacity-60 rounded-xl font-bold text-sm transition-colors"
+              title="Descargar todos los PDFs de consentimiento (según filtros) en un ZIP"
+            >
+              <FontAwesomeIcon icon={faDownload} size="sm" className="fa-icon-force-current" />
+              {zippingConsents
+                ? `Generando ZIP… ${zipProgress.done}/${zipProgress.total}`
+                : 'Descargar consentimientos ZIP'}
+            </button>
+          )}
+          {userRole === 'group_admin' && responses.length > 0 && onResetResponses && (
+            <button
+              type="button"
+              onClick={() => onResetResponses(survey)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-xl font-bold text-sm transition-colors"
+              title="Borrar todas las respuestas de esta encuesta"
+            >
+              <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
+              Reiniciar respuestas
+            </button>
+          )}
+        </div>
       </header>
 
       <div className={`w-full max-w-none px-4 sm:px-6 lg:px-10 xl:px-14 ${activeTab === 'table' ? 'py-3 md:py-4' : 'py-6 md:py-10'} overflow-x-hidden`}>
