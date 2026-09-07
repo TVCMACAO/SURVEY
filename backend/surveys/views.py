@@ -27,8 +27,12 @@ from .email_smtp import (
     build_consent_pdf_email,
 )
 from .email_outbox import deliver_or_enqueue
-from .webhook_outbox import maybe_enqueue_rifas_webhook, deliver_webhook_http, build_authorized_payload, sign_body
-from .rifas_webhook import resolve_rifas_user
+from .webhook_outbox import (
+    maybe_enqueue_rifas_webhook,
+    deliver_webhook_http,
+    build_authorized_payload,
+    backfill_rifas_webhooks,
+)
 from .consent_otp import (
     normalize_email,
     encrypt_otp_code,
@@ -601,6 +605,99 @@ class SurveyWebhookTest(APIView):
             'http_status': result.get('http_status'),
             'elapsed_ms': result.get('elapsed_ms'),
             'payload_preview': payload,
+        })
+
+
+class SurveyWebhookBackfill(APIView):
+    """
+    POST: encola webhooks rifas para respuestas ya guardadas (histórico).
+    Body opcional: response_ids[], force, ignore_otp (default true).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    MAX_BATCH = 500
+
+    def post(self, request, pk):
+        surveys_collection = get_surveys_collection()
+        try:
+            survey = surveys_collection.find_one({'_id': ObjectId(pk)})
+        except Exception:
+            survey = surveys_collection.find_one({'_id': pk}) or surveys_collection.find_one({'id': pk})
+        if not survey or survey.get('is_deleted'):
+            raise NotFound(detail='Encuesta no encontrada.')
+
+        err = require_not_analista(request, 'reenviar webhooks')
+        if err is not None:
+            return err
+        user_role, user_group_id = get_user_role_and_group(request)
+        access_err = user_can_access_survey_group(
+            user_role, user_group_id, survey.get('group'),
+            deny_message='No tienes permisos para reenviar webhooks de esta encuesta.',
+        )
+        if access_err is not None:
+            return access_err
+
+        if not survey.get('webhook_enabled'):
+            return Response(
+                {'detail': 'Activa el webhook rifas en la encuesta antes de reenviar.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not (survey.get('webhook_url') or '').strip():
+            return Response(
+                {'detail': 'Configura la URL del webhook rifas antes de reenviar.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        body = request.data if isinstance(request.data, dict) else {}
+        force = bool(body.get('force'))
+        ignore_otp = True if 'ignore_otp' not in body else bool(body.get('ignore_otp'))
+        raw_ids = body.get('response_ids') or []
+        if raw_ids and not isinstance(raw_ids, list):
+            return Response({'detail': 'response_ids debe ser una lista.'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(raw_ids) > self.MAX_BATCH:
+            return Response(
+                {'detail': f'Máximo {self.MAX_BATCH} respuestas por lote.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        responses_collection = get_responses_collection()
+        survey_oid = survey.get('_id')
+        query = {
+            '$or': [
+                {'survey': survey_oid},
+                {'survey': str(survey_oid)},
+            ]
+        }
+        if raw_ids:
+            oids = []
+            for rid in raw_ids:
+                try:
+                    oids.append(ObjectId(str(rid)))
+                except Exception:
+                    continue
+            if not oids:
+                return Response({'detail': 'Ningún response_id válido.'}, status=status.HTTP_400_BAD_REQUEST)
+            query = {
+                '$and': [
+                    query,
+                    {'_id': {'$in': oids}},
+                ]
+            }
+
+        cursor = responses_collection.find(query).limit(self.MAX_BATCH)
+        docs = list(cursor)
+        counts = backfill_rifas_webhooks(
+            survey, docs, force=force, ignore_otp=ignore_otp
+        )
+        queued = int(counts.get('queued', 0)) + int(counts.get('sent', 0))
+        return Response({
+            'ok': True,
+            'message': (
+                f'Reenvío procesado: {queued} encolados/enviados de {len(docs)} respuestas.'
+            ),
+            'processed': len(docs),
+            'counts': counts,
+            'force': force,
+            'ignore_otp': ignore_otp,
         })
 
 

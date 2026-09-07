@@ -252,8 +252,8 @@ def deliver_webhook_http(url, secret, payload, delivery_id=''):
         }
 
 
-def maybe_enqueue_rifas_webhook(survey, response_doc):
-    """After response insert: enqueue rifas webhook if configured and authorized."""
+def maybe_enqueue_rifas_webhook(survey, response_doc, *, force=False, ignore_otp=False):
+    """After response insert (or backfill): enqueue rifas webhook if configured and authorized."""
     if not survey or not survey.get('webhook_enabled'):
         return 'disabled'
 
@@ -263,6 +263,10 @@ def maybe_enqueue_rifas_webhook(survey, response_doc):
         _mark_response_webhook(response_doc.get('_id'), webhook_status='skipped_no_url')
         return 'skipped_no_url'
 
+    prev_status = (response_doc.get('webhook_status') or '').strip()
+    if not force and prev_status in ('sent', 'queued'):
+        return f'already_{prev_status}'
+
     answers = response_doc.get('answers') or {}
     if not is_authorization_accepted(survey, answers):
         _mark_response_webhook(response_doc.get('_id'), webhook_status='skipped_not_authorized')
@@ -271,7 +275,7 @@ def maybe_enqueue_rifas_webhook(survey, response_doc):
     require_otp = survey.get('webhook_require_otp')
     if require_otp is None:
         require_otp = bool(survey.get('informed_consent_enabled'))
-    if require_otp and not response_doc.get('consent_otp_verified_at'):
+    if require_otp and not ignore_otp and not response_doc.get('consent_otp_verified_at'):
         _mark_response_webhook(response_doc.get('_id'), webhook_status='skipped_otp_required')
         return 'skipped_otp_required'
 
@@ -327,6 +331,17 @@ def maybe_enqueue_rifas_webhook(survey, response_doc):
         rifas_user=user,
     )
     return 'queued'
+
+
+def backfill_rifas_webhooks(survey, response_docs, *, force=False, ignore_otp=False):
+    """Enqueue webhooks for a list of response documents. Returns counts by status."""
+    counts = {}
+    for doc in response_docs or []:
+        status = maybe_enqueue_rifas_webhook(
+            survey, doc, force=force, ignore_otp=ignore_otp
+        )
+        counts[status] = counts.get(status, 0) + 1
+    return counts
 
 
 def _claim_next_job():

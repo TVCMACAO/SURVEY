@@ -4917,6 +4917,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
   const [surveyorFilter, setSurveyorFilter] = useState('all');
   const [zippingConsents, setZippingConsents] = useState(false);
   const [zipProgress, setZipProgress] = useState({ done: 0, total: 0 });
+  const [webhookBackfilling, setWebhookBackfilling] = useState(false);
 
   const filterState = useMemo(
     () => ({ searchQuery, statusFilter, dateFrom, dateTo, surveyorFilter }),
@@ -4952,6 +4953,66 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     setDateFrom('');
     setDateTo('');
     setSurveyorFilter('all');
+  };
+
+  const sendFilteredResponsesToRifasWebhook = async () => {
+    if (!survey?.webhook_enabled) {
+      alert('Activa y configura el webhook rifas en el editor de la encuesta antes de reenviar.');
+      return;
+    }
+    const list = filteredResponses;
+    if (!list.length) {
+      alert('No hay respuestas (con los filtros actuales) para enviar.');
+      return;
+    }
+    if (webhookBackfilling) return;
+
+    const sid = survey.id || survey._id;
+    if (!sid) {
+      alert('No se encontró el ID de la encuesta.');
+      return;
+    }
+
+    const batch = list.slice(0, 500);
+    const go = window.confirm(
+      `Se encolarán hacia rifas ${batch.length} respuesta(s)${hasActiveFilters ? ' (filtros activos)' : ''}.\n\n`
+      + 'Solo se envían autorizaciones con datos suficientes (documento, nombre, correo).\n'
+      + 'Las ya enviadas se omiten salvo que fuerces reenvío en el siguiente paso.\n\n¿Continuar?'
+    );
+    if (!go) return;
+
+    const forceResend = window.confirm(
+      '¿Forzar reenvío también de las que ya tenían webhook enviado/encolado?\n\n'
+      + 'Aceptar = sí, reenviar todas\n'
+      + 'Cancelar = solo pendientes / no enviadas'
+    );
+
+    setWebhookBackfilling(true);
+    try {
+      const responseIds = batch
+        .map((r) => r.id || r._id)
+        .filter(Boolean)
+        .map(String);
+      const res = await authenticatedFetch(`/api/surveys/${sid}/webhook-backfill/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          response_ids: responseIds,
+          force: Boolean(forceResend),
+          ignore_otp: true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || 'No se pudo encolar el reenvío');
+      const counts = data.counts || {};
+      const lines = Object.entries(counts)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('\n');
+      alert(`${data.message || 'Listo.'}\n\nDetalle:\n${lines || '(sin detalle)'}`);
+    } catch (e) {
+      alert(e.message || 'Error al reenviar a rifas');
+    } finally {
+      setWebhookBackfilling(false);
+    }
   };
 
   const downloadAllConsentPdfsZip = async () => {
@@ -5547,6 +5608,18 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {survey?.webhook_enabled && filteredResponses.length > 0 && (
+            <button
+              type="button"
+              onClick={sendFilteredResponsesToRifasWebhook}
+              disabled={webhookBackfilling}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 text-indigo-800 hover:bg-indigo-200 disabled:opacity-60 rounded-xl font-bold text-sm transition-colors"
+              title="Encolar hacia rifas las respuestas visibles (histórico / backfill)"
+            >
+              <FontAwesomeIcon icon={faShareNodes} size="sm" className="fa-icon-force-current" />
+              {webhookBackfilling ? 'Enviando a rifas…' : 'Enviar a rifas (webhook)'}
+            </button>
+          )}
           {survey?.informed_consent_enabled && filteredResponses.length > 0 && (
             <button
               type="button"
