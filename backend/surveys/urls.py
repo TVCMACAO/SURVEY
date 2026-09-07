@@ -4,7 +4,7 @@ from .views import (
     HealthCheckView,
     CustomTokenObtainPairView,
     SurveyGroupListCreate, SurveyGroupRetrieveUpdateDestroy, SurveyGroupSmtpTest,
-    SurveyListCreate, SurveyRetrieveUpdateDestroy,
+    SurveyListCreate, SurveyRetrieveUpdateDestroy, SurveyWebhookTest,
     SurveyRestoreView, SurveyPermanentDeleteView,
     SurveyReferenceFileUpload,
     AttachmentUploadView, AttachmentRetrieveView, PublicAttachmentRetrieveView,
@@ -34,6 +34,7 @@ urlpatterns = [
     # Rutas para Encuestas
     path('surveys/', SurveyListCreate.as_view(), name='survey-list-create'),
     path('surveys/<str:pk>/', SurveyRetrieveUpdateDestroy.as_view(), name='survey-detail'),
+    path('surveys/<str:pk>/webhook-test/', SurveyWebhookTest.as_view(), name='survey-webhook-test'),
     path('surveys/<str:pk>/reference-file/', SurveyReferenceFileUpload.as_view(), name='survey-reference-file'),
     path('surveys/<str:pk>/restore/', SurveyRestoreView.as_view(), name='survey-restore'),
     path('surveys/<str:pk>/permanent-delete/', SurveyPermanentDeleteView.as_view(), name='survey-permanent-delete'),

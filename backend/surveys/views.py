@@ -27,6 +27,8 @@ from .email_smtp import (
     build_consent_pdf_email,
 )
 from .email_outbox import deliver_or_enqueue
+from .webhook_outbox import maybe_enqueue_rifas_webhook, deliver_webhook_http, build_authorized_payload, sign_body
+from .rifas_webhook import resolve_rifas_user
 from .consent_otp import (
     normalize_email,
     encrypt_otp_code,
@@ -537,6 +539,71 @@ class SurveyGroupSmtpTest(APIView):
             'message_id': (result or {}).get('message_id'),
         })
 
+
+class SurveyWebhookTest(APIView):
+    """POST: prueba de webhook rifas de la encuesta (root o dueño del grupo)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        surveys_collection = get_surveys_collection()
+        try:
+            survey = surveys_collection.find_one({'_id': ObjectId(pk)})
+        except Exception:
+            survey = surveys_collection.find_one({'_id': pk}) or surveys_collection.find_one({'id': pk})
+        if not survey or survey.get('is_deleted'):
+            raise NotFound(detail='Encuesta no encontrada.')
+
+        err = require_not_analista(request, 'probar el webhook')
+        if err is not None:
+            return err
+        user_role, user_group_id = get_user_role_and_group(request)
+        access_err = user_can_access_survey_group(
+            user_role, user_group_id, survey.get('group'),
+            deny_message='No tienes permisos para probar el webhook de esta encuesta.',
+        )
+        if access_err is not None:
+            return access_err
+
+        overrides = request.data if isinstance(request.data, dict) else {}
+        url = (overrides.get('webhook_url') or survey.get('webhook_url') or '').strip()
+        secret = (overrides.get('webhook_secret') or '').strip() or (survey.get('webhook_secret') or '')
+        if not url:
+            return Response({'detail': 'Indica la URL del webhook.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        sample_user = {
+            'numero_documento': '00000000',
+            'nombre_completo': 'Prueba Webhook',
+            'correo': 'prueba@example.com',
+            'tipo_documento': 'CC',
+            'cargo': 'Prueba',
+        }
+        fake_response = {
+            '_id': 'test-delivery',
+            'id': 'test-delivery',
+            'created_at': datetime.utcnow(),
+            'consent_otp_verified_at': datetime.utcnow(),
+            'consent_email': sample_user['correo'],
+            'answers': {},
+        }
+        payload = build_authorized_payload(survey, fake_response, sample_user)
+        payload['event'] = 'survey.response.authorized.test'
+        result = deliver_webhook_http(url, secret, payload, delivery_id='test')
+        if not result.get('ok'):
+            return Response({
+                'ok': False,
+                'detail': result.get('error') or 'El webhook no respondió 2xx.',
+                'http_status': result.get('http_status'),
+                'elapsed_ms': result.get('elapsed_ms'),
+            }, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({
+            'ok': True,
+            'message': 'Webhook de prueba enviado correctamente.',
+            'http_status': result.get('http_status'),
+            'elapsed_ms': result.get('elapsed_ms'),
+            'payload_preview': payload,
+        })
+
+
 # Vistas para Encuestas
 class SurveyListCreate(APIView):
     """
@@ -937,6 +1004,12 @@ class SurveyListCreate(APIView):
             survey_doc['informed_consent'] = validated_data.get('informed_consent') or {}
         else:
             survey_doc['informed_consent'] = {}
+        survey_doc['webhook_enabled'] = bool(validated_data.get('webhook_enabled', False))
+        survey_doc['webhook_url'] = (validated_data.get('webhook_url') or '').strip()
+        survey_doc['webhook_require_otp'] = bool(validated_data.get('webhook_require_otp', True))
+        survey_doc['webhook_field_map'] = validated_data.get('webhook_field_map') or {}
+        if (validated_data.get('webhook_secret') or '').strip():
+            survey_doc['webhook_secret'] = validated_data.get('webhook_secret').strip()
 
         result = surveys_collection.insert_one(survey_doc)
         new_survey = surveys_collection.find_one({'_id': result.inserted_id})
@@ -1472,6 +1545,16 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['informed_consent_enabled'] = bool(validated_data.get('informed_consent_enabled'))
             if 'informed_consent' in validated_data:
                 update_fields['informed_consent'] = validated_data.get('informed_consent') or {}
+            if 'webhook_enabled' in validated_data:
+                update_fields['webhook_enabled'] = bool(validated_data.get('webhook_enabled'))
+            if 'webhook_url' in validated_data:
+                update_fields['webhook_url'] = (validated_data.get('webhook_url') or '').strip()
+            if 'webhook_require_otp' in validated_data:
+                update_fields['webhook_require_otp'] = bool(validated_data.get('webhook_require_otp'))
+            if 'webhook_field_map' in validated_data:
+                update_fields['webhook_field_map'] = validated_data.get('webhook_field_map') or {}
+            if (validated_data.get('webhook_secret') or '').strip():
+                update_fields['webhook_secret'] = validated_data.get('webhook_secret').strip()
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
@@ -2595,6 +2678,13 @@ class PublicResponseCreate(APIView):
 
             result = responses_collection.insert_one(insert_doc)
             new_response = responses_collection.find_one({'_id': result.inserted_id})
+            try:
+                maybe_enqueue_rifas_webhook(survey, new_response)
+                new_response = responses_collection.find_one({'_id': result.inserted_id}) or new_response
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    'webhook enqueue failed for response %s', result.inserted_id
+                )
             new_response['id'] = str(new_response['_id'])
             return Response(ResponseSerializer(new_response).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

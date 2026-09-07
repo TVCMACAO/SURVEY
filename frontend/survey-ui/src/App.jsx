@@ -632,6 +632,18 @@ const normalizeSurveyForEditor = (raw) => {
       sections: [],
       informed_consent_enabled: false,
       informed_consent: buildDefaultInformedConsent(),
+      webhook_enabled: false,
+      webhook_url: '',
+      webhook_secret: '',
+      webhook_secret_set: false,
+      webhook_require_otp: true,
+      webhook_field_map: {
+        numero_documento: '',
+        nombre_completo: '',
+        correo: '',
+        tipo_documento: '',
+        cargo: '',
+      },
     };
   }
   const questions = (raw.questions || []).map((q) => {
@@ -692,6 +704,18 @@ const normalizeSurveyForEditor = (raw) => {
         mappings: keys.map((key) => ({ key, question_id: mapByKey[key] || '' })),
       };
     })(),
+    webhook_enabled: Boolean(raw.webhook_enabled),
+    webhook_url: raw.webhook_url || '',
+    webhook_secret: '',
+    webhook_secret_set: Boolean(raw.webhook_secret_set),
+    webhook_require_otp: raw.webhook_require_otp !== false,
+    webhook_field_map: {
+      numero_documento: raw.webhook_field_map?.numero_documento || '',
+      nombre_completo: raw.webhook_field_map?.nombre_completo || '',
+      correo: raw.webhook_field_map?.correo || '',
+      tipo_documento: raw.webhook_field_map?.tipo_documento || '',
+      cargo: raw.webhook_field_map?.cargo || '',
+    },
   };
 };
 
@@ -2841,6 +2865,9 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   const [showPreview, setShowPreview] = useState(false);
   const [surveyData, setSurveyData] = useState(() => normalizeSurveyForEditor(initialSurveyData));
   const [showSectionManager, setShowSectionManager] = useState(false);
+  const [webhookTesting, setWebhookTesting] = useState(false);
+  const [webhookTestMsg, setWebhookTestMsg] = useState('');
+  const [webhookTestErr, setWebhookTestErr] = useState('');
   const [showReferenceSection, setShowReferenceSection] = useState(false);
   const [showGearMenu, setShowGearMenu] = useState(false);
   const [referenceColumns, setReferenceColumns] = useState(() => {
@@ -3598,6 +3625,149 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                  </div>
                  <p className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
                    Sube aquí tu PDF oficial de membrete (máx. 4&nbsp;MB). Se usará al generar el consentimiento capturado en línea.
+                 </p>
+               </div>
+             )}
+           </div>
+
+           {/* Webhook rifas */}
+           <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-4 sm:p-6 shadow-lg">
+             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+               <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center gap-2">
+                 <FontAwesomeIcon icon={faShareNodes} size="sm" className="text-indigo-600" />
+                 Webhook rifas
+               </h3>
+               <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                 <input
+                   type="checkbox"
+                   className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                   checked={Boolean(surveyData.webhook_enabled)}
+                   onChange={(e) => setSurveyData((prev) => ({ ...prev, webhook_enabled: e.target.checked }))}
+                 />
+                 <span className="text-sm font-semibold text-gray-700">Activar notificación a rifas</span>
+               </label>
+             </div>
+             <p className="text-sm text-gray-600 mb-3">
+               Al autorizar el descuento, se envía un webhook a la app de rifas con{' '}
+               <span className="font-semibold">numero_documento</span>,{' '}
+               <span className="font-semibold">nombre_completo</span>,{' '}
+               <span className="font-semibold">correo</span> (y opcionalmente tipo_documento / cargo)
+               para activar al usuario.
+             </p>
+             {surveyData.webhook_enabled && (
+               <div className="space-y-3 border-t border-gray-100 pt-4">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                   <div className="md:col-span-2">
+                     <label className="block text-xs font-bold text-gray-600 mb-1">URL del webhook (HTTPS)</label>
+                     <input
+                       type="url"
+                       value={surveyData.webhook_url || ''}
+                       onChange={(e) => setSurveyData((prev) => ({ ...prev, webhook_url: e.target.value }))}
+                       placeholder="https://rifas.ejemplo.com/api/webhooks/survey"
+                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                     />
+                   </div>
+                   <div>
+                     <label className="block text-xs font-bold text-gray-600 mb-1">Secreto HMAC</label>
+                     <input
+                       type="password"
+                       value={surveyData.webhook_secret || ''}
+                       onChange={(e) => setSurveyData((prev) => ({ ...prev, webhook_secret: e.target.value }))}
+                       placeholder={surveyData.webhook_secret_set ? '•••••••• (dejar vacío para no cambiar)' : 'Secreto compartido con rifas'}
+                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                       autoComplete="new-password"
+                     />
+                   </div>
+                   <div className="flex items-end">
+                     <label className="inline-flex items-center gap-2 cursor-pointer select-none pb-2">
+                       <input
+                         type="checkbox"
+                         className="w-4 h-4 rounded border-gray-300 text-indigo-600"
+                         checked={surveyData.webhook_require_otp !== false}
+                         onChange={(e) => setSurveyData((prev) => ({ ...prev, webhook_require_otp: e.target.checked }))}
+                       />
+                       <span className="text-sm text-gray-700">Exigir OTP verificado para notificar</span>
+                     </label>
+                   </div>
+                 </div>
+                 <div>
+                   <p className="text-xs font-bold text-gray-700 mb-2">Mapeo de campos → preguntas</p>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                     {[
+                       { key: 'numero_documento', label: 'numero_documento *' },
+                       { key: 'nombre_completo', label: 'nombre_completo *' },
+                       { key: 'correo', label: 'correo * (o OTP)' },
+                       { key: 'tipo_documento', label: 'tipo_documento' },
+                       { key: 'cargo', label: 'cargo' },
+                     ].map(({ key, label }) => (
+                       <div key={key}>
+                         <label className="block text-xs font-bold text-gray-600 mb-1">{label}</label>
+                         <select
+                           value={surveyData.webhook_field_map?.[key] || ''}
+                           onChange={(e) => setSurveyData((prev) => ({
+                             ...prev,
+                             webhook_field_map: {
+                               ...(prev.webhook_field_map || {}),
+                               [key]: e.target.value,
+                             },
+                           }))}
+                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                         >
+                           <option value="">— Auto / consentimiento —</option>
+                           {(surveyData.questions || []).filter((q) => q.type !== 'Título').map((q) => (
+                             <option key={q.id} value={q.id}>
+                               {(q.text || 'Sin título').slice(0, 60)}
+                             </option>
+                           ))}
+                         </select>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+                 <div className="flex flex-wrap items-center gap-2">
+                   <button
+                     type="button"
+                     disabled={webhookTesting || !(surveyData.webhook_url || '').trim() || !(surveyData.id || surveyData._id)}
+                     onClick={async () => {
+                       const sid = surveyData.id || surveyData._id;
+                       if (!sid) {
+                         setWebhookTestErr('Guarda la encuesta antes de probar el webhook.');
+                         return;
+                       }
+                       setWebhookTesting(true);
+                       setWebhookTestErr('');
+                       setWebhookTestMsg('');
+                       try {
+                         const payload = {
+                           webhook_url: surveyData.webhook_url,
+                         };
+                         if ((surveyData.webhook_secret || '').trim()) {
+                           payload.webhook_secret = surveyData.webhook_secret.trim();
+                         }
+                         const res = await authenticatedFetch(`/api/surveys/${sid}/webhook-test/`, {
+                           method: 'POST',
+                           body: JSON.stringify(payload),
+                         });
+                         const data = await res.json().catch(() => ({}));
+                         if (!res.ok) throw new Error(data.detail || 'Falló la prueba del webhook');
+                         setWebhookTestMsg(data.message || 'Webhook OK');
+                       } catch (e) {
+                         setWebhookTestErr(e.message || 'Error al probar webhook');
+                       } finally {
+                         setWebhookTesting(false);
+                       }
+                     }}
+                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                   >
+                     <FontAwesomeIcon icon={faPaperPlane} size="sm" />
+                     {webhookTesting ? 'Probando…' : 'Probar webhook'}
+                   </button>
+                   {webhookTestMsg && <span className="text-xs text-emerald-700">{webhookTestMsg}</span>}
+                   {webhookTestErr && <span className="text-xs text-red-600">{webhookTestErr}</span>}
+                 </div>
+                 <p className="text-[11px] text-slate-500">
+                   Firma: header <code className="font-mono">X-Survey-Signature: sha256=…</code> sobre el body JSON.
+                   Guarda la encuesta para persistir URL, secreto y mapeos.
                  </p>
                </div>
              )}
@@ -7984,7 +8154,20 @@ export default function App() {
             denial_value: surveyData.informed_consent?.denial_value || 'NO AUTORIZO',
           }
         : (surveyData.informed_consent || {}),
+      webhook_enabled: Boolean(surveyData.webhook_enabled),
+      webhook_url: surveyData.webhook_url || '',
+      webhook_require_otp: surveyData.webhook_require_otp !== false,
+      webhook_field_map: {
+        numero_documento: surveyData.webhook_field_map?.numero_documento || '',
+        nombre_completo: surveyData.webhook_field_map?.nombre_completo || '',
+        correo: surveyData.webhook_field_map?.correo || '',
+        tipo_documento: surveyData.webhook_field_map?.tipo_documento || '',
+        cargo: surveyData.webhook_field_map?.cargo || '',
+      },
     };
+    if ((surveyData.webhook_secret || '').trim()) {
+      surveyPayload.webhook_secret = surveyData.webhook_secret.trim();
+    }
 
     try {
         const response = await authenticatedFetch(url, { 

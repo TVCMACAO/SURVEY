@@ -47,6 +47,29 @@ services:
     networks:
       - survey-network
 
+  webhook-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: survey-webhook-worker
+    command: python manage.py process_webhook_outbox --interval 5 --batch 20
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=${DEBUG:-1}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1,192.168.0.248}
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-survey_db}
+      - WEBHOOK_SYNC=0
+    depends_on:
+      - django
+    restart: unless-stopped
+    networks:
+      - survey-network
+
   nginx:
     build:
       context: .

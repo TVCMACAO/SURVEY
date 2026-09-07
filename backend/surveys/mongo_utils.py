@@ -51,3 +51,7 @@ def get_consent_otps_collection():
 
 def get_email_outbox_collection():
     return get_mongo_collection('email_outbox')
+
+
+def get_webhook_outbox_collection():
+    return get_mongo_collection('webhook_outbox')

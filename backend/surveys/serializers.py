@@ -416,6 +416,18 @@ class SurveySerializer(serializers.Serializer):
     # Consentimiento informado (plantilla rellenada desde respuestas; PDF en cliente)
     informed_consent_enabled = serializers.BooleanField(required=False, default=False)
     informed_consent = serializers.JSONField(required=False, default=dict)
+    # Webhook saliente hacia app de rifas
+    webhook_enabled = serializers.BooleanField(required=False, default=False)
+    webhook_url = serializers.CharField(max_length=1000, required=False, allow_blank=True, default='')
+    webhook_secret = serializers.CharField(max_length=500, required=False, allow_blank=True, default='', write_only=True)
+    webhook_require_otp = serializers.BooleanField(required=False, default=True)
+    webhook_field_map = serializers.JSONField(required=False, default=dict)
+    webhook_secret_set = serializers.SerializerMethodField(read_only=True)
+
+    def get_webhook_secret_set(self, obj):
+        if not isinstance(obj, dict):
+            return False
+        return bool((obj.get('webhook_secret') or '').strip())
 
     def to_representation(self, instance):
         # Get base representation
@@ -447,6 +459,14 @@ class SurveySerializer(serializers.Serializer):
         data['informed_consent_enabled'] = bool(instance.get('informed_consent_enabled', False))
         ic = instance.get('informed_consent') or {}
         data['informed_consent'] = ic if isinstance(ic, dict) else {}
+
+        data['webhook_enabled'] = bool(instance.get('webhook_enabled', False))
+        data['webhook_url'] = instance.get('webhook_url') or ''
+        data['webhook_require_otp'] = bool(instance.get('webhook_require_otp', True))
+        wfm = instance.get('webhook_field_map') or {}
+        data['webhook_field_map'] = wfm if isinstance(wfm, dict) else {}
+        data['webhook_secret_set'] = self.get_webhook_secret_set(instance)
+        data.pop('webhook_secret', None)
 
         return data
 
