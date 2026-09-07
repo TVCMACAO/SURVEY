@@ -67,7 +67,7 @@ def build_authorized_payload(survey, response_doc, user_fields):
         user['cargo'] = user_fields['cargo']
 
     ic = survey.get('informed_consent') or {}
-    return {
+    payload = {
         'event': EVENT_NAME,
         'event_version': EVENT_VERSION,
         'occurred_at': _now().isoformat() + 'Z',
@@ -80,6 +80,11 @@ def build_authorized_payload(survey, response_doc, user_fields):
             'created_at': created_iso,
         },
         'user': user,
+        # Alias planos (algunos receptores leen estos keys en la raíz)
+        'tipo_documento': user.get('tipo_documento') or '',
+        'numero_documento': user.get('numero_documento') or '',
+        'nombre_completo': user.get('nombre_completo') or '',
+        'correo': user.get('correo') or '',
         'authorization': {
             'accepted': True,
             'acceptance_value': (ic.get('acceptance_value') or 'SI, AUTORIZO').strip(),
@@ -87,6 +92,9 @@ def build_authorized_payload(survey, response_doc, user_fields):
             'consent_otp_verified_at': otp_iso,
         },
     }
+    if user.get('cargo'):
+        payload['cargo'] = user['cargo']
+    return payload
 
 
 def enqueue_webhook_job(*, survey_id, response_id, url, secret, payload):
@@ -124,8 +132,62 @@ def _mark_response_webhook(response_id, **fields):
 
 def deliver_webhook_http(url, secret, payload, delivery_id=''):
     """POST JSON with HMAC signature. Returns ok/http_status/error/retryable."""
+    from urllib.parse import urlsplit, urlunsplit, quote
+    from urllib.request import HTTPRedirectHandler, build_opener
+
+    class _KeepMethodRedirect(HTTPRedirectHandler):
+        """Preserve POST on 301/302/307/308 (Hostinger adds trailing slash)."""
+
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            if code not in (301, 302, 303, 307, 308):
+                return None
+            method = req.get_method()
+            data = req.data
+            # 303 → GET without body; others keep method/body for webhook POST
+            if code == 303:
+                method = 'GET'
+                data = None
+            new_headers = {
+                k: v for k, v in req.headers.items()
+                if k.lower() not in ('content-length', 'host')
+            }
+            return urllib.request.Request(
+                newurl,
+                data=data,
+                headers=new_headers,
+                method=method,
+            )
+
     raw = json.dumps(payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
     signature = sign_body(secret, raw)
+
+    url = (url or '').strip()
+    try:
+        parts = urlsplit(url)
+        safe_path = quote(parts.path or '', safe='/%')
+        # Hostinger route is .../survey/ — avoid 301 that breaks POST
+        if safe_path and not safe_path.endswith('/'):
+            safe_path = safe_path + '/'
+        safe_query = quote(parts.query or '', safe='=&%')
+        url = urlunsplit((parts.scheme, parts.netloc, safe_path, safe_query, parts.fragment))
+    except Exception as exc:
+        return {
+            'ok': False,
+            'http_status': None,
+            'error': f'URL inválida: {exc}',
+            'elapsed_ms': 0,
+            'retryable': False,
+        }
+
+    if not url.lower().startswith(('http://', 'https://')):
+        return {
+            'ok': False,
+            'http_status': None,
+            'error': 'La URL debe empezar por http:// o https://',
+            'elapsed_ms': 0,
+            'retryable': False,
+        }
+
     req = urllib.request.Request(
         url,
         data=raw,
@@ -133,14 +195,15 @@ def deliver_webhook_http(url, secret, payload, delivery_id=''):
         headers={
             'Content-Type': 'application/json; charset=utf-8',
             'User-Agent': 'survey-app-webhook/1.0',
-            'X-Survey-Event': EVENT_NAME,
+            'X-Survey-Event': str(payload.get('event') or EVENT_NAME),
             'X-Survey-Delivery-Id': str(delivery_id or ''),
             'X-Survey-Signature': signature,
         },
     )
+    opener = build_opener(_KeepMethodRedirect)
     t0 = time.perf_counter()
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with opener.open(req, timeout=20) as resp:
             status_code = getattr(resp, 'status', None) or resp.getcode()
             resp.read(65536)
             elapsed = int((time.perf_counter() - t0) * 1000)
@@ -169,10 +232,21 @@ def deliver_webhook_http(url, secret, payload, delivery_id=''):
         }
     except Exception as exc:
         elapsed = int((time.perf_counter() - t0) * 1000)
+        msg = str(exc)[:500]
+        host = ''
+        try:
+            host = (urlsplit(url).hostname or '').lower()
+        except Exception:
+            pass
+        if host in ('localhost', '127.0.0.1', '::1'):
+            msg += (
+                ' | Nota: desde el servidor Survey, localhost es el contenedor Docker, '
+                'no tu PC. Usa la IP/host público donde corre sorteocm.'
+            )
         return {
             'ok': False,
             'http_status': None,
-            'error': str(exc)[:500],
+            'error': msg,
             'elapsed_ms': elapsed,
             'retryable': True,
         }

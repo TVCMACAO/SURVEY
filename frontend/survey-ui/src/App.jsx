@@ -3669,14 +3669,21 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                    </div>
                    <div>
                      <label className="block text-xs font-bold text-gray-600 mb-1">Secreto HMAC</label>
-                     <input
-                       type="password"
-                       value={surveyData.webhook_secret || ''}
-                       onChange={(e) => setSurveyData((prev) => ({ ...prev, webhook_secret: e.target.value }))}
-                       placeholder={surveyData.webhook_secret_set ? '•••••••• (dejar vacío para no cambiar)' : 'Secreto compartido con rifas'}
-                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
-                       autoComplete="new-password"
-                     />
+                     <form
+                       autoComplete="off"
+                       onSubmit={(e) => e.preventDefault()}
+                       className="contents"
+                     >
+                       <input
+                         type="password"
+                         name="webhook_hmac_secret"
+                         value={surveyData.webhook_secret || ''}
+                         onChange={(e) => setSurveyData((prev) => ({ ...prev, webhook_secret: e.target.value }))}
+                         placeholder={surveyData.webhook_secret_set ? '•••••••• (dejar vacío para no cambiar)' : 'Secreto compartido con rifas'}
+                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                         autoComplete="new-password"
+                       />
+                     </form>
                    </div>
                    <div className="flex items-end">
                      <label className="inline-flex items-center gap-2 cursor-pointer select-none pb-2">
@@ -3749,7 +3756,11 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                            body: JSON.stringify(payload),
                          });
                          const data = await res.json().catch(() => ({}));
-                         if (!res.ok) throw new Error(data.detail || 'Falló la prueba del webhook');
+                         if (!res.ok) {
+                           const bits = [data.detail, data.error, data.http_status ? `HTTP ${data.http_status}` : '']
+                             .filter(Boolean);
+                           throw new Error(bits.join(' — ') || 'Falló la prueba del webhook');
+                         }
                          setWebhookTestMsg(data.message || 'Webhook OK');
                        } catch (e) {
                          setWebhookTestErr(e.message || 'Error al probar webhook');
@@ -3763,11 +3774,12 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                      {webhookTesting ? 'Probando…' : 'Probar webhook'}
                    </button>
                    {webhookTestMsg && <span className="text-xs text-emerald-700">{webhookTestMsg}</span>}
-                   {webhookTestErr && <span className="text-xs text-red-600">{webhookTestErr}</span>}
+                   {webhookTestErr && <span className="text-xs text-red-600 max-w-xl">{webhookTestErr}</span>}
                  </div>
                  <p className="text-[11px] text-slate-500">
                    Firma: header <code className="font-mono">X-Survey-Signature: sha256=…</code> sobre el body JSON.
                    Guarda la encuesta para persistir URL, secreto y mapeos.
+                   La URL debe ser alcanzable desde este servidor (no uses localhost de tu PC).
                  </p>
                </div>
              )}
