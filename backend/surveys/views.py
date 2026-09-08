@@ -33,6 +33,12 @@ from .webhook_outbox import (
     build_authorized_payload,
     backfill_rifas_webhooks,
 )
+from .unique_answers import (
+    check_unique_answers,
+    find_existing_unique_response,
+    normalize_unique_value,
+    unique_questions,
+)
 from .consent_otp import (
     normalize_email,
     encrypt_otp_code,
@@ -2036,6 +2042,71 @@ class ReferenceLookup(APIView):
         return Response({}, status=status.HTTP_200_OK)
 
 
+class UniqueAnswerCheck(APIView):
+    """
+    GET: ¿Ya existe una respuesta con este valor en una pregunta unique_answer?
+    Query: question_id, value
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ReferenceLookupRateThrottle]
+
+    def get(self, request, pk):
+        question_id = (request.query_params.get('question_id') or '').strip()
+        value = request.query_params.get('value', '')
+        if not question_id or normalize_unique_value(value) is None:
+            return Response({'exists': False})
+
+        surveys_collection = get_surveys_collection()
+        try:
+            survey = surveys_collection.find_one({'_id': ObjectId(pk)})
+        except Exception:
+            survey = surveys_collection.find_one({'_id': pk}) or surveys_collection.find_one({'id': pk})
+        if not survey or survey.get('is_deleted'):
+            raise NotFound(detail='Encuesta no encontrada.')
+
+        is_public = survey.get('is_public', False)
+        if not is_public:
+            user_role, user_group_id = get_user_role_and_group(request)
+            if not (request.user and getattr(request.user, 'is_authenticated', False)):
+                return Response(
+                    {'detail': 'Esta encuesta no es pública.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            access_err = user_can_access_survey_group(
+                user_role, user_group_id, survey.get('group'),
+                deny_message='No tienes acceso a esta encuesta.',
+            )
+            if access_err is not None:
+                return access_err
+
+        q = next(
+            (
+                qq for qq in unique_questions(survey)
+                if str(qq.get('id') or qq.get('_id')) == question_id
+            ),
+            None,
+        )
+        if not q:
+            return Response({'exists': False, 'unique_answer': False})
+
+        existing = find_existing_unique_response(
+            get_responses_collection(), survey, question_id, value
+        )
+        if not existing:
+            return Response({'exists': False, 'unique_answer': True, 'question_id': question_id})
+
+        label = (q.get('text') or q.get('question_text') or 'esta pregunta').strip()
+        return Response({
+            'exists': True,
+            'unique_answer': True,
+            'question_id': question_id,
+            'detail': (
+                f'Ya existe una respuesta registrada con este valor en "{label}". '
+                'Cada documento solo puede registrarse una vez en esta encuesta.'
+            ),
+        })
+
+
 def _filter_reference_row(row, survey):
     """Return only mapped columns (plus key column), not the full Excel row."""
     mapping = survey.get('reference_mapping') or {}
@@ -2725,6 +2796,12 @@ class PublicResponseCreate(APIView):
                 )
             validate_file_upload_answers(survey, validated_data['answers'])
 
+            dup_err = check_unique_answers(
+                survey, validated_data.get('answers') or {}, responses_collection
+            )
+            if dup_err is not None:
+                return dup_err
+
             consent_email = None
             consent_otp_verified_at = None
             if survey.get('informed_consent_enabled'):
@@ -2884,6 +2961,12 @@ class ResponseListCreate(APIView):
             if not survey:
                 raise ValidationError(detail="La encuesta especificada no existe.")
             validate_file_upload_answers(survey, validated_data['answers'])
+
+            dup_err = check_unique_answers(
+                survey, validated_data.get('answers') or {}, responses_collection
+            )
+            if dup_err is not None:
+                return dup_err
             
             # Asegurarse de que el usuario autenticado es el surveyor (si está autenticado)
             if request.user and request.user.is_authenticated:
@@ -3060,6 +3143,19 @@ class ResponseSyncView(APIView):
                 
                 # Asegurar que survey_id sea ObjectId para guardar en MongoDB
                 survey_id_to_save = survey['_id'] if '_id' in survey else ObjectId(str(survey_id))
+
+                dup_err = check_unique_answers(
+                    survey, response_data.get('answers') or {}, responses_collection
+                )
+                if dup_err is not None:
+                    errors.append({
+                        'index': idx,
+                        'local_id': response_data.get('local_id'),
+                        'error': dup_err.data.get('detail') if hasattr(dup_err, 'data') else 'Respuesta duplicada',
+                        'code': 'duplicate_unique_answer',
+                        'question_id': (dup_err.data or {}).get('question_id') if hasattr(dup_err, 'data') else None,
+                    })
+                    continue
                 
                 # Insertar respuesta
                 from datetime import datetime

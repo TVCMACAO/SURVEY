@@ -58,6 +58,7 @@ def build_authorized_payload(survey, response_doc, user_fields):
 
     user = {
         'numero_documento': user_fields.get('numero_documento') or '',
+        'documento_empleado': user_fields.get('numero_documento') or '',
         'nombre_completo': user_fields.get('nombre_completo') or '',
         'correo': user_fields.get('correo') or '',
     }
@@ -83,6 +84,8 @@ def build_authorized_payload(survey, response_doc, user_fields):
         # Alias planos (algunos receptores leen estos keys en la raíz)
         'tipo_documento': user.get('tipo_documento') or '',
         'numero_documento': user.get('numero_documento') or '',
+        # Misma cédula que DOCUMENTO DEL EMPLEADO (evita confusión con tipo_documento)
+        'documento_empleado': user.get('documento_empleado') or '',
         'nombre_completo': user.get('nombre_completo') or '',
         'correo': user.get('correo') or '',
         'authorization': {

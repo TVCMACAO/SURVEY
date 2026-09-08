@@ -660,6 +660,7 @@ const normalizeSurveyForEditor = (raw) => {
       type: mapBackendTypeToFrontend(backendType),
       description: q.description || '',
       required: q.required || false,
+      unique_answer: Boolean(q.unique_answer),
       options: Array.isArray(q.options) ? q.options : [],
       section_id: q.section_id || null,
       conditional_logic: q.conditional_logic || null,
@@ -1026,6 +1027,12 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                   <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
                     <input type="checkbox" checked={!!data.required} onChange={() => onUpdate({ required: !data.required })} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
                     <span>Obligatorio</span>
+                  </label>
+                )}
+                {data.type !== 'Título' && (
+                  <label className="flex items-center gap-1.5 cursor-pointer shrink-0" title="No permite el mismo valor en otra respuesta de esta encuesta">
+                    <input type="checkbox" checked={!!data.unique_answer} onChange={() => onUpdate({ unique_answer: !data.unique_answer })} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
+                    <span>Valor único</span>
                   </label>
                 )}
                 {data.type === 'Fecha' && (
@@ -1674,7 +1681,9 @@ const PublicSurveyView = ({ surveyId }) => {
   const [sectionHistory, setSectionHistory] = useState([]);
   const [visibleSections, setVisibleSections] = useState([]);
   const [referenceLookupNotFound, setReferenceLookupNotFound] = useState(false);
+  const [uniqueAnswerErrors, setUniqueAnswerErrors] = useState({}); // questionId -> message
   const referenceLookupDebounceRef = React.useRef(null);
+  const uniqueCheckDebounceRef = React.useRef(null);
   // Consent OTP gate: locked | verified | denied
   const [consentGate, setConsentGate] = useState('locked');
   const [consentModalOpen, setConsentModalOpen] = useState(false);
@@ -1815,6 +1824,21 @@ const PublicSurveyView = ({ surveyId }) => {
         doReferenceLookup(value);
         referenceLookupDebounceRef.current = null;
       }, 500);
+    }
+
+    const qMeta = (surveyData?.questions || []).find((q) => (q.id || q._id) === questionId);
+    if (qMeta?.unique_answer) {
+      setUniqueAnswerErrors((prev) => {
+        if (!prev[questionId]) return prev;
+        const next = { ...prev };
+        delete next[questionId];
+        return next;
+      });
+      if (uniqueCheckDebounceRef.current) clearTimeout(uniqueCheckDebounceRef.current);
+      uniqueCheckDebounceRef.current = setTimeout(() => {
+        checkUniqueAnswer(questionId, value);
+        uniqueCheckDebounceRef.current = null;
+      }, 450);
     }
 
     if (consentCfg && acceptanceQId && questionId === acceptanceQId) {
@@ -1977,6 +2001,40 @@ const PublicSurveyView = ({ surveyId }) => {
     }
   };
 
+  const checkUniqueAnswer = async (questionId, value) => {
+    const key = String(value ?? '').trim();
+    if (!key || !surveyId || !questionId) {
+      setUniqueAnswerErrors((prev) => {
+        if (!prev[questionId]) return prev;
+        const next = { ...prev };
+        delete next[questionId];
+        return next;
+      });
+      return false;
+    }
+    try {
+      const res = await fetch(
+        `/api/public/surveys/${surveyId}/unique-check/?question_id=${encodeURIComponent(questionId)}&value=${encodeURIComponent(key)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.exists) {
+        const msg = data.detail
+          || 'Ya existe una respuesta con este documento. Cada persona solo puede registrarse una vez.';
+        setUniqueAnswerErrors((prev) => ({ ...prev, [questionId]: msg }));
+        return true;
+      }
+      setUniqueAnswerErrors((prev) => {
+        if (!prev[questionId]) return prev;
+        const next = { ...prev };
+        delete next[questionId];
+        return next;
+      });
+      return false;
+    } catch (_) {
+      return false;
+    }
+  };
+
   const isQuestionAnswerMissing = (q) => {
     const qid = q.id || q._id;
     if (q.type === 'Adjuntar archivos') {
@@ -2083,6 +2141,21 @@ const PublicSurveyView = ({ surveyId }) => {
       return;
     }
 
+    const uniqueQs = (surveyData.questions || []).filter((q) => q.unique_answer && q.type !== 'Título' && q.type !== 'titulo');
+    for (const q of uniqueQs) {
+      const qid = q.id || q._id;
+      const val = answers[qid];
+      if (val === undefined || val === null || String(val).trim() === '') continue;
+      const exists = await checkUniqueAnswer(qid, val);
+      if (exists) {
+        alert(
+          `Ya existe una respuesta con este valor en "${q.text || q.question_text || 'la pregunta'}". `
+          + 'Cada documento solo puede registrarse una vez.'
+        );
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       // Generate device ID if not exists
@@ -2157,7 +2230,16 @@ const PublicSurveyView = ({ surveyId }) => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 409 && errorData.code === 'duplicate_unique_answer') {
+          const qid = errorData.question_id;
+          if (qid) {
+            setUniqueAnswerErrors((prev) => ({
+              ...prev,
+              [qid]: errorData.detail || 'Este documento ya fue registrado.',
+            }));
+          }
+        }
         throw new Error(errorData.detail || 'Error al enviar las respuestas');
       }
 
@@ -2459,8 +2541,13 @@ const PublicSurveyView = ({ surveyId }) => {
                 type="text"
                 value={answers[questionId] || ''}
                 onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-                onBlur={(e) => { if (questionId === referenceKeyQuestionId) doReferenceLookup(e.target.value); }}
-                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white"
+                onBlur={(e) => {
+                  if (questionId === referenceKeyQuestionId) doReferenceLookup(e.target.value);
+                  if (question.unique_answer) checkUniqueAnswer(questionId, e.target.value);
+                }}
+                className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white ${
+                  uniqueAnswerErrors[questionId] ? 'border-red-400' : 'border-gray-200'
+                }`}
                 placeholder="Escribe tu respuesta aquí..."
               />
               {questionId === referenceKeyQuestionId && surveyData.reference_key_column && (
@@ -2468,6 +2555,9 @@ const PublicSurveyView = ({ surveyId }) => {
               )}
               {questionId === referenceKeyQuestionId && referenceLookupNotFound && (
                 <p className="text-xs text-amber-600 mt-2">No se encontraron datos para este documento.</p>
+              )}
+              {uniqueAnswerErrors[questionId] && (
+                <p className="text-sm text-red-600 mt-2 font-medium">{uniqueAnswerErrors[questionId]}</p>
               )}
             </>
           )}
@@ -2487,8 +2577,13 @@ const PublicSurveyView = ({ surveyId }) => {
                 type="number"
                 value={answers[questionId] || ''}
                 onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-                onBlur={(e) => { if (questionId === referenceKeyQuestionId) doReferenceLookup(e.target.value); }}
-                className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white"
+                onBlur={(e) => {
+                  if (questionId === referenceKeyQuestionId) doReferenceLookup(e.target.value);
+                  if (question.unique_answer) checkUniqueAnswer(questionId, e.target.value);
+                }}
+                className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white ${
+                  uniqueAnswerErrors[questionId] ? 'border-red-400' : 'border-gray-200'
+                }`}
                 placeholder="Ingresa un número..."
               />
               {questionId === referenceKeyQuestionId && surveyData.reference_key_column && (
@@ -2496,6 +2591,9 @@ const PublicSurveyView = ({ surveyId }) => {
               )}
               {questionId === referenceKeyQuestionId && referenceLookupNotFound && (
                 <p className="text-xs text-amber-600 mt-2">No se encontraron datos para este documento.</p>
+              )}
+              {uniqueAnswerErrors[questionId] && (
+                <p className="text-sm text-red-600 mt-2 font-medium">{uniqueAnswerErrors[questionId]}</p>
               )}
             </>
           )}
@@ -3649,6 +3747,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
              </div>
              <p className="text-sm text-gray-600 mb-3">
                Al autorizar el descuento, se envía un webhook a la app de rifas con{' '}
+               <span className="font-semibold">documento_empleado</span> (DOCUMENTO DEL EMPLEADO),{' '}
                <span className="font-semibold">numero_documento</span>,{' '}
                <span className="font-semibold">nombre_completo</span>,{' '}
                <span className="font-semibold">correo</span> (y opcionalmente tipo_documento / cargo)
@@ -8193,6 +8292,7 @@ export default function App() {
           options: q.options ?? [],
           description: q.description ?? '',
           required: (displayType === 'Título') ? false : Boolean(q.required),
+          unique_answer: (displayType === 'Título') ? false : Boolean(q.unique_answer),
           section_id: q.section_id ?? null,
           conditional_logic: q.conditional_logic ?? null,
           evaluation_items: q.evaluation_items ?? [],

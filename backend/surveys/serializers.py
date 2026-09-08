@@ -285,6 +285,7 @@ class QuestionSerializer(serializers.Serializer):
     options = serializers.ListField(child=serializers.CharField(max_length=200), required=False, allow_empty=True, default=list)
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default='')
     required = serializers.BooleanField(required=False, default=False)
+    unique_answer = serializers.BooleanField(required=False, default=False)  # Reject duplicate values across responses
     # Section support
     section_id = serializers.CharField(max_length=255, required=False, allow_null=True, allow_blank=True) # ID of the section this question belongs to
     # Conditional logic support
@@ -366,6 +367,7 @@ class QuestionSerializer(serializers.Serializer):
             result['description'] = data['description']
         if 'required' in data:
             result['required'] = data['required']
+        result['unique_answer'] = bool(data.get('unique_answer', False))
         if 'section_id' in data:
             result['section_id'] = data['section_id']
         if 'conditional_logic' in data:
