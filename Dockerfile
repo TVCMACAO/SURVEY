@@ -39,16 +39,19 @@ RUN npm run build 2>&1 || ( \
 RUN mkdir -p dist && test -f dist/index.html || echo '<!DOCTYPE html><html><head><title>Checklist</title></head><body><h1>Checklist App</h1></body></html>' > dist/index.html
 
 # Stage 2: Build Backend
-FROM python:3.10-slim-bullseye AS backend-builder
+FROM python:3.10-slim-bookworm AS backend-builder
 WORKDIR /app
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Stage 3: Production - Solo Django/Gunicorn (EasyPanel maneja Nginx)
-FROM python:3.10-slim-bullseye
+FROM python:3.10-slim-bookworm
 
-# Install curl and network tools for diagnostics
-RUN apt-get update && apt-get install -y \
+# Install curl and network tools for diagnostics.
+# Check-Valid-Until=false: evita fallos si el reloj del builder (Easypanel) está desfasado
+# o los metadatos del mirror llegan con Valid-Until vencido.
+RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=3 update \
+    && apt-get install -y --no-install-recommends \
     curl \
     net-tools \
     iproute2 \
