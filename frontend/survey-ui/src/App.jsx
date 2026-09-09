@@ -1681,6 +1681,7 @@ const PublicSurveyView = ({ surveyId }) => {
   const [sectionHistory, setSectionHistory] = useState([]);
   const [visibleSections, setVisibleSections] = useState([]);
   const [referenceLookupNotFound, setReferenceLookupNotFound] = useState(false);
+  const [referenceFieldsLocked, setReferenceFieldsLocked] = useState(false);
   const [uniqueAnswerErrors, setUniqueAnswerErrors] = useState({}); // questionId -> message
   const referenceLookupDebounceRef = React.useRef(null);
   const uniqueCheckDebounceRef = React.useRef(null);
@@ -1816,7 +1817,41 @@ const PublicSurveyView = ({ surveyId }) => {
     ? (surveyData.questions || []).find(q => (surveyData.reference_mapping || {})[q.id] === surveyData.reference_key_column)?.id
     : null;
 
+  const referenceMappedQuestionIds = useMemo(
+    () => Object.keys(surveyData?.reference_mapping || {}),
+    [surveyData?.reference_mapping]
+  );
+
+  const isReferenceFieldLocked = (questionId) => {
+    if (!referenceFieldsLocked || !questionId) return false;
+    if (questionId === referenceKeyQuestionId) return true;
+    return referenceMappedQuestionIds.includes(questionId);
+  };
+
+  const clearReferenceLockedAnswers = () => {
+    setReferenceFieldsLocked(false);
+    setReferenceLookupNotFound(false);
+    const idsToClear = new Set(referenceMappedQuestionIds);
+    if (referenceKeyQuestionId) idsToClear.add(referenceKeyQuestionId);
+    setAnswers((prev) => {
+      const next = { ...prev };
+      idsToClear.forEach((qid) => {
+        delete next[qid];
+      });
+      return next;
+    });
+    setUniqueAnswerErrors((prev) => {
+      const next = { ...prev };
+      idsToClear.forEach((qid) => {
+        delete next[qid];
+      });
+      return next;
+    });
+  };
+
   const handleAnswerChange = (questionId, value) => {
+    if (isReferenceFieldLocked(questionId)) return;
+
     if (questionId === referenceKeyQuestionId) {
       setReferenceLookupNotFound(false);
       if (referenceLookupDebounceRef.current) clearTimeout(referenceLookupDebounceRef.current);
@@ -1967,16 +2002,19 @@ const PublicSurveyView = ({ surveyId }) => {
   const doReferenceLookup = async (keyValue) => {
     const key = String(keyValue || '').trim();
     if (!key || !surveyId || !surveyData?.reference_key_column || !surveyData?.reference_mapping) return;
+    if (referenceFieldsLocked) return;
     setReferenceLookupNotFound(false);
     try {
       const response = await fetch(`/api/public/surveys/${surveyId}/reference-lookup/?key=${encodeURIComponent(key)}`);
       if (!response.ok) {
         setReferenceLookupNotFound(true);
+        setReferenceFieldsLocked(false);
         return;
       }
       const row = await response.json();
       if (!row || typeof row !== 'object' || Object.keys(row).length === 0) {
         setReferenceLookupNotFound(true);
+        setReferenceFieldsLocked(false);
         return;
       }
       setReferenceLookupNotFound(false);
@@ -1996,8 +2034,10 @@ const PublicSurveyView = ({ surveyId }) => {
         });
         return next;
       });
+      setReferenceFieldsLocked(true);
     } catch (_) {
       setReferenceLookupNotFound(true);
+      setReferenceFieldsLocked(false);
     }
   };
 
@@ -2542,19 +2582,35 @@ const PublicSurveyView = ({ surveyId }) => {
                 value={answers[questionId] || ''}
                 onChange={(e) => handleAnswerChange(questionId, e.target.value)}
                 onBlur={(e) => {
+                  if (isReferenceFieldLocked(questionId)) return;
                   if (questionId === referenceKeyQuestionId) doReferenceLookup(e.target.value);
                   if (question.unique_answer) checkUniqueAnswer(questionId, e.target.value);
                 }}
-                className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white ${
-                  uniqueAnswerErrors[questionId] ? 'border-red-400' : 'border-gray-200'
+                readOnly={isReferenceFieldLocked(questionId)}
+                className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base ${
+                  isReferenceFieldLocked(questionId)
+                    ? 'bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed'
+                    : `bg-gray-50/50 hover:bg-white focus:bg-white ${uniqueAnswerErrors[questionId] ? 'border-red-400' : 'border-gray-200'}`
                 }`}
                 placeholder="Escribe tu respuesta aquí..."
               />
-              {questionId === referenceKeyQuestionId && surveyData.reference_key_column && (
+              {questionId === referenceKeyQuestionId && surveyData.reference_key_column && !referenceFieldsLocked && (
                 <p className="text-xs text-indigo-600 mt-2">Si ingresas tu documento, el resto de datos se completarán automáticamente.</p>
               )}
               {questionId === referenceKeyQuestionId && referenceLookupNotFound && (
                 <p className="text-xs text-amber-600 mt-2">No se encontraron datos para este documento.</p>
+              )}
+              {isReferenceFieldLocked(questionId) && (
+                <p className="text-xs text-gray-600 mt-2">Datos cargados del padrón; no se pueden editar.</p>
+              )}
+              {questionId === referenceKeyQuestionId && referenceFieldsLocked && (
+                <button
+                  type="button"
+                  onClick={clearReferenceLockedAnswers}
+                  className="mt-2 text-sm font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+                >
+                  Cambiar documento
+                </button>
               )}
               {uniqueAnswerErrors[questionId] && (
                 <p className="text-sm text-red-600 mt-2 font-medium">{uniqueAnswerErrors[questionId]}</p>
@@ -2566,7 +2622,12 @@ const PublicSurveyView = ({ surveyId }) => {
             <textarea
               value={answers[questionId] || ''}
               onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-              className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 min-h-[140px] text-base bg-gray-50/50 hover:bg-white focus:bg-white resize-y"
+              readOnly={isReferenceFieldLocked(questionId)}
+              className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 min-h-[140px] text-base resize-y ${
+                isReferenceFieldLocked(questionId)
+                  ? 'bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed'
+                  : 'border-gray-200 bg-gray-50/50 hover:bg-white focus:bg-white'
+              }`}
               placeholder="Escribe tu respuesta aquí..."
             />
           )}
@@ -2578,19 +2639,35 @@ const PublicSurveyView = ({ surveyId }) => {
                 value={answers[questionId] || ''}
                 onChange={(e) => handleAnswerChange(questionId, e.target.value)}
                 onBlur={(e) => {
+                  if (isReferenceFieldLocked(questionId)) return;
                   if (questionId === referenceKeyQuestionId) doReferenceLookup(e.target.value);
                   if (question.unique_answer) checkUniqueAnswer(questionId, e.target.value);
                 }}
-                className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white ${
-                  uniqueAnswerErrors[questionId] ? 'border-red-400' : 'border-gray-200'
+                readOnly={isReferenceFieldLocked(questionId)}
+                className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base ${
+                  isReferenceFieldLocked(questionId)
+                    ? 'bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed'
+                    : `bg-gray-50/50 hover:bg-white focus:bg-white ${uniqueAnswerErrors[questionId] ? 'border-red-400' : 'border-gray-200'}`
                 }`}
                 placeholder="Ingresa un número..."
               />
-              {questionId === referenceKeyQuestionId && surveyData.reference_key_column && (
+              {questionId === referenceKeyQuestionId && surveyData.reference_key_column && !referenceFieldsLocked && (
                 <p className="text-xs text-indigo-600 mt-2">Si ingresas tu documento, el resto de datos se completarán automáticamente.</p>
               )}
               {questionId === referenceKeyQuestionId && referenceLookupNotFound && (
                 <p className="text-xs text-amber-600 mt-2">No se encontraron datos para este documento.</p>
+              )}
+              {isReferenceFieldLocked(questionId) && (
+                <p className="text-xs text-gray-600 mt-2">Datos cargados del padrón; no se pueden editar.</p>
+              )}
+              {questionId === referenceKeyQuestionId && referenceFieldsLocked && (
+                <button
+                  type="button"
+                  onClick={clearReferenceLockedAnswers}
+                  className="mt-2 text-sm font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+                >
+                  Cambiar documento
+                </button>
               )}
               {uniqueAnswerErrors[questionId] && (
                 <p className="text-sm text-red-600 mt-2 font-medium">{uniqueAnswerErrors[questionId]}</p>
@@ -2603,7 +2680,12 @@ const PublicSurveyView = ({ surveyId }) => {
               type={question.date_include_time ? 'datetime-local' : 'date'}
               value={answers[questionId] || ''}
               onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-              className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white"
+              readOnly={isReferenceFieldLocked(questionId)}
+              className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base ${
+                isReferenceFieldLocked(questionId)
+                  ? 'bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed'
+                  : 'border-gray-200 bg-gray-50/50 hover:bg-white focus:bg-white'
+              }`}
             />
           )}
 
