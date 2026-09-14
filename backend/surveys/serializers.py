@@ -3,8 +3,47 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model
 from bson import ObjectId
 import json # Import the json module
+import re
 
 User = get_user_model()
+
+_HEX_COLOR_RE = re.compile(r'^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$')
+_THEME_COLOR_KEYS = (
+    'background_color',
+    'card_color',
+    'question_number_color',
+    'title_color',
+    'description_color',
+    'question_text_color',
+    'body_text_color',
+    'question_number_text_color',
+)
+
+
+def normalize_theme_color(value):
+    """Return normalized #hex color or '' if empty/invalid."""
+    if value is None:
+        return ''
+    s = str(value).strip()
+    if not s:
+        return ''
+    if not s.startswith('#'):
+        s = f'#{s}'
+    if not _HEX_COLOR_RE.match(s):
+        return ''
+    return s.lower()
+
+
+def normalize_survey_theme(raw):
+    """Normalize theme dict; drop invalid colors."""
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for key in _THEME_COLOR_KEYS:
+        color = normalize_theme_color(raw.get(key))
+        if color:
+            out[key] = color
+    return out
 
 # Custom field for MongoDB ObjectId
 class ObjectIdField(serializers.Field):
@@ -415,6 +454,11 @@ class SurveySerializer(serializers.Serializer):
     documento_empleado_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     documento_votante_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     header_image = serializers.CharField(max_length=500000, required=False, allow_blank=True, default='')
+    # Imagen de introducción (modal tras consentimiento de datos, antes del formulario)
+    intro_image_enabled = serializers.BooleanField(required=False, default=False)
+    intro_image = serializers.CharField(max_length=500000, required=False, allow_blank=True, default='')
+    # Apariencia de la encuesta pública (colores)
+    theme = serializers.JSONField(required=False, default=dict)
     # Consentimiento informado (plantilla rellenada desde respuestas; PDF en cliente)
     informed_consent_enabled = serializers.BooleanField(required=False, default=False)
     informed_consent = serializers.JSONField(required=False, default=dict)
@@ -470,7 +514,27 @@ class SurveySerializer(serializers.Serializer):
         data['webhook_secret_set'] = self.get_webhook_secret_set(instance)
         data.pop('webhook_secret', None)
 
+        theme = instance.get('theme') if isinstance(instance, dict) else {}
+        data['theme'] = normalize_survey_theme(theme)
+
         return data
+
+    def validate_theme(self, value):
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('theme debe ser un objeto.')
+        normalized = normalize_survey_theme(value)
+        # If client sent invalid colors for a key, reject rather than silently drop
+        for key in _THEME_COLOR_KEYS:
+            raw = value.get(key)
+            if raw is None or str(raw).strip() == '':
+                continue
+            if not normalize_theme_color(raw):
+                raise serializers.ValidationError({
+                    key: 'Color inválido. Usa formato #RGB, #RRGGBB o #RRGGBBAA.'
+                })
+        return normalized
 
     def validate(self, attrs):
         questions = attrs.get('questions') or []

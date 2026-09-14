@@ -623,6 +623,61 @@ const mapBackendTypeToFrontend = (backendType) => {
 };
 
 /** Normalize API survey shape (question_text / question_type) into editor shape (text / type) before first paint. */
+const EMPTY_SURVEY_THEME = {
+  background_color: '',
+  card_color: '',
+  question_number_color: '',
+  title_color: '',
+  description_color: '',
+  question_text_color: '',
+  body_text_color: '',
+  question_number_text_color: '',
+};
+
+const THEME_COLOR_DEFAULTS = {
+  background_color: '#eef2ff',
+  card_color: '#ffffff',
+  question_number_color: '#4f46e5',
+  title_color: '#1f2937',
+  description_color: '#4b5563',
+  question_text_color: '#1f2937',
+  body_text_color: '#374151',
+  question_number_text_color: '#ffffff',
+};
+
+const THEME_COLOR_KEYS = Object.keys(EMPTY_SURVEY_THEME);
+
+const isValidThemeHex = (value) =>
+  /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(String(value || '').trim());
+
+const normalizeSurveyTheme = (raw) => {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const out = { ...EMPTY_SURVEY_THEME };
+  THEME_COLOR_KEYS.forEach((key) => {
+    const v = String(src[key] || '').trim();
+    out[key] = isValidThemeHex(v) ? v.toLowerCase() : '';
+  });
+  return out;
+};
+
+/** Resolved theme for rendering: empty keys mean "use CSS defaults". */
+const getSurveyTheme = (surveyOrTheme) => {
+  const theme = surveyOrTheme?.theme
+    ? normalizeSurveyTheme(surveyOrTheme.theme)
+    : normalizeSurveyTheme(surveyOrTheme);
+  return {
+    ...theme,
+    hasCustomBackground: Boolean(theme.background_color),
+    hasCustomCard: Boolean(theme.card_color),
+    hasCustomNumber: Boolean(theme.question_number_color),
+    hasCustomTitle: Boolean(theme.title_color),
+    hasCustomDescription: Boolean(theme.description_color),
+    hasCustomQuestionText: Boolean(theme.question_text_color),
+    hasCustomBodyText: Boolean(theme.body_text_color),
+    hasCustomNumberText: Boolean(theme.question_number_text_color),
+  };
+};
+
 const normalizeSurveyForEditor = (raw) => {
   if (!raw) {
     return {
@@ -632,6 +687,9 @@ const normalizeSurveyForEditor = (raw) => {
       sections: [],
       informed_consent_enabled: false,
       informed_consent: buildDefaultInformedConsent(),
+      theme: { ...EMPTY_SURVEY_THEME },
+      intro_image_enabled: false,
+      intro_image: '',
       webhook_enabled: false,
       webhook_url: '',
       webhook_secret: '',
@@ -717,6 +775,9 @@ const normalizeSurveyForEditor = (raw) => {
       tipo_documento: raw.webhook_field_map?.tipo_documento || '',
       cargo: raw.webhook_field_map?.cargo || '',
     },
+    theme: normalizeSurveyTheme(raw.theme),
+    intro_image_enabled: Boolean(raw.intro_image_enabled),
+    intro_image: raw.intro_image || '',
   };
 };
 
@@ -1172,6 +1233,9 @@ const SurveyFormHeader = ({
   headerImage,
   editable = false,
   centered = false,
+  cardColor = '',
+  titleColor = '',
+  descriptionColor = '',
   onTitleChange,
   onDescriptionChange,
   onHeaderImageChange,
@@ -1192,9 +1256,15 @@ const SurveyFormHeader = ({
   };
 
   const alignClass = centered ? 'text-center' : '';
+  const cardStyle = cardColor ? { backgroundColor: cardColor } : undefined;
+  const titleStyle = titleColor ? { color: titleColor } : undefined;
+  const descriptionStyle = descriptionColor ? { color: descriptionColor } : undefined;
 
   return (
-    <div className="mb-6 md:mb-10 rounded-t-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
+    <div
+      className={`mb-6 md:mb-10 rounded-t-xl overflow-hidden border border-gray-200 shadow-sm ${cardColor ? '' : 'bg-white'}`}
+      style={cardStyle}
+    >
       <div className="h-2 bg-purple-600 rounded-t-xl" aria-hidden="true" />
       <div className={`border-l-4 border-l-blue-500 px-4 py-4 md:px-5 md:py-5 ${alignClass}`}>
         {headerImage && (
@@ -1250,10 +1320,9 @@ const SurveyFormHeader = ({
                 e.target.style.height = 'auto';
                 e.target.style.height = `${e.target.scrollHeight}px`;
               }}
-              className={`w-full text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-300 resize-none overflow-hidden border-b border-gray-200 pb-1 focus:outline-none ${centered ? 'text-center' : ''}`}
-              placeholder="Formulario sin título"
-              rows={1}
+              className={`w-full text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black bg-transparent border-none focus:ring-0 p-0 placeholder-gray-300 resize-none overflow-hidden border-b border-gray-200 pb-1 focus:outline-none ${titleColor ? '' : 'text-gray-900'} ${centered ? 'text-center' : ''}`}
               style={{
+                ...(titleStyle || {}),
                 wordBreak: 'break-word',
                 overflowWrap: 'break-word',
                 whiteSpace: 'pre-wrap',
@@ -1262,20 +1331,29 @@ const SurveyFormHeader = ({
                 maxWidth: '100%',
                 boxSizing: 'border-box',
               }}
+              placeholder="Formulario sin título"
+              rows={1}
             />
             <input
               value={description}
               onChange={(e) => onDescriptionChange?.(e.target.value)}
-              className={`w-full mt-3 md:mt-4 text-base md:text-lg text-gray-500 bg-transparent border-none focus:ring-0 p-0 placeholder-gray-400 border-b border-gray-100 pb-1 focus:outline-none ${centered ? 'text-center' : ''}`}
+              className={`w-full mt-3 md:mt-4 text-base md:text-lg bg-transparent border-none focus:ring-0 p-0 placeholder-gray-400 border-b border-gray-100 pb-1 focus:outline-none ${descriptionColor ? '' : 'text-gray-500'} ${centered ? 'text-center' : ''}`}
+              style={descriptionStyle}
               placeholder="Descripción del formulario"
             />
           </>
         ) : (
           <>
-            <h1 className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black text-gray-900 leading-tight ${centered ? 'mx-auto max-w-3xl' : ''}`}>
+            <h1
+              className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-black leading-tight ${titleColor ? '' : 'text-gray-900'} ${centered ? 'mx-auto max-w-3xl' : ''}`}
+              style={titleStyle}
+            >
               {title || 'Formulario sin título'}
             </h1>
-            <p className={`mt-2 md:mt-3 text-base md:text-lg text-gray-500 leading-relaxed ${centered ? 'mx-auto max-w-3xl' : ''}`}>
+            <p
+              className={`mt-2 md:mt-3 text-base md:text-lg leading-relaxed ${descriptionColor ? '' : 'text-gray-500'} ${centered ? 'mx-auto max-w-3xl' : ''}`}
+              style={descriptionStyle}
+            >
               {description || 'Descripción del formulario'}
             </p>
           </>
@@ -1298,22 +1376,45 @@ const SurveyFormHeader = ({
 
 const SurveyPreview = ({ surveyData, onBack }) => {
   const [answers, setAnswers] = useState({});
+  const theme = getSurveyTheme(surveyData);
 
   const handleAnswerChange = (questionId, value) => {
     setAnswers(prev => ({ ...prev, [questionId]: value }));
   };
 
-  const renderQuestion = (question) => {
+  const cardStyle = theme.hasCustomCard ? { backgroundColor: theme.card_color } : undefined;
+  const numberStyle = {
+    ...(theme.hasCustomNumber ? { backgroundColor: theme.question_number_color } : {}),
+    ...(theme.hasCustomNumberText ? { color: theme.question_number_text_color } : {}),
+  };
+  const questionTextStyle = theme.hasCustomQuestionText ? { color: theme.question_text_color } : undefined;
+  const bodyTextStyle = theme.hasCustomBodyText ? { color: theme.body_text_color } : undefined;
+
+  const renderQuestion = (question, index) => {
     const questionId = question.id;
     if (question.conditional_logic && !evaluateCondition(question.conditional_logic, answers)) {
       return null;
     }
     if (question.type === 'Título') {
       return (
-        <div key={questionId} className="mb-8 bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-          <h3 className="text-lg font-bold text-gray-800 mb-2">{question.text || question.question_text || 'Título'}</h3>
+        <div
+          key={questionId}
+          className={`mb-8 rounded-2xl border border-gray-200 p-6 shadow-sm ${theme.hasCustomCard ? '' : 'bg-white'}`}
+          style={cardStyle}
+        >
+          <h3
+            className={`text-lg font-bold mb-2 ${theme.hasCustomQuestionText ? '' : 'text-gray-800'}`}
+            style={questionTextStyle}
+          >
+            {question.text || question.question_text || 'Título'}
+          </h3>
           {question.description && (
-            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{question.description}</p>
+            <p
+              className={`text-sm leading-relaxed whitespace-pre-wrap ${theme.hasCustomBodyText ? '' : 'text-gray-700'}`}
+              style={bodyTextStyle}
+            >
+              {question.description}
+            </p>
           )}
           {question.question_image && (
             <QuestionImageDisplay src={question.question_image} className="mt-3" />
@@ -1324,18 +1425,38 @@ const SurveyPreview = ({ surveyData, onBack }) => {
     const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(question.type);
 
     return (
-      <div key={questionId} className="mb-8 bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-        <div className="mb-4">
-          <h3 className="text-lg font-bold text-gray-800 mb-2">
-            {question.text || question.question_text || 'Pregunta sin texto'}
-            {question.required && <span className="text-red-500 ml-1">*</span>}
-          </h3>
-          {question.description && (
-            <p className="text-sm text-gray-500">{question.description}</p>
-          )}
-          {question.question_image && (
-            <QuestionImageDisplay src={question.question_image} className="mt-3" />
-          )}
+      <div
+        key={questionId}
+        className={`mb-8 rounded-2xl border border-gray-200 p-6 shadow-sm ${theme.hasCustomCard ? '' : 'bg-white'}`}
+        style={cardStyle}
+      >
+        <div className="mb-4 flex items-start gap-3">
+          <div
+            className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center font-black text-sm shadow ${theme.hasCustomNumber ? '' : 'bg-indigo-600'} ${theme.hasCustomNumberText ? '' : 'text-white'}`}
+            style={Object.keys(numberStyle).length ? numberStyle : undefined}
+          >
+            {(typeof index === 'number' ? index : 0) + 1}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3
+              className={`text-lg font-bold mb-2 ${theme.hasCustomQuestionText ? '' : 'text-gray-800'}`}
+              style={questionTextStyle}
+            >
+              {question.text || question.question_text || 'Pregunta sin texto'}
+              {question.required && <span className="text-red-500 ml-1">*</span>}
+            </h3>
+            {question.description && (
+              <p
+                className={`text-sm ${theme.hasCustomBodyText ? '' : 'text-gray-500'}`}
+                style={bodyTextStyle}
+              >
+                {question.description}
+              </p>
+            )}
+            {question.question_image && (
+              <QuestionImageDisplay src={question.question_image} className="mt-3" />
+            )}
+          </div>
         </div>
 
         <div className="mt-4">
@@ -1480,7 +1601,10 @@ const SurveyPreview = ({ surveyData, onBack }) => {
   };
 
   return (
-    <main className="flex-1 relative z-10 w-full">
+    <main
+      className={`flex-1 relative z-10 w-full min-h-screen ${theme.hasCustomBackground ? '' : 'bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50'}`}
+      style={theme.hasCustomBackground ? { backgroundColor: theme.background_color } : undefined}
+    >
       <header className="sticky top-0 z-40 px-4 py-4 md:px-12 md:py-6 flex justify-between items-center bg-white/50 backdrop-blur-md border-b border-white/40">
         <div className="flex items-center gap-3">
           <button 
@@ -1508,11 +1632,14 @@ const SurveyPreview = ({ surveyData, onBack }) => {
           title={surveyData.title}
           description={surveyData.description}
           headerImage={surveyData.header_image}
+          cardColor={theme.card_color}
+          titleColor={theme.title_color}
+          descriptionColor={theme.description_color}
         />
 
         {surveyData.questions && surveyData.questions.length > 0 ? (
           <div className="space-y-6">
-            {surveyData.questions.map(renderQuestion)}
+            {surveyData.questions.map((q, index) => renderQuestion(q, index))}
           </div>
         ) : (
           <div className="text-center py-20 border-2 border-dashed border-gray-300 rounded-3xl bg-white/30">
@@ -1521,12 +1648,23 @@ const SurveyPreview = ({ surveyData, onBack }) => {
         )}
 
         <div className="mt-8 pt-8 border-t border-gray-200">
-          <button
-            className="w-full px-6 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-lg shadow-xl transition-transform active:scale-95"
-            onClick={() => alert('En una versión completa, esto enviaría las respuestas al servidor.')}
+          <div
+            className={`rounded-2xl p-4 shadow-sm border border-gray-200 ${theme.hasCustomCard ? '' : 'bg-white'}`}
+            style={cardStyle}
           >
-            Enviar Respuestas
-          </button>
+            <button
+              className="w-full px-6 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-lg shadow-xl transition-transform active:scale-95"
+              onClick={() => alert('En una versión completa, esto enviaría las respuestas al servidor.')}
+            >
+              Enviar Respuestas
+            </button>
+            <p
+              className={`text-xs text-center mt-3 ${theme.hasCustomDescription ? '' : 'text-gray-500'}`}
+              style={theme.hasCustomDescription ? { color: theme.description_color } : undefined}
+            >
+              * Campos marcados con asterisco son obligatorios
+            </p>
+          </div>
         </div>
       </div>
     </main>
@@ -1572,6 +1710,46 @@ const PersonalDataConsentModal = ({ open, text, surveyTitle, onAccept }) => {
           <p className="text-[11px] text-center text-slate-500">
             Si no aceptas, no podrás diligenciar ni enviar esta encuesta.
           </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const IntroImageModal = ({ open, imageSrc, surveyTitle, onContinue }) => {
+  if (!open || !imageSrc) return null;
+  return (
+    <div className="fixed inset-0 z-[94] flex items-center justify-center p-4 bg-black/60">
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="intro-image-title"
+      >
+        <div className="px-5 py-4 border-b border-gray-200">
+          <h2 id="intro-image-title" className="text-lg font-black text-slate-800">
+            {surveyTitle ? `Antes de comenzar «${surveyTitle}»` : 'Antes de comenzar'}
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Revisa la siguiente información y pulsa Continuar para responder la encuesta.
+          </p>
+        </div>
+        <div className="px-5 py-4 overflow-y-auto flex-1">
+          <img
+            src={imageSrc}
+            alt="Información previa a la encuesta"
+            className="w-full max-h-[60vh] object-contain rounded-xl border border-gray-100 bg-slate-50"
+          />
+        </div>
+        <div className="px-5 py-4 border-t border-gray-200 bg-white">
+          <button
+            type="button"
+            onClick={onContinue}
+            className="w-full px-4 py-3 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700"
+          >
+            Continuar
+          </button>
         </div>
       </div>
     </div>
@@ -1698,6 +1876,7 @@ const PublicSurveyView = ({ surveyId }) => {
   const [consentSentAt, setConsentSentAt] = useState(null);
   const [consentResendCooldown, setConsentResendCooldown] = useState(0);
   const [signatureConsentAt, setSignatureConsentAt] = useState(null);
+  const [introImageSeen, setIntroImageSeen] = useState(false);
   const [submitEmailStatus, setSubmitEmailStatus] = useState(''); // '', sending, queued, sent, error
 
   useEffect(() => {
@@ -1715,9 +1894,21 @@ const PublicSurveyView = ({ surveyId }) => {
   };
 
   const consentCfg = surveyData?.informed_consent_enabled ? (surveyData.informed_consent || {}) : null;
+  const theme = useMemo(() => getSurveyTheme(surveyData), [surveyData]);
+  const themeCardStyle = theme.hasCustomCard ? { backgroundColor: theme.card_color } : undefined;
+  const themeNumberStyle = {
+    ...(theme.hasCustomNumber ? { backgroundColor: theme.question_number_color } : {}),
+    ...(theme.hasCustomNumberText ? { color: theme.question_number_text_color } : {}),
+  };
+  const themeQuestionTextStyle = theme.hasCustomQuestionText ? { color: theme.question_text_color } : undefined;
+  const themeBodyTextStyle = theme.hasCustomBodyText ? { color: theme.body_text_color } : undefined;
+  const themeDescriptionStyle = theme.hasCustomDescription ? { color: theme.description_color } : undefined;
   const personalDataConsentText = useMemo(
     () => buildPersonalDataConsentText({ survey: surveyData }),
     [surveyData]
+  );
+  const hasIntroImage = Boolean(
+    surveyData?.intro_image_enabled && (surveyData?.intro_image || '').trim()
   );
   const acceptanceQId = consentCfg?.acceptance_question_id || '';
   const acceptanceValue = (consentCfg?.acceptance_value || 'SI, AUTORIZO').trim();
@@ -2164,6 +2355,11 @@ const PublicSurveyView = ({ surveyId }) => {
       return;
     }
 
+    if (hasIntroImage && !introImageSeen) {
+      alert('Debes revisar la imagen de introducción y pulsar Continuar antes de enviar.');
+      return;
+    }
+
     if (consentCfg && acceptanceQId) {
       const ans = String(answers[acceptanceQId] || '').trim();
       if (ans === acceptanceValue && consentGate !== 'verified') {
@@ -2534,13 +2730,25 @@ const PublicSurveyView = ({ surveyId }) => {
 
     if (question.type === 'Título') {
       return (
-        <div key={questionId} className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 group">
+        <div
+          key={questionId}
+          className={`backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 group ${theme.hasCustomCard ? '' : 'bg-white/90'}`}
+          style={themeCardStyle}
+        >
           <div className="min-w-0">
-            <h3 className="text-xl md:text-2xl font-black text-gray-800 mb-3 leading-tight">
+            <h3
+              className={`text-xl md:text-2xl font-black mb-3 leading-tight ${theme.hasCustomQuestionText ? '' : 'text-gray-800'}`}
+              style={themeQuestionTextStyle}
+            >
               {question.text || question.question_text}
             </h3>
             {question.description && (
-              <p className="text-sm md:text-base text-gray-700 leading-relaxed whitespace-pre-wrap">{question.description}</p>
+              <p
+                className={`text-sm md:text-base leading-relaxed whitespace-pre-wrap ${theme.hasCustomBodyText ? '' : 'text-gray-700'}`}
+                style={themeBodyTextStyle}
+              >
+                {question.description}
+              </p>
             )}
             {question.question_image && (
               <QuestionImageDisplay src={question.question_image} className="mt-4" />
@@ -2551,20 +2759,35 @@ const PublicSurveyView = ({ surveyId }) => {
     }
 
     return (
-      <div key={questionId} className="bg-white/90 backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 group">
+      <div
+        key={questionId}
+        className={`backdrop-blur-xl rounded-3xl border border-white/80 p-6 md:p-8 shadow-lg hover:shadow-xl transition-all duration-300 group ${theme.hasCustomCard ? '' : 'bg-white/90'}`}
+        style={themeCardStyle}
+      >
         {/* Header de la pregunta */}
         <div className="mb-6 pb-4 border-b border-gray-200/60">
           <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-lg shadow-lg">
+            <div
+              className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg shadow-lg ${theme.hasCustomNumber ? '' : 'bg-indigo-600'} ${theme.hasCustomNumberText ? '' : 'text-white'}`}
+              style={Object.keys(themeNumberStyle).length ? themeNumberStyle : undefined}
+            >
               {index + 1}
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-xl md:text-2xl font-black text-gray-800 mb-2 leading-tight">
+              <h3
+                className={`text-xl md:text-2xl font-black mb-2 leading-tight ${theme.hasCustomQuestionText ? '' : 'text-gray-800'}`}
+                style={themeQuestionTextStyle}
+              >
                 {question.text || question.question_text}
                 {question.required && <span className="text-red-500 ml-2 text-2xl">*</span>}
               </h3>
               {question.description && (
-                <p className="text-sm md:text-base text-gray-600 leading-relaxed mt-2">{question.description}</p>
+                <p
+                  className={`text-sm md:text-base leading-relaxed mt-2 ${theme.hasCustomBodyText ? '' : 'text-gray-600'}`}
+                  style={themeBodyTextStyle}
+                >
+                  {question.description}
+                </p>
               )}
               {question.question_image && (
                 <QuestionImageDisplay src={question.question_image} className="mt-4" />
@@ -2882,13 +3105,18 @@ const PublicSurveyView = ({ surveyId }) => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 relative overflow-hidden">
+    <div
+      className={`min-h-screen w-full relative overflow-hidden ${theme.hasCustomBackground ? '' : 'bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50'}`}
+      style={theme.hasCustomBackground ? { backgroundColor: theme.background_color } : undefined}
+    >
       {/* Background decorative elements */}
-      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-purple-200/30 rounded-full mix-blend-multiply filter blur-[120px] animate-blob" />
-        <div className="absolute top-[20%] right-[-10%] w-[40%] h-[40%] bg-blue-200/30 rounded-full mix-blend-multiply filter blur-[120px] animate-blob animation-delay-2000" />
-        <div className="absolute bottom-[-10%] left-[20%] w-[60%] h-[40%] bg-pink-200/20 rounded-full mix-blend-multiply filter blur-[120px] animate-blob animation-delay-4000" />
-      </div>
+      {!theme.hasCustomBackground && (
+        <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-purple-200/30 rounded-full mix-blend-multiply filter blur-[120px] animate-blob" />
+          <div className="absolute top-[20%] right-[-10%] w-[40%] h-[40%] bg-blue-200/30 rounded-full mix-blend-multiply filter blur-[120px] animate-blob animation-delay-2000" />
+          <div className="absolute bottom-[-10%] left-[20%] w-[60%] h-[40%] bg-pink-200/20 rounded-full mix-blend-multiply filter blur-[120px] animate-blob animation-delay-4000" />
+        </div>
+      )}
 
       <div className="relative z-10 w-full max-w-4xl mx-auto px-4 py-8 md:py-12">
         {/* Título y descripción del formulario */}
@@ -2897,9 +3125,15 @@ const PublicSurveyView = ({ surveyId }) => {
             title={surveyData.title}
             description={surveyData.description}
             headerImage={surveyData.header_image}
+            cardColor={theme.card_color}
+            titleColor={theme.title_color}
+            descriptionColor={theme.description_color}
             centered
           />
-          <div className="flex items-center justify-center gap-4 text-sm text-gray-500 -mt-6 mb-2">
+          <div
+            className={`flex items-center justify-center gap-4 text-sm -mt-6 mb-2 ${theme.hasCustomDescription ? '' : 'text-gray-500'}`}
+            style={themeDescriptionStyle}
+          >
             <span className="flex items-center gap-2">
               <FontAwesomeIcon icon={faListUl} size="sm" className="fa-icon-force-current" />
               {surveyData.questions?.length || 0} {surveyData.questions?.length === 1 ? 'Pregunta' : 'Preguntas'}
@@ -2984,7 +3218,10 @@ const PublicSurveyView = ({ surveyId }) => {
           {((!surveyData.sections || surveyData.sections.length === 0) ||
             currentSection === surveyData.sections[surveyData.sections.length - 1]?.id) && (
           <div className="mt-12 pt-8 border-t border-gray-200/60">
-            <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-lg border border-white/60">
+            <div
+              className={`backdrop-blur-xl rounded-2xl p-6 shadow-lg border border-white/60 ${theme.hasCustomCard ? '' : 'bg-white/80'}`}
+              style={themeCardStyle}
+            >
               <button
                 type="submit"
                 disabled={submitting}
@@ -3002,7 +3239,10 @@ const PublicSurveyView = ({ surveyId }) => {
                   </>
                 )}
               </button>
-              <p className="text-xs text-gray-500 text-center mt-3">
+              <p
+                className={`text-xs text-center mt-3 ${theme.hasCustomDescription ? '' : 'text-gray-500'}`}
+                style={themeDescriptionStyle}
+              >
                 * Campos marcados con asterisco son obligatorios
               </p>
             </div>
@@ -3015,6 +3255,12 @@ const PublicSurveyView = ({ surveyId }) => {
         text={personalDataConsentText}
         surveyTitle={surveyData?.title || ''}
         onAccept={() => setSignatureConsentAt(new Date().toISOString())}
+      />
+      <IntroImageModal
+        open={Boolean(surveyData) && Boolean(signatureConsentAt) && hasIntroImage && !introImageSeen}
+        imageSrc={surveyData?.intro_image || ''}
+        surveyTitle={surveyData?.title || ''}
+        onContinue={() => setIntroImageSeen(true)}
       />
       <ConsentOtpModal
         open={consentModalOpen}
@@ -3049,6 +3295,9 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   const [webhookTestMsg, setWebhookTestMsg] = useState('');
   const [webhookTestErr, setWebhookTestErr] = useState('');
   const [showReferenceSection, setShowReferenceSection] = useState(false);
+  const [showAppearanceSection, setShowAppearanceSection] = useState(false);
+  const [showConsentSection, setShowConsentSection] = useState(false);
+  const [showWebhookSection, setShowWebhookSection] = useState(false);
   const [showGearMenu, setShowGearMenu] = useState(false);
   const [referenceColumns, setReferenceColumns] = useState(() => {
     if (!initialSurveyData) return [];
@@ -3356,11 +3605,252 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
              description={surveyData.description}
              headerImage={surveyData.header_image}
              editable
+             cardColor={surveyData.theme?.card_color || ''}
+             titleColor={surveyData.theme?.title_color || ''}
+             descriptionColor={surveyData.theme?.description_color || ''}
              onTitleChange={(newTitle) => setSurveyData((prev) => ({ ...prev, title: newTitle }))}
              onDescriptionChange={(newDesc) => setSurveyData((prev) => ({ ...prev, description: newDesc }))}
              onHeaderImageChange={(header_image) => setSurveyData((prev) => ({ ...prev, header_image }))}
              onHeaderImageRemove={() => setSurveyData((prev) => ({ ...prev, header_image: '' }))}
            />
+
+           {/* Apariencia / colores de la encuesta pública */}
+           <div id="apariencia-encuesta" className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
+             <button
+               type="button"
+               onClick={() => setShowAppearanceSection(!showAppearanceSection)}
+               className="w-full flex items-center justify-between text-left"
+             >
+               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                 <FontAwesomeIcon icon={faImage} size="sm" className="text-indigo-600" />
+                 Apariencia
+               </h3>
+               <FontAwesomeIcon icon={showAppearanceSection ? faChevronUp : faChevronDown} size="sm" className="text-gray-500" />
+             </button>
+             {showAppearanceSection && (
+               <div className="mt-4 space-y-4">
+                 <p className="text-sm text-gray-600">
+                   Colores de fondos y textos de la encuesta pública. Déjalos vacíos para usar el diseño por defecto.
+                 </p>
+                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Fondos</p>
+                 {[
+                   { key: 'background_color', label: 'Fondo de la página' },
+                   { key: 'card_color', label: 'Fondo de las tarjetas' },
+                   { key: 'question_number_color', label: 'Fondo de los números' },
+                 ].map(({ key, label }) => {
+                   const current = surveyData.theme?.[key] || '';
+                   const pickerValue = isValidThemeHex(current)
+                     ? (current.length === 4
+                       ? `#${current[1]}${current[1]}${current[2]}${current[2]}${current[3]}${current[3]}`
+                       : current.slice(0, 7))
+                     : THEME_COLOR_DEFAULTS[key];
+                   return (
+                     <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                       <label className="text-sm font-semibold text-gray-700 sm:w-56 shrink-0">{label}</label>
+                       <div className="flex items-center gap-2 flex-1">
+                         <input
+                           type="color"
+                           value={pickerValue}
+                           onChange={(e) => {
+                             const hex = e.target.value;
+                             setSurveyData((prev) => ({
+                               ...prev,
+                               theme: {
+                                 ...normalizeSurveyTheme(prev.theme),
+                                 [key]: hex,
+                               },
+                             }));
+                           }}
+                           className="w-12 h-10 rounded-lg border border-gray-200 cursor-pointer bg-white"
+                           title={label}
+                         />
+                         <input
+                           type="text"
+                           value={current}
+                           placeholder={THEME_COLOR_DEFAULTS[key]}
+                           onChange={(e) => {
+                             const v = e.target.value.trim();
+                             setSurveyData((prev) => ({
+                               ...prev,
+                               theme: {
+                                 ...normalizeSurveyTheme(prev.theme),
+                                 [key]: v,
+                               },
+                             }));
+                           }}
+                           onBlur={(e) => {
+                             const v = e.target.value.trim();
+                             setSurveyData((prev) => ({
+                               ...prev,
+                               theme: {
+                                 ...normalizeSurveyTheme(prev.theme),
+                                 [key]: isValidThemeHex(v) ? v.toLowerCase() : '',
+                               },
+                             }));
+                           }}
+                           className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500"
+                         />
+                       </div>
+                     </div>
+                   );
+                 })}
+                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-2">Textos</p>
+                 {[
+                   { key: 'title_color', label: 'Título de la encuesta' },
+                   { key: 'description_color', label: 'Descripción y textos secundarios' },
+                   { key: 'question_text_color', label: 'Texto de las preguntas' },
+                   { key: 'body_text_color', label: 'Texto de cuerpo / descripciones' },
+                   { key: 'question_number_text_color', label: 'Texto del número de pregunta' },
+                 ].map(({ key, label }) => {
+                   const current = surveyData.theme?.[key] || '';
+                   const pickerValue = isValidThemeHex(current)
+                     ? (current.length === 4
+                       ? `#${current[1]}${current[1]}${current[2]}${current[2]}${current[3]}${current[3]}`
+                       : current.slice(0, 7))
+                     : THEME_COLOR_DEFAULTS[key];
+                   return (
+                     <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                       <label className="text-sm font-semibold text-gray-700 sm:w-56 shrink-0">{label}</label>
+                       <div className="flex items-center gap-2 flex-1">
+                         <input
+                           type="color"
+                           value={pickerValue}
+                           onChange={(e) => {
+                             const hex = e.target.value;
+                             setSurveyData((prev) => ({
+                               ...prev,
+                               theme: {
+                                 ...normalizeSurveyTheme(prev.theme),
+                                 [key]: hex,
+                               },
+                             }));
+                           }}
+                           className="w-12 h-10 rounded-lg border border-gray-200 cursor-pointer bg-white"
+                           title={label}
+                         />
+                         <input
+                           type="text"
+                           value={current}
+                           placeholder={THEME_COLOR_DEFAULTS[key]}
+                           onChange={(e) => {
+                             const v = e.target.value.trim();
+                             setSurveyData((prev) => ({
+                               ...prev,
+                               theme: {
+                                 ...normalizeSurveyTheme(prev.theme),
+                                 [key]: v,
+                               },
+                             }));
+                           }}
+                           onBlur={(e) => {
+                             const v = e.target.value.trim();
+                             setSurveyData((prev) => ({
+                               ...prev,
+                               theme: {
+                                 ...normalizeSurveyTheme(prev.theme),
+                                 [key]: isValidThemeHex(v) ? v.toLowerCase() : '',
+                               },
+                             }));
+                           }}
+                           className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500"
+                         />
+                       </div>
+                     </div>
+                   );
+                 })}
+                 <button
+                   type="button"
+                   onClick={() => setSurveyData((prev) => ({ ...prev, theme: { ...EMPTY_SURVEY_THEME } }))}
+                   className="text-sm font-bold text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+                 >
+                   Restablecer valores por defecto
+                 </button>
+
+                 <div className="pt-4 border-t border-gray-100 space-y-3">
+                   <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Imagen previa a las preguntas</p>
+                   <p className="text-sm text-gray-600">
+                     Tras aceptar el consentimiento de datos, se muestra esta imagen en un modal antes de poder responder.
+                   </p>
+                   <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                     <input
+                       type="checkbox"
+                       className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                       checked={Boolean(surveyData.intro_image_enabled)}
+                       onChange={(e) => setSurveyData((prev) => ({
+                         ...prev,
+                         intro_image_enabled: e.target.checked,
+                       }))}
+                     />
+                     <span className="text-sm font-semibold text-gray-700">Mostrar imagen antes de las preguntas</span>
+                   </label>
+                   {surveyData.intro_image ? (
+                     <div className="space-y-2">
+                       <img
+                         src={surveyData.intro_image}
+                         alt="Imagen previa"
+                         className="w-full max-h-56 object-contain rounded-xl border border-gray-200 bg-gray-50"
+                       />
+                       <div className="flex flex-wrap gap-2">
+                         <label className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer">
+                           <FontAwesomeIcon icon={faImage} size="sm" />
+                           Cambiar imagen
+                           <input
+                             type="file"
+                             accept="image/jpeg,image/png,image/webp,image/gif"
+                             className="hidden"
+                             onChange={async (e) => {
+                               const file = e.target.files?.[0];
+                               e.target.value = '';
+                               if (!file) return;
+                               try {
+                                 const dataUrl = await compressSurveyImageFile(file, 1400, 0.85);
+                                 setSurveyData((prev) => ({ ...prev, intro_image: dataUrl }));
+                               } catch (err) {
+                                 alert(err.message || 'Error al cargar la imagen');
+                               }
+                             }}
+                           />
+                         </label>
+                         <button
+                           type="button"
+                           className="px-4 py-2 rounded-xl font-bold text-sm text-red-600 bg-red-50 hover:bg-red-100 border border-red-200"
+                           onClick={() => setSurveyData((prev) => ({ ...prev, intro_image: '', intro_image_enabled: false }))}
+                         >
+                           Quitar
+                         </button>
+                       </div>
+                     </div>
+                   ) : (
+                     <label className="w-full flex flex-col items-center justify-center gap-2 py-8 border-2 border-dashed border-gray-200 rounded-xl text-gray-500 hover:border-indigo-300 hover:bg-indigo-50/40 hover:text-indigo-600 transition-colors cursor-pointer">
+                       <FontAwesomeIcon icon={faImage} size="lg" className="fa-icon-force-current" />
+                       <span className="text-sm font-semibold">Subir imagen previa</span>
+                       <span className="text-xs text-gray-400">JPG o PNG, máx. 5 MB</span>
+                       <input
+                         type="file"
+                         accept="image/jpeg,image/png,image/webp,image/gif"
+                         className="hidden"
+                         onChange={async (e) => {
+                           const file = e.target.files?.[0];
+                           e.target.value = '';
+                           if (!file) return;
+                           try {
+                             const dataUrl = await compressSurveyImageFile(file, 1400, 0.85);
+                             setSurveyData((prev) => ({
+                               ...prev,
+                               intro_image: dataUrl,
+                               intro_image_enabled: true,
+                             }));
+                           } catch (err) {
+                             alert(err.message || 'Error al cargar la imagen');
+                           }
+                         }}
+                       />
+                     </label>
+                   )}
+                 </div>
+               </div>
+             )}
+           </div>
 
            {/* Archivo de referenciación - arriba, al abrir desde el botón del header */}
            <div id="archivo-referenciacion" className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
@@ -3522,12 +4012,19 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
 
            {/* Consentimiento informado */}
            <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
-             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
-               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                 <FontAwesomeIcon icon={faFileLines} size="sm" className="text-emerald-600" />
-                 Consentimiento informado
-               </h3>
-               <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+               <button
+                 type="button"
+                 onClick={() => setShowConsentSection(!showConsentSection)}
+                 className="flex-1 flex items-center justify-between gap-3 text-left min-w-0"
+               >
+                 <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                   <FontAwesomeIcon icon={faFileLines} size="sm" className="text-emerald-600" />
+                   Consentimiento informado
+                 </h3>
+                 <FontAwesomeIcon icon={showConsentSection ? faChevronUp : faChevronDown} size="sm" className="text-gray-500 shrink-0" />
+               </button>
+               <label className="inline-flex items-center gap-2 cursor-pointer select-none shrink-0">
                  <input
                    type="checkbox"
                    className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
@@ -3546,6 +4043,8 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                  <span className="text-sm font-semibold text-gray-700">Incluir consentimiento informado</span>
                </label>
              </div>
+             {showConsentSection && (
+             <div className="mt-4">
              <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
                <div>
                  <label className="block text-xs font-bold text-slate-600 mb-1">Responsable del tratamiento (Ley 1581)</label>
@@ -3808,16 +4307,25 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                  </p>
                </div>
              )}
+             </div>
+             )}
            </div>
 
            {/* Webhook rifas */}
            <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-4 sm:p-6 shadow-lg">
-             <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-               <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center gap-2">
-                 <FontAwesomeIcon icon={faShareNodes} size="sm" className="text-indigo-600" />
-                 Webhook rifas
-               </h3>
-               <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+             <div className="flex flex-wrap items-center justify-between gap-3">
+               <button
+                 type="button"
+                 onClick={() => setShowWebhookSection(!showWebhookSection)}
+                 className="flex-1 flex items-center justify-between gap-3 text-left min-w-0"
+               >
+                 <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center gap-2">
+                   <FontAwesomeIcon icon={faShareNodes} size="sm" className="text-indigo-600" />
+                   Webhook rifas
+                 </h3>
+                 <FontAwesomeIcon icon={showWebhookSection ? faChevronUp : faChevronDown} size="sm" className="text-gray-500 shrink-0" />
+               </button>
+               <label className="inline-flex items-center gap-2 cursor-pointer select-none shrink-0">
                  <input
                    type="checkbox"
                    className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
@@ -3827,6 +4335,8 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                  <span className="text-sm font-semibold text-gray-700">Activar notificación a rifas</span>
                </label>
              </div>
+             {showWebhookSection && (
+             <div className="mt-4">
              <p className="text-sm text-gray-600 mb-3">
                Al autorizar el descuento, se envía un webhook a la app de rifas con{' '}
                <span className="font-semibold">documento_empleado</span> (DOCUMENTO DEL EMPLEADO),{' '}
@@ -3963,6 +4473,8 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                    La URL debe ser alcanzable desde este servidor (no uses localhost de tu PC).
                  </p>
                </div>
+             )}
+             </div>
              )}
            </div>
 
@@ -8397,6 +8909,9 @@ export default function App() {
       documento_empleado_question_id: surveyData.documento_empleado_question_id || '',
       documento_votante_question_id: surveyData.documento_votante_question_id || '',
       header_image: surveyData.header_image || '',
+      intro_image_enabled: Boolean(surveyData.intro_image_enabled),
+      intro_image: surveyData.intro_image || '',
+      theme: normalizeSurveyTheme(surveyData.theme),
       consent_responsible: surveyData.consent_responsible || '',
       consent_purpose: surveyData.consent_purpose || '',
       informed_consent_enabled: Boolean(surveyData.informed_consent_enabled),

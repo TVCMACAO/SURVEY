@@ -1095,6 +1095,18 @@ class SurveyListCreate(APIView):
             survey_doc['documento_votante_question_id'] = validated_data.get('documento_votante_question_id') or ''
         if validated_data.get('header_image'):
             survey_doc['header_image'] = validated_data['header_image']
+        if 'intro_image_enabled' in validated_data:
+            survey_doc['intro_image_enabled'] = bool(validated_data.get('intro_image_enabled'))
+        else:
+            survey_doc['intro_image_enabled'] = False
+        if 'intro_image' in validated_data:
+            survey_doc['intro_image'] = validated_data.get('intro_image') or ''
+        else:
+            survey_doc['intro_image'] = ''
+        if 'theme' in validated_data:
+            survey_doc['theme'] = validated_data.get('theme') or {}
+        else:
+            survey_doc['theme'] = {}
         if validated_data.get('consent_responsible'):
             survey_doc['consent_responsible'] = validated_data['consent_responsible']
         if validated_data.get('consent_purpose'):
@@ -1640,6 +1652,12 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['documento_votante_question_id'] = validated_data.get('documento_votante_question_id') or ''
             if 'header_image' in validated_data:
                 update_fields['header_image'] = validated_data.get('header_image') or ''
+            if 'intro_image_enabled' in validated_data:
+                update_fields['intro_image_enabled'] = bool(validated_data.get('intro_image_enabled'))
+            if 'intro_image' in validated_data:
+                update_fields['intro_image'] = validated_data.get('intro_image') or ''
+            if 'theme' in validated_data:
+                update_fields['theme'] = validated_data.get('theme') or {}
             if 'consent_responsible' in validated_data:
                 update_fields['consent_responsible'] = validated_data.get('consent_responsible') or ''
             if 'consent_purpose' in validated_data:
