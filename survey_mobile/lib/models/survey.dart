@@ -78,4 +78,16 @@ class Survey {
       raw?['documento_votante_question_id']?.toString();
 
   String? get description => raw?['description']?.toString();
+
+  Map<String, dynamic> get themeMap {
+    final t = raw?['theme'];
+    if (t is Map) return Map<String, dynamic>.from(t);
+    return {};
+  }
+
+  String? get themeBackgroundColor => themeMap['background_color']?.toString();
+  String? get themeCardColor => themeMap['card_color']?.toString();
+  String? get themeNumberColor => themeMap['question_number_color']?.toString();
+  String? get themeNumberTextColor =>
+      themeMap['question_number_text_color']?.toString();
 }

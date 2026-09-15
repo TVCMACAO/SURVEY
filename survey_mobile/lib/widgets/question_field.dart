@@ -3,6 +3,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
 import '../models/question.dart';
+import '../theme/app_theme.dart';
+import 'app_atmosphere.dart';
 
 typedef AnswersMap = Map<String, dynamic>;
 
@@ -13,6 +15,10 @@ class QuestionField extends StatefulWidget {
   final Map<String, PendingFileRef> pendingFiles;
   final void Function(String questionId, PendingFileRef file)? onFileAdded;
   final void Function(String questionId, String pendingId)? onFileRemoved;
+  final int? index;
+  final Color? cardColor;
+  final Color? numberColor;
+  final Color? numberTextColor;
 
   const QuestionField({
     super.key,
@@ -22,6 +28,10 @@ class QuestionField extends StatefulWidget {
     this.pendingFiles = const {},
     this.onFileAdded,
     this.onFileRemoved,
+    this.index,
+    this.cardColor,
+    this.numberColor,
+    this.numberTextColor,
   });
 
   @override
@@ -97,33 +107,90 @@ class _QuestionFieldState extends State<QuestionField> {
     final q = widget.question;
     if (q.isTitle) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
         child: Text(
           q.questionText,
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
+            height: 1.3,
+          ),
         ),
       );
     }
 
-    return Card(
+    final numberBg = widget.numberColor ?? AppColors.indigo;
+    final numberFg = widget.numberTextColor ?? Colors.white;
+    final displayIndex = (widget.index ?? 0) + 1;
+
+    return GlassPanel(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              q.questionText + (q.required ? ' *' : ''),
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-            ),
-            if (q.description != null && q.description!.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(q.description!, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+      color: widget.cardColor ?? AppColors.glassWhite,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: numberBg,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: numberBg.withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  '$displayIndex',
+                  style: TextStyle(
+                    color: numberFg,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      q.questionText + (q.required ? ' *' : ''),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: AppColors.textPrimary,
+                        height: 1.3,
+                      ),
+                    ),
+                    if (q.description != null && q.description!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        q.description!,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
-            const SizedBox(height: 12),
-            _buildInput(context),
-          ],
-        ),
+          ),
+          const SizedBox(height: 10),
+          _buildInput(context),
+        ],
       ),
     );
   }
@@ -135,7 +202,7 @@ class _QuestionFieldState extends State<QuestionField> {
         return TextFormField(
           initialValue: widget.value?.toString() ?? '',
           maxLines: 4,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+          decoration: const InputDecoration(hintText: 'Escribe tu respuesta…'),
           onChanged: widget.onChanged,
         );
       case 'email':
@@ -148,14 +215,17 @@ class _QuestionFieldState extends State<QuestionField> {
               : q.questionType == 'email'
                   ? TextInputType.emailAddress
                   : TextInputType.text,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+          decoration: InputDecoration(
+            hintText: q.questionType == 'email'
+                ? 'correo@ejemplo.com'
+                : q.questionType == 'number'
+                    ? 'Número'
+                    : 'Escribe tu respuesta…',
+          ),
           onChanged: widget.onChanged,
         );
       case 'date':
-        return ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(widget.value?.toString() ?? 'Seleccionar fecha'),
-          trailing: const Icon(Icons.calendar_today),
+        return InkWell(
           onTap: () async {
             if (q.dateIncludeTime) {
               final d = await showDatePicker(
@@ -186,12 +256,31 @@ class _QuestionFieldState extends State<QuestionField> {
               }
             }
           },
+          borderRadius: BorderRadius.circular(12),
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              suffixIcon: Icon(Icons.calendar_today_rounded, size: 18),
+            ),
+            child: Text(
+              widget.value?.toString().isNotEmpty == true
+                  ? widget.value.toString()
+                  : (q.dateIncludeTime ? 'Seleccionar fecha y hora' : 'Seleccionar fecha'),
+              style: TextStyle(
+                color: widget.value?.toString().isNotEmpty == true
+                    ? AppColors.textPrimary
+                    : AppColors.textMuted,
+              ),
+            ),
+          ),
         );
       case 'single_choice':
         return Column(
           children: q.options.map((opt) {
             return RadioListTile<String>(
-              title: Text(opt),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              contentPadding: EdgeInsets.zero,
+              title: Text(opt, style: const TextStyle(fontSize: 14)),
               value: opt,
               groupValue: widget.value?.toString(),
               onChanged: (v) => widget.onChanged(v),
@@ -201,8 +290,9 @@ class _QuestionFieldState extends State<QuestionField> {
       case 'dropdown':
         return DropdownButtonFormField<String>(
           value: q.options.contains(widget.value?.toString()) ? widget.value?.toString() : null,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
-          items: q.options.map((o) => DropdownMenuItem(value: o, child: Text(o))).toList(),
+          isExpanded: true,
+          decoration: const InputDecoration(hintText: 'Seleccionar…'),
+          items: q.options.map((o) => DropdownMenuItem(value: o, child: Text(o, overflow: TextOverflow.ellipsis))).toList(),
           onChanged: (v) => widget.onChanged(v),
         );
       case 'checkbox':
@@ -212,7 +302,11 @@ class _QuestionFieldState extends State<QuestionField> {
         return Column(
           children: q.options.map((opt) {
             return CheckboxListTile(
-              title: Text(opt),
+              dense: true,
+              visualDensity: VisualDensity.compact,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text(opt, style: const TextStyle(fontSize: 14)),
               value: selected.contains(opt),
               onChanged: (checked) {
                 final next = Set<String>.from(selected);
@@ -232,7 +326,11 @@ class _QuestionFieldState extends State<QuestionField> {
           children: List.generate(5, (i) {
             final star = i + 1;
             return IconButton(
-              icon: Icon(star <= rating ? Icons.star : Icons.star_border, color: Colors.amber),
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                star <= rating ? Icons.star_rounded : Icons.star_border_rounded,
+                color: const Color(0xFFF59E0B),
+              ),
               onPressed: () => widget.onChanged(star),
             );
           }),
@@ -246,14 +344,18 @@ class _QuestionFieldState extends State<QuestionField> {
         return Column(
           children: [
             Container(
-              height: 200,
+              height: 180,
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey),
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Signature(
-                controller: _signatureController!,
-                backgroundColor: Colors.white,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Signature(
+                  controller: _signatureController!,
+                  backgroundColor: Colors.white,
+                ),
               ),
             ),
             Row(
@@ -275,7 +377,7 @@ class _QuestionFieldState extends State<QuestionField> {
               ],
             ),
             if (widget.value != null && widget.value.toString().startsWith('data:'))
-              const Text('Firma guardada', style: TextStyle(color: Colors.green)),
+              const Text('Firma guardada', style: TextStyle(color: Color(0xFF059669), fontWeight: FontWeight.w600)),
           ],
         );
       case 'file_upload':
@@ -286,35 +388,37 @@ class _QuestionFieldState extends State<QuestionField> {
           children: [
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: [
                 OutlinedButton.icon(
                   onPressed: () => _pickImage(ImageSource.camera),
-                  icon: const Icon(Icons.camera_alt),
+                  icon: const Icon(Icons.camera_alt_rounded, size: 18),
                   label: const Text('Cámara'),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => _pickImage(ImageSource.gallery),
-                  icon: const Icon(Icons.photo),
+                  icon: const Icon(Icons.photo_rounded, size: 18),
                   label: const Text('Galería'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _pickFile,
-                  icon: const Icon(Icons.attach_file),
+                  icon: const Icon(Icons.attach_file_rounded, size: 18),
                   label: const Text('Archivo'),
                 ),
               ],
             ),
             ...refs.map((ref) => ListTile(
                   dense: true,
-                  leading: const Icon(Icons.insert_drive_file),
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.insert_drive_file_rounded, color: AppColors.indigo),
                   title: Text(ref.displayName, overflow: TextOverflow.ellipsis),
                   trailing: IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Icons.close_rounded),
                     onPressed: () => widget.onFileRemoved?.call(widget.question.id, ref.id),
                   ),
                 )),
             if (ids.isNotEmpty && refs.isEmpty)
-              Text('${ids.length} archivo(s) adjunto(s)', style: TextStyle(color: Colors.grey[600])),
+              Text('${ids.length} archivo(s) adjunto(s)', style: const TextStyle(color: AppColors.textMuted)),
           ],
         );
       case 'evaluation_table':
@@ -326,7 +430,7 @@ class _QuestionFieldState extends State<QuestionField> {
       default:
         return TextFormField(
           initialValue: widget.value?.toString() ?? '',
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+          decoration: const InputDecoration(hintText: 'Escribe tu respuesta…'),
           onChanged: widget.onChanged,
         );
     }
@@ -349,12 +453,15 @@ class _EvaluationTableField extends StatelessWidget {
     final items = question.evaluationItems;
     final cols = question.evaluationColumns;
     if (items.isEmpty || cols.isEmpty) {
-      return const Text('Tabla de evaluación sin configurar');
+      return const Text('Tabla de evaluación sin configurar', style: TextStyle(color: AppColors.textMuted));
     }
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        headingRowHeight: 40,
+        dataRowMinHeight: 40,
+        dataRowMaxHeight: 56,
         columns: [
           const DataColumn(label: Text('Ítem')),
           ...cols.map((c) => DataColumn(label: Text(c['label']?.toString() ?? ''))),

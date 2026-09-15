@@ -4,6 +4,8 @@ import 'services/sync_service.dart';
 import 'services/app_update_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/surveys_list_screen.dart';
+import 'theme/app_theme.dart';
+import 'widgets/app_atmosphere.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,10 +20,7 @@ class SurveyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Survey App',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light(),
       home: const AuthGate(),
     );
   }
@@ -65,7 +64,7 @@ class _AuthGateState extends State<AuthGate> {
   @override
   Widget build(BuildContext context) {
     if (_checking) {
-      return const Scaffold(
+      return const AtmosphereScaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }

@@ -11,9 +11,11 @@ import '../services/auth_service.dart';
 import '../services/device_service.dart';
 import '../services/network_service.dart';
 import '../services/sync_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/conditional_logic.dart';
 import '../utils/constants.dart';
 import '../utils/database_helper.dart';
+import '../widgets/app_atmosphere.dart';
 import '../widgets/question_field.dart';
 
 class ResponseFormScreen extends StatefulWidget {
@@ -257,36 +259,85 @@ class _ResponseFormScreenState extends State<ResponseFormScreen> {
     final sectionId = section['id']?.toString();
     final visible = _visibleQuestionsForSection(sectionId);
     final refKeyQId = _referenceKeyQuestionId;
+    final topInset = MediaQuery.paddingOf(context).top;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.survey.title ?? 'Encuesta'),
-        actions: [
-          if (_sections.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Center(
-                child: Text('${_currentSectionIndex + 1}/${_sections.length}'),
+    final bgColor = parseHexColor(widget.survey.themeBackgroundColor);
+    final cardColor = parseHexColor(widget.survey.themeCardColor);
+    final numberColor = parseHexColor(widget.survey.themeNumberColor);
+    final numberTextColor = parseHexColor(widget.survey.themeNumberTextColor);
+
+    var questionIndex = 0;
+
+    return AtmosphereScaffold(
+      backgroundColor: bgColor,
+      appBar: GlassHeader(
+        height: 56,
+        topInset: topInset,
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+            Expanded(
+              child: Text(
+                widget.survey.title ?? 'Encuesta',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
-        ],
+            if (_sections.length > 1)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.indigo.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${_currentSectionIndex + 1}/${_sections.length}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    color: AppColors.indigo,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
           children: [
             if (widget.survey.description != null && widget.survey.description!.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Text(widget.survey.description!),
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Text(
+                  widget.survey.description!,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    height: 1.45,
+                  ),
+                ),
               ),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+                child: GlassPanel(
+                  color: const Color(0xFFFEE2E2),
+                  padding: const EdgeInsets.all(12),
+                  child: Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C))),
+                ),
               ),
             ...visible.map((q) {
+              final indexForBadge = q.isTitle ? null : questionIndex++;
               final widgets = <Widget>[
                 QuestionField(
                   question: q,
@@ -295,6 +346,10 @@ class _ResponseFormScreenState extends State<ResponseFormScreen> {
                   pendingFiles: _pendingFilesByQuestion[q.id] ?? {},
                   onFileAdded: _onFileAdded,
                   onFileRemoved: _onFileRemoved,
+                  index: indexForBadge,
+                  cardColor: cardColor,
+                  numberColor: numberColor,
+                  numberTextColor: numberTextColor,
                 ),
               ];
               if (refKeyQId == q.id) {
@@ -306,7 +361,7 @@ class _ResponseFormScreenState extends State<ResponseFormScreen> {
                         final key = _answers[q.id]?.toString() ?? '';
                         _doReferenceLookup(key);
                       },
-                      icon: const Icon(Icons.search),
+                      icon: const Icon(Icons.search_rounded),
                       label: const Text('Actualizar datos con este documento'),
                     ),
                   ),
@@ -314,12 +369,20 @@ class _ResponseFormScreenState extends State<ResponseFormScreen> {
               }
               return Column(children: widgets);
             }),
-            CheckboxListTile(
-              title: const Text('Acepto el tratamiento de datos personales (Ley 1581/2012)'),
-              value: _consentAccepted,
-              onChanged: (v) => setState(() => _consentAccepted = v ?? false),
+            GlassPanel(
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: CheckboxListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                title: const Text(
+                  'Acepto el tratamiento de datos personales (Ley 1581/2012)',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                value: _consentAccepted,
+                onChanged: (v) => setState(() => _consentAccepted = v ?? false),
+              ),
             ),
-            const SizedBox(height: 16),
             Row(
               children: [
                 if (_currentSectionIndex > 0)
@@ -343,7 +406,10 @@ class _ResponseFormScreenState extends State<ResponseFormScreen> {
                               ? const SizedBox(
                                   height: 20,
                                   width: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
                                 )
                               : const Text('Guardar respuesta'),
                         ),

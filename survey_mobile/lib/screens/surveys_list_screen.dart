@@ -5,7 +5,9 @@ import '../services/app_update_service.dart';
 import '../services/network_service.dart';
 import '../services/survey_service.dart';
 import '../services/sync_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/database_helper.dart';
+import '../widgets/app_atmosphere.dart';
 import 'login_screen.dart';
 import 'response_form_screen.dart';
 import 'sync_status_screen.dart';
@@ -91,50 +93,64 @@ class _SurveysListScreenState extends State<SurveysListScreen> {
     }
   }
 
+  Future<void> _openSync() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SyncStatusScreen()),
+    );
+    await _loadSurveys();
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
+    final topInset = MediaQuery.paddingOf(context).top;
     final useGrid = width >= 600;
+    final crossAxisCount = width >= 900 ? 3 : 2;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Encuestas'),
-        actions: [
-          IconButton(
-            icon: Icon(_online ? Icons.cloud_done : Icons.cloud_off, color: _online ? Colors.green : Colors.grey),
-            onPressed: null,
-            tooltip: _online ? 'En línea' : 'Sin conexión',
-          ),
-          if (_pendingSync > 0)
-            TextButton.icon(
-              onPressed: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SyncStatusScreen()),
-                );
-                await _loadSurveys();
-              },
-              icon: Badge(
-                label: Text('$_pendingSync'),
-                child: const Icon(Icons.sync),
-              ),
-              label: const Text('Pendientes'),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.sync),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SyncStatusScreen()),
+    return AtmosphereScaffold(
+      appBar: GlassHeader(
+        height: 56,
+        topInset: topInset,
+        child: Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Encuestas',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loading ? null : _loadSurveys,
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
-          ),
-        ],
+            Icon(
+              _online ? Icons.cloud_done_rounded : Icons.cloud_off_rounded,
+              color: _online ? const Color(0xFF059669) : AppColors.textMuted,
+              size: 22,
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: 'Sincronización',
+              onPressed: _openSync,
+              icon: _pendingSync > 0
+                  ? Badge(
+                      label: Text('$_pendingSync'),
+                      child: const Icon(Icons.sync_rounded),
+                    )
+                  : const Icon(Icons.sync_rounded),
+            ),
+            IconButton(
+              tooltip: 'Actualizar',
+              onPressed: _loading ? null : _loadSurveys,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+            IconButton(
+              tooltip: 'Cerrar sesión',
+              onPressed: _logout,
+              icon: const Icon(Icons.logout_rounded),
+            ),
+          ],
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -142,26 +158,54 @@ class _SurveysListScreenState extends State<SurveysListScreen> {
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(_error!, textAlign: TextAlign.center),
-                        const SizedBox(height: 16),
-                        ElevatedButton(onPressed: _loadSurveys, child: const Text('Reintentar')),
-                      ],
+                    child: GlassPanel(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _error!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: AppColors.textPrimary),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: _loadSurveys,
+                            child: const Text('Reintentar'),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 )
               : _surveys.isEmpty
-                  ? const Center(child: Text('No hay encuestas'))
+                  ? Center(
+                      child: GlassPanel(
+                        margin: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.inbox_outlined, size: 40, color: Colors.grey[400]),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'No hay encuestas',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
                   : useGrid
                       ? GridView.builder(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: width >= 900 ? 3 : 2,
+                            crossAxisCount: crossAxisCount,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 12,
-                            childAspectRatio: 1.4,
+                            childAspectRatio: crossAxisCount >= 3 ? 2.8 : 2.7,
                           ),
                           itemCount: _surveys.length,
                           itemBuilder: (context, i) => _SurveyCard(
@@ -170,10 +214,14 @@ class _SurveysListScreenState extends State<SurveysListScreen> {
                           ),
                         )
                       : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                           itemCount: _surveys.length,
-                          itemBuilder: (context, i) => _SurveyCard(
-                            survey: _surveys[i],
-                            onTap: () => _openSurvey(_surveys[i]),
+                          itemBuilder: (context, i) => Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: _SurveyCard(
+                              survey: _surveys[i],
+                              onTap: () => _openSurvey(_surveys[i]),
+                            ),
                           ),
                         ),
     );
@@ -188,33 +236,48 @@ class _SurveyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    return Material(
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
+        borderRadius: BorderRadius.circular(16),
+        child: GlassPanel(
+          showSideBar: true,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                survey.title ?? survey.id,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      survey.title ?? survey.id,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: AppColors.textPrimary,
+                        height: 1.25,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${survey.parsedQuestions.length} preguntas',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                '${survey.parsedQuestions.length} preguntas',
-                style: TextStyle(color: Colors.grey[600], fontSize: 13),
-              ),
-              const Spacer(),
-              const Align(
-                alignment: Alignment.bottomRight,
-                child: Icon(Icons.arrow_forward_ios, size: 16),
-              ),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded, color: Colors.grey[400], size: 22),
             ],
           ),
         ),

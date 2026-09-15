@@ -8775,6 +8775,8 @@ export default function App() {
   const [loginCredentials, setLoginCredentials] = useState({ username: '', password: '' });
   const [currentUser, setCurrentUser] = useState(null); // Usuario actual con su rol
   const [deletedSurveys, setDeletedSurveys] = useState([]); // Encuestas eliminadas
+  // After first save of a new survey, skip the destructive refetch that wipes surveyToEdit
+  const skipNextSurveyFetchRef = useRef(false);
 
   const requireAuthOrLogin = (error) => {
     const msg = error?.message || '';
@@ -8788,8 +8790,8 @@ export default function App() {
     return false;
   };
 
-  const fetchSurveys = async () => {
-    setLoading(true);
+  const fetchSurveys = async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
         const response = await authenticatedFetch('/api/surveys/');
         if (!response.ok) throw new Error('Error al cargar los datos.');
@@ -8800,7 +8802,7 @@ export default function App() {
         if (requireAuthOrLogin(error)) return;
         alert('No se pudieron cargar las encuestas. ' + error.message);
     } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
     }
   };
 
@@ -8897,6 +8899,11 @@ export default function App() {
   // Effect to fetch a specific survey when editingSurveyId changes
   useEffect(() => {
     if (editingSurveyId) {
+        if (skipNextSurveyFetchRef.current) {
+          skipNextSurveyFetchRef.current = false;
+          setView('editor');
+          return;
+        }
         fetchSurveyToEdit(editingSurveyId);
         setView('editor'); // Switch to editor view once ID is set
     } else {
@@ -9065,15 +9072,28 @@ export default function App() {
         }
         const savedData = await response.json().catch(() => null);
         alert("¡Encuesta guardada con éxito!");
-        fetchSurveys();
-        if (!surveyData.id && savedData) {
-          const newId = savedData.id || savedData._id;
-          if (newId) {
-            setSurveyToEdit(normalizeSurveyForEditor(savedData));
-            setEditingSurveyId(String(newId));
+        fetchSurveys({ silent: true });
+        // Sync editor from local payload + server id (avoid destructive refetch wipe)
+        const newId = savedData?.id || savedData?._id || surveyData.id;
+        const synced = normalizeSurveyForEditor({
+          ...(savedData && typeof savedData === 'object' ? savedData : {}),
+          ...surveyData,
+          id: newId ? String(newId) : surveyData.id,
+          questions: surveyData.questions,
+          sections: surveyData.sections,
+          webhook_secret_set: Boolean(
+            savedData?.webhook_secret_set ?? surveyData.webhook_secret_set
+          ),
+        });
+        setSurveyToEdit(synced);
+        if (newId) {
+          const idStr = String(newId);
+          if (!surveyData.id || String(surveyData.id) !== idStr) {
+            skipNextSurveyFetchRef.current = true;
           }
-          setView('editor');
+          setEditingSurveyId(idStr);
         }
+        setView('editor');
     } catch (error) {
         console.error("Error al guardar la encuesta:", error);
         alert(`Hubo un error al guardar la encuesta: ${error.message}`);
@@ -9366,6 +9386,7 @@ export default function App() {
                   alert('Error: La encuesta no tiene un ID válido');
                   return;
                 }
+                skipNextSurveyFetchRef.current = false;
                 setEditingSurveyId(surveyId); // Set the ID of the survey to edit
                 // setView('editor') will be called by useEffect
               }}
