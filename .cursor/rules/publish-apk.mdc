@@ -1,0 +1,29 @@
+---
+description: Al decir "publica el apk", ejecutar bump+build+commit+push+deploy EasyPanel
+alwaysApply: true
+---
+
+# Publicar APK
+
+Cuando el usuario diga **publica el apk** (o equivalente: publicar APK, release APK, subir APK):
+
+1. Ejecutar desde el repo:
+   ```bash
+   cd survey_mobile && ./publish_apk.sh
+   ```
+   (bump patch+versionCode, `flutter build apk --release`, copia a `releases/apk/` y `backend/apk_releases/`).
+
+2. Commit y push (sin pedir confirmación extra si ya pidió publicar):
+   - Incluir: `survey_mobile/pubspec.yaml`, cambios Flutter relevantes, `releases/apk/version.json`, `releases/apk/survey-app-latest.apk`, `backend/apk_releases/version.json`, `backend/apk_releases/survey-app-latest.apk`.
+   - Mensaje tipo: `feat/fix: APK vX.Y.Z+N — <motivo breve>`.
+   - `git push origin HEAD`.
+
+3. Disparar deploy EasyPanel:
+   ```bash
+   curl -sS "http://72.60.24.244:3000/api/deploy/2ce813971cbb88385d91678de37331fa499e857a9af39a6b"
+   ```
+
+4. Confirmar al usuario la nueva versión (`version` + `versionCode` + `filename` de `version.json`).
+
+**No** intentar `publish_apk.sh` dentro de la consola del contenedor EasyPanel.  
+**No** asumir que un deploy solo actualiza el APK sin haber corrido `publish_apk.sh`.
