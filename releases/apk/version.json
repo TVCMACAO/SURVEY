@@ -1,9 +1,9 @@
 {
-  "version": "1.1.1",
-  "versionCode": 101,
-  "filename": "survey-app-v1.1.1-101.apk",
+  "version": "1.1.2",
+  "versionCode": 102,
+  "filename": "survey-app-v1.1.2-102.apk",
   "download_url": "/api/public/apk/download/",
-  "min_supported_version_code": 91,
-  "release_notes": "Survey App Android 1.1.1 (101)",
+  "min_supported_version_code": 92,
+  "release_notes": "Survey App Android 1.1.2 (102)",
   "play_store_url": ""
 }

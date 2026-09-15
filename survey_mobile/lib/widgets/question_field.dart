@@ -107,15 +107,32 @@ class _QuestionFieldState extends State<QuestionField> {
     final q = widget.question;
     if (q.isTitle) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
-        child: Text(
-          q.questionText,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-            height: 1.3,
-          ),
+        padding: const EdgeInsets.fromLTRB(4, 8, 4, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              q.questionText,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+                height: 1.3,
+              ),
+            ),
+            if (q.description != null && q.description!.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                q.description!,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textMuted,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ],
         ),
       );
     }
