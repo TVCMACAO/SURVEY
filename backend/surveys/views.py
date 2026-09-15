@@ -363,13 +363,30 @@ class PublicApkDownloadView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        path = os.path.join(_apk_releases_dir(), 'survey-app-latest.apk')
+        releases_dir = _apk_releases_dir()
+        path = os.path.join(releases_dir, 'survey-app-latest.apk')
         if not os.path.isfile(path) or os.path.getsize(path) < 1000:
             return Response({'detail': 'APK no disponible en el servidor'}, status=status.HTTP_404_NOT_FOUND)
+
+        filename = 'survey-app-latest.apk'
+        version_path = os.path.join(releases_dir, 'version.json')
+        if os.path.isfile(version_path):
+            try:
+                import json
+                with open(version_path, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+                candidate = (meta.get('filename') or '').strip()
+                if candidate and '/' not in candidate and '\\' not in candidate and '..' not in candidate:
+                    filename = candidate
+                elif meta.get('version') is not None and meta.get('versionCode') is not None:
+                    filename = f"survey-app-v{meta['version']}-{meta['versionCode']}.apk"
+            except Exception:
+                pass
+
         response = FileResponse(
             open(path, 'rb'),
             as_attachment=True,
-            filename='survey-app-latest.apk',
+            filename=filename,
             content_type='application/vnd.android.package-archive',
         )
         response['Content-Length'] = str(os.path.getsize(path))

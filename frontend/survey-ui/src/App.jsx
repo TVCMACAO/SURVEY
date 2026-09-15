@@ -50,11 +50,17 @@ const ApkDownloadButton = ({ className = '', compact = false }) => {
   const label = compact
     ? (isPlay ? 'App Android' : 'Descargar APK')
     : (isPlay ? 'Abrir en Google Play' : 'Descargar app Android');
-  const versionHint = meta?.version ? ` v${meta.version}` : '';
+  const versionHint = meta?.version
+    ? (meta?.versionCode != null ? ` v${meta.version} (${meta.versionCode})` : ` v${meta.version}`)
+    : '';
+  const downloadFilename = meta?.filename
+    || (meta?.version != null && meta?.versionCode != null
+      ? `survey-app-v${meta.version}-${meta.versionCode}.apk`
+      : 'survey-app-latest.apk');
 
   const handleDownloadClick = () => {
     // #region agent log
-    fetch('http://localhost:7388/ingest/c1a5669f-3502-446d-95b4-9eeb97be4158',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4a68b9'},body:JSON.stringify({sessionId:'4a68b9',runId:'pre-fix',hypothesisId:'C',location:'App.jsx:ApkDownloadButton:click',message:'download link clicked',data:{downloadHref,isPlay,hasDownloadAttr:!isPlay},timestamp:Date.now()})}).catch(()=>{});
+    fetch('http://localhost:7388/ingest/c1a5669f-3502-446d-95b4-9eeb97be4158',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4a68b9'},body:JSON.stringify({sessionId:'4a68b9',runId:'pre-fix',hypothesisId:'C',location:'App.jsx:ApkDownloadButton:click',message:'download link clicked',data:{downloadHref,isPlay,hasDownloadAttr:!isPlay,downloadFilename},timestamp:Date.now()})}).catch(()=>{});
     // #endregion
     fetch(downloadHref, { method: 'HEAD', cache: 'no-store' })
       .then((r) => {
@@ -75,7 +81,7 @@ const ApkDownloadButton = ({ className = '', compact = false }) => {
         href={downloadHref}
         target={isPlay ? '_blank' : undefined}
         rel={isPlay ? 'noopener noreferrer' : undefined}
-        download={isPlay ? undefined : 'survey-app-latest.apk'}
+        download={isPlay ? undefined : downloadFilename}
         onClick={handleDownloadClick}
         className={
           className ||
