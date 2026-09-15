@@ -104,3 +104,6 @@ CONTEXTO_CONVERSACION.md
 GEMINI.md
 IMPLEMENTACION_COMPLETA.md
 
+
+# APK binaries (version.json se versiona)
+releases/apk/*.apk

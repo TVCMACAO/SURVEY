@@ -79,6 +79,7 @@ services:
       - "8085:80"
     volumes:
       - static_volume:/app/staticfiles
+      - ./releases:/releases:ro
     depends_on:
       - django
     restart: unless-stopped

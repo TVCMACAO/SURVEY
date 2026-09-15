@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'services/auth_service.dart';
 import 'services/sync_service.dart';
+import 'services/app_update_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/surveys_list_screen.dart';
 
@@ -44,14 +45,21 @@ class _AuthGateState extends State<AuthGate> {
 
   Future<void> _checkSession() async {
     final user = await AuthService.instance.loadPersistedSession();
-    if (mounted) {
-      setState(() => _checking = false);
-      if (user != null) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const SurveysListScreen()),
-        );
-      }
+    if (!mounted) return;
+    setState(() => _checking = false);
+
+    if (user != null && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const SurveysListScreen()),
+      );
+      return;
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        AppUpdateService.instance.checkAndPrompt(context);
+      }
+    });
   }
 
   @override

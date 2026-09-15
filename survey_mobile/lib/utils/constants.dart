@@ -1,7 +1,18 @@
 class ApiConstants {
   // URL de producción en EasyPanel
   static const String baseUrl = 'https://chat-survey-app.rhfh8t.easypanel.host/api';
-  
+
+  /// Origen web (sin /api) para releases/APK.
+  static String get appOrigin {
+    final u = Uri.parse(baseUrl);
+    final path = u.path.endsWith('/api')
+        ? u.path.substring(0, u.path.length - 4)
+        : u.path.replaceAll(RegExp(r'/api/?$'), '');
+    return u.replace(path: path.isEmpty ? '' : path).toString().replaceAll(RegExp(r'/$'), '');
+  }
+
+  static String get apkVersionUrl => '$appOrigin/releases/apk/version.json';
+
   // Endpoints
   static const String login = '/token/';
   static const String refreshToken = '/token/refresh/';

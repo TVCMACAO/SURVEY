@@ -34,21 +34,51 @@ survey-app/
 
 ---
 
-## 2. Generar el APK
+## 2. Generar y publicar el APK
 
 Requisitos: Flutter instalado y configurado.
 
 ```bash
 cd survey_mobile
+# Subir version en pubspec.yaml primero (ej. 1.1.1+101)
 flutter build apk --release
+./copy_apk_to_root.sh
 ```
 
-- APK generado: `survey_mobile/build/app/outputs/flutter-apk/app-release.apk`
-- Copia habitual a la raíz del proyecto con nombre versionado:
-  ```bash
-  cp survey_mobile/build/app/outputs/flutter-apk/app-release.apk survey-app-v1.0.XX-release.apk
-  ```
-- Versión actual en `survey_mobile/pubspec.yaml`: **1.0.86+87**. Al generar nuevo APK, subir `version` (p. ej. `1.0.87+88`).
+Esto deja:
+
+- `releases/apk/survey-app-latest.apk` — descargable en la web (`/releases/apk/survey-app-latest.apk`)
+- `releases/apk/version.json` — metadata para la web y el chequeo de updates en la app
+- `survey-app-vX.Y.Z-release.apk` — copia versionada en la raíz del proyecto
+
+Nginx sirve `/releases/` montando `./releases` (ver `docker-compose.yml`). Tras publicar un APK nuevo no hace falta rebuild de nginx si el volumen ya está montado.
+
+**Updates en la app:** al abrir, Flutter lee `version.json`, compara `versionCode` y muestra diálogo Actualizar / Más tarde (o forzado si está bajo `min_supported_version_code`). Descarga el APK y abre el instalador. **No hay instalación silenciosa** fuera de Google Play.
+
+**Importante:** no cambies el keystore (`survey-release.jks`) o las actualizaciones encima fallarán.
+
+Versión de referencia en `pubspec.yaml`: **1.1.0+100**.
+
+---
+
+## 2.1 Google Play (confianza en dispositivos)
+
+Para que Android trate la app como de confianza (sin “orígenes desconocidos”) y actualice vía Play:
+
+1. Cuenta en [Google Play Console](https://play.google.com/console) (organización).
+2. Crear app con package `com.clinicamaicao.survey` (mismo `applicationId`).
+3. Usar el mismo keystore de upload / Play App Signing.
+4. Generar AAB:
+   ```bash
+   cd survey_mobile
+   flutter build appbundle --release
+   # salida: build/app/outputs/bundle/release/app-release.aab
+   ```
+5. Subir a testing interno → producción o track privado (solo personal interno).
+6. Cuando exista la ficha, poner la URL en `releases/apk/version.json` → `play_store_url` (el botón web y el diálogo de update preferirán Play).
+7. En EasyPanel/VPS, asegúrate de desplegar también la carpeta `releases/` con el APK de respaldo si aún lo ofreces.
+
+Checklist assets Play: icono 512, feature graphic, capturas, política de privacidad, clasificación de contenido.
 
 ---
 

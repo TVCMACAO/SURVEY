@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/survey.dart';
 import '../services/auth_service.dart';
+import '../services/app_update_service.dart';
 import '../services/network_service.dart';
 import '../services/survey_service.dart';
 import '../services/sync_service.dart';
@@ -32,6 +33,11 @@ class _SurveysListScreenState extends State<SurveysListScreen> {
     _loadSurveys();
     SyncService.instance.stateStream.listen((s) {
       if (mounted) setState(() => _pendingSync = s.pendingCount);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        AppUpdateService.instance.checkAndPrompt(context);
+      }
     });
   }
 

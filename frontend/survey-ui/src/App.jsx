@@ -12,6 +12,56 @@ import { authenticatedFetch, isAuthenticated, login, logout, ensureFreshToken } 
 import { useBreakpoint } from './hooks/useBreakpoint';
 import { APP_VERSION_LABEL, APP_VERSION, GIT_SHA, BUILD_TIME } from './version';
 import * as XLSX from 'xlsx';
+
+const APK_VERSION_URL = '/releases/apk/version.json';
+const APK_DOWNLOAD_FALLBACK = '/releases/apk/survey-app-latest.apk';
+
+/** Botón/enlace para descargar el APK Android (login y dashboard). */
+const ApkDownloadButton = ({ className = '', compact = false }) => {
+  const [meta, setMeta] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(APK_VERSION_URL, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data) setMeta(data);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const downloadHref = meta?.play_store_url || meta?.download_url || APK_DOWNLOAD_FALLBACK;
+  const isPlay = Boolean(meta?.play_store_url);
+  const label = compact
+    ? (isPlay ? 'App Android' : 'Descargar APK')
+    : (isPlay ? 'Abrir en Google Play' : 'Descargar app Android');
+  const versionHint = meta?.version ? ` v${meta.version}` : '';
+
+  return (
+    <div className={compact ? '' : 'space-y-1'}>
+      <a
+        href={downloadHref}
+        target={isPlay ? '_blank' : undefined}
+        rel={isPlay ? 'noopener noreferrer' : undefined}
+        download={isPlay ? undefined : 'survey-app-latest.apk'}
+        className={
+          className ||
+          'inline-flex items-center justify-center gap-2 w-full px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-lg transition-transform active:scale-95'
+        }
+      >
+        <FontAwesomeIcon icon={faDownload} size="sm" className="fa-icon-force-white" />
+        {label}{!compact && versionHint}
+      </a>
+      {!compact && !isPlay && (
+        <p className="text-[11px] text-center text-gray-500">
+          En Android puede pedir permitir instalación desde este origen.
+        </p>
+      )}
+    </div>
+  );
+};
+
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 import {
@@ -8384,7 +8434,11 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                    </div>
                  )}
                </div>
-               <div className="flex gap-3 flex-shrink-0">
+               <div className="flex gap-3 flex-shrink-0 flex-wrap justify-end">
+                 <ApkDownloadButton
+                   compact
+                   className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-xl flex items-center gap-2 transition-all duration-200 hover:scale-105 active:scale-95"
+                 />
                  {canViewUsers && onViewUsers && (
                    <button 
                      onClick={onViewUsers} 
@@ -9248,6 +9302,9 @@ export default function App() {
               Iniciar Sesión
             </button>
           </form>
+          <div className="mt-6 pt-5 border-t border-gray-100">
+            <ApkDownloadButton />
+          </div>
         </div>
       </div>
     );
