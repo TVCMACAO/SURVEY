@@ -61,13 +61,35 @@ class AppUpdateService {
     return null;
   }
 
-  Future<void> checkAndPrompt(BuildContext context) async {
+  Future<void> checkAndPrompt(
+    BuildContext context, {
+    bool notifyIfUpToDate = false,
+  }) async {
     final remote = await fetchRemoteRelease();
-    if (remote == null || !context.mounted) return;
+    if (!context.mounted) return;
+    if (remote == null) {
+      if (notifyIfUpToDate) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo comprobar actualizaciones. Revisa la conexión.')),
+        );
+      }
+      return;
+    }
 
     final info = await PackageInfo.fromPlatform();
     final localCode = int.tryParse(info.buildNumber) ?? 0;
-    if (remote.versionCode <= localCode) return;
+    if (remote.versionCode <= localCode) {
+      if (notifyIfUpToDate && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Ya tienes la última versión: v${info.version} (${info.buildNumber})',
+            ),
+          ),
+        );
+      }
+      return;
+    }
 
     final forced = localCode < remote.minSupportedVersionCode;
     final notes = remote.releaseNotes.isNotEmpty

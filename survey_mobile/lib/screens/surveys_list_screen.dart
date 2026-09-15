@@ -140,9 +140,17 @@ class _SurveysListScreenState extends State<SurveysListScreen> {
                   : const Icon(Icons.sync_rounded),
             ),
             IconButton(
-              tooltip: 'Actualizar',
+              tooltip: 'Recargar lista',
               onPressed: _loading ? null : _loadSurveys,
               icon: const Icon(Icons.refresh_rounded),
+            ),
+            IconButton(
+              tooltip: 'Actualizar app',
+              onPressed: () => AppUpdateService.instance.checkAndPrompt(
+                context,
+                notifyIfUpToDate: true,
+              ),
+              icon: const Icon(Icons.system_update_alt_rounded),
             ),
             IconButton(
               tooltip: 'Cerrar sesión',

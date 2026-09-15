@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/auth_service.dart';
 import '../services/network_service.dart';
 import '../services/survey_service.dart';
@@ -21,6 +22,25 @@ class _LoginScreenState extends State<LoginScreen> {
   final AuthService _auth = AuthService.instance;
   bool _isLoading = false;
   String? _errorMessage;
+  String _versionLabel = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() {
+        _versionLabel = 'v${info.version} (${info.buildNumber})';
+      });
+    } catch (_) {
+      // ignore
+    }
+  }
 
   @override
   void dispose() {
@@ -180,6 +200,18 @@ class _LoginScreenState extends State<LoginScreen> {
                               : const Text('Iniciar sesión'),
                         ),
                       ),
+                      if (_versionLabel.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          _versionLabel,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
