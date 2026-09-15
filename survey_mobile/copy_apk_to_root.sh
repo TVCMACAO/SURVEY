@@ -43,12 +43,19 @@ cat > "$VERSION_JSON" <<EOF
 {
   "version": "${VERSION_NAME}",
   "versionCode": ${VERSION_CODE},
-  "download_url": "/releases/apk/survey-app-latest.apk",
+  "download_url": "/survey-app-latest.apk",
   "min_supported_version_code": ${MIN_SUPPORTED},
   "release_notes": "Survey App Android ${VERSION_NAME} (${VERSION_CODE})",
   "play_store_url": "${PLAY_URL}"
 }
 EOF
+
+# Copia también a la raíz pública del frontend (si existe dist en build local)
+HTML_DIR="$ROOT_DIR/frontend/survey-ui/dist"
+if [ -d "$HTML_DIR" ]; then
+  cp "$LATEST_APK" "$HTML_DIR/survey-app-latest.apk"
+  cp "$VERSION_JSON" "$HTML_DIR/apk-version.json"
+fi
 
 DEST="$ROOT_DIR/survey-app-v${VERSION_NAME}-release.apk"
 cp "$APK_SRC" "$DEST"

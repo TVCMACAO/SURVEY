@@ -86,7 +86,6 @@ services:
       - "80:80"
     volumes:
       - static_volume:/app/staticfiles
-      - ./releases:/releases:ro
     depends_on:
       django:
         condition: service_healthy

@@ -24,6 +24,10 @@ FROM nginx:1.21-alpine
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 # APK + version.json para descarga pública (/releases/apk/...)
 COPY releases /releases
+# También en la raíz del frontend: funciona aunque falte location /releases
+# (try_files encuentra el archivo antes de caer a index.html)
+COPY releases/apk/survey-app-latest.apk /usr/share/nginx/html/survey-app-latest.apk
+COPY releases/apk/version.json /usr/share/nginx/html/apk-version.json
 # Copy nginx configuration
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 EXPOSE 80
