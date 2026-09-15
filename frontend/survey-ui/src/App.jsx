@@ -3592,7 +3592,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                <span className="sm:hidden">Vista</span>
              </button>
              <button onClick={handlePublish} className="flex-1 md:flex-none px-4 md:px-5 py-2 md:py-2.5 bg-gray-900 hover:bg-black text-white rounded-xl font-bold text-xs md:text-sm shadow-xl shadow-gray-900/10 flex items-center justify-center gap-2 transition-transform active:scale-95">
-               Publicar
+               Guardar
              </button>
            </div>
         </header>
@@ -8977,10 +8977,17 @@ export default function App() {
           }
           throw new Error(errorMessage);
         }
+        const savedData = await response.json().catch(() => null);
         alert("¡Encuesta guardada con éxito!");
-        fetchSurveys(); // Recargar la lista de encuestas
-        setView('dashboard'); // Volver al dashboard
-        setEditingSurveyId(null); // Clear editing state
+        fetchSurveys();
+        if (!surveyData.id && savedData) {
+          const newId = savedData.id || savedData._id;
+          if (newId) {
+            setSurveyToEdit(normalizeSurveyForEditor(savedData));
+            setEditingSurveyId(String(newId));
+          }
+          setView('editor');
+        }
     } catch (error) {
         console.error("Error al guardar la encuesta:", error);
         alert(`Hubo un error al guardar la encuesta: ${error.message}`);
