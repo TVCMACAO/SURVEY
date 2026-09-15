@@ -22,6 +22,8 @@ RUN if [ -z "$APP_VERSION" ] && [ -f /VERSION ]; then export APP_VERSION="$(cat 
 FROM nginx:1.21-alpine
 # Copy built frontend
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
+# APK + version.json para descarga pública (/releases/apk/...)
+COPY releases /releases
 # Copy nginx configuration
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 EXPOSE 80

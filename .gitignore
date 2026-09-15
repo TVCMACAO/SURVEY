@@ -107,3 +107,6 @@ IMPLEMENTACION_COMPLETA.md
 
 # APK binaries (version.json se versiona)
 releases/apk/*.apk
+
+# Permitir el APK de descarga pública en el repo/imagen nginx
+!releases/apk/survey-app-latest.apk
