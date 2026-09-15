@@ -11,7 +11,8 @@ class ApiConstants {
     return u.replace(path: path.isEmpty ? '' : path).toString().replaceAll(RegExp(r'/$'), '');
   }
 
-  static String get apkVersionUrl => '$appOrigin/releases/apk/version.json';
+  static String get apkVersionUrl => '$baseUrl/public/apk/version/';
+  static String get apkDownloadUrl => '$baseUrl/public/apk/download/';
 
   // Endpoints
   static const String login = '/token/';

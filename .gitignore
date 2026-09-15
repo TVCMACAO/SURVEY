@@ -110,3 +110,6 @@ releases/apk/*.apk
 
 # Permitir el APK de descarga pública en el repo/imagen nginx
 !releases/apk/survey-app-latest.apk
+
+!backend/apk_releases/survey-app-latest.apk
+!backend/apk_releases/version.json

@@ -1,7 +1,7 @@
 {
   "version": "1.1.0",
   "versionCode": 100,
-  "download_url": "/survey-app-latest.apk",
+  "download_url": "/api/public/apk/download/",
   "min_supported_version_code": 90,
   "release_notes": "Survey App Android 1.1.0 (100)",
   "play_store_url": ""

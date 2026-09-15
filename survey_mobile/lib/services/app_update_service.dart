@@ -28,7 +28,7 @@ class AppReleaseInfo {
   });
 
   factory AppReleaseInfo.fromJson(Map<String, dynamic> json) {
-    final relative = (json['download_url'] ?? '/releases/apk/survey-app-latest.apk').toString();
+    final relative = (json['download_url'] ?? '/api/public/apk/download/').toString();
     final absolute = relative.startsWith('http')
         ? relative
         : '${ApiConstants.appOrigin}${relative.startsWith('/') ? relative : '/$relative'}';

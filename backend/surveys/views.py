@@ -332,6 +332,51 @@ class HealthCheckView(APIView):
         return Response({"status": "ok"})
 
 
+def _apk_releases_dir():
+    """Directorio con survey-app-latest.apk y version.json (dentro de backend/)."""
+    return os.path.join(django_settings.BASE_DIR, 'apk_releases')
+
+
+class PublicApkVersionView(APIView):
+    """GET: metadata de versión del APK (público)."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        path = os.path.join(_apk_releases_dir(), 'version.json')
+        if not os.path.isfile(path):
+            return Response({'detail': 'version.json no disponible'}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            import json
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            return Response({'detail': f'No se pudo leer version.json: {e}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # Forzar URL de descarga por API (evita SPA/index.html en nginx)
+        data['download_url'] = '/api/public/apk/download/'
+        return Response(data)
+
+
+class PublicApkDownloadView(APIView):
+    """GET: descarga el APK firmado (público)."""
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        path = os.path.join(_apk_releases_dir(), 'survey-app-latest.apk')
+        if not os.path.isfile(path) or os.path.getsize(path) < 1000:
+            return Response({'detail': 'APK no disponible en el servidor'}, status=status.HTTP_404_NOT_FOUND)
+        response = FileResponse(
+            open(path, 'rb'),
+            as_attachment=True,
+            filename='survey-app-latest.apk',
+            content_type='application/vnd.android.package-archive',
+        )
+        response['Content-Length'] = str(os.path.getsize(path))
+        response['Cache-Control'] = 'no-cache'
+        return response
+
+
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
     Vista personalizada para obtener tokens JWT.

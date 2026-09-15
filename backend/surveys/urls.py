@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     HealthCheckView,
+    PublicApkVersionView, PublicApkDownloadView,
     CustomTokenObtainPairView,
     SurveyGroupListCreate, SurveyGroupRetrieveUpdateDestroy, SurveyGroupSmtpTest,
     SurveyListCreate, SurveyRetrieveUpdateDestroy, SurveyWebhookTest, SurveyWebhookBackfill,
@@ -17,6 +18,8 @@ from .views import (
 
 urlpatterns = [
     path('health/', HealthCheckView.as_view(), name='health'),
+    path('public/apk/version/', PublicApkVersionView.as_view(), name='public-apk-version'),
+    path('public/apk/download/', PublicApkDownloadView.as_view(), name='public-apk-download'),
     # Autenticación JWT
     path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

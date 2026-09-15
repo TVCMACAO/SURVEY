@@ -43,12 +43,18 @@ cat > "$VERSION_JSON" <<EOF
 {
   "version": "${VERSION_NAME}",
   "versionCode": ${VERSION_CODE},
-  "download_url": "/survey-app-latest.apk",
+  "download_url": "/api/public/apk/download/",
   "min_supported_version_code": ${MIN_SUPPORTED},
   "release_notes": "Survey App Android ${VERSION_NAME} (${VERSION_CODE})",
   "play_store_url": "${PLAY_URL}"
 }
 EOF
+
+# Copia para API Django (EasyPanel sirve /api por gunicorn)
+BACKEND_APK_DIR="$ROOT_DIR/backend/apk_releases"
+mkdir -p "$BACKEND_APK_DIR"
+cp "$LATEST_APK" "$BACKEND_APK_DIR/survey-app-latest.apk"
+cp "$VERSION_JSON" "$BACKEND_APK_DIR/version.json"
 
 # Copia también a la raíz pública del frontend (si existe dist en build local)
 HTML_DIR="$ROOT_DIR/frontend/survey-ui/dist"

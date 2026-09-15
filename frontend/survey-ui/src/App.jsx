@@ -13,8 +13,8 @@ import { useBreakpoint } from './hooks/useBreakpoint';
 import { APP_VERSION_LABEL, APP_VERSION, GIT_SHA, BUILD_TIME } from './version';
 import * as XLSX from 'xlsx';
 
-const APK_VERSION_URL = '/apk-version.json';
-const APK_DOWNLOAD_FALLBACK = '/survey-app-latest.apk';
+const APK_VERSION_URL = '/api/public/apk/version/';
+const APK_DOWNLOAD_FALLBACK = '/api/public/apk/download/';
 
 /** Botón/enlace para descargar el APK Android (login y dashboard). */
 const ApkDownloadButton = ({ className = '', compact = false }) => {
