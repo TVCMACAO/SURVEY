@@ -24,24 +24,13 @@ const ApkDownloadButton = ({ className = '', compact = false }) => {
     let cancelled = false;
     fetch(APK_VERSION_URL, { cache: 'no-store' })
       .then(async (r) => {
-        const text = await r.text();
-        // #region agent log
-        fetch('http://localhost:7388/ingest/c1a5669f-3502-446d-95b4-9eeb97be4158',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4a68b9'},body:JSON.stringify({sessionId:'4a68b9',runId:'pre-fix',hypothesisId:'A',location:'App.jsx:ApkDownloadButton:versionFetch',message:'version.json response',data:{status:r.status,ok:r.ok,contentType:r.headers.get('content-type'),contentLength:r.headers.get('content-length'),bodyLen:text.length,bodyPreview:text.slice(0,120),looksLikeHtml:/^\s*</.test(text),href:window.location.href},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         if (!r.ok) return null;
-        try { return JSON.parse(text); } catch { return null; }
+        try { return await r.json(); } catch { return null; }
       })
       .then((data) => {
         if (!cancelled && data) setMeta(data);
-        // #region agent log
-        fetch('http://localhost:7388/ingest/c1a5669f-3502-446d-95b4-9eeb97be4158',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4a68b9'},body:JSON.stringify({sessionId:'4a68b9',runId:'pre-fix',hypothesisId:'C',location:'App.jsx:ApkDownloadButton:meta',message:'parsed version meta',data:{hasMeta:Boolean(data),version:data?.version||null,downloadUrl:data?.download_url||null,playStoreUrl:data?.play_store_url||null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
       })
-      .catch((err) => {
-        // #region agent log
-        fetch('http://localhost:7388/ingest/c1a5669f-3502-446d-95b4-9eeb97be4158',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4a68b9'},body:JSON.stringify({sessionId:'4a68b9',runId:'pre-fix',hypothesisId:'A',location:'App.jsx:ApkDownloadButton:versionError',message:'version.json fetch failed',data:{error:String(err)},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      });
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -58,23 +47,6 @@ const ApkDownloadButton = ({ className = '', compact = false }) => {
       ? `survey-app-v${meta.version}-${meta.versionCode}.apk`
       : 'survey-app-latest.apk');
 
-  const handleDownloadClick = () => {
-    // #region agent log
-    fetch('http://localhost:7388/ingest/c1a5669f-3502-446d-95b4-9eeb97be4158',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4a68b9'},body:JSON.stringify({sessionId:'4a68b9',runId:'pre-fix',hypothesisId:'C',location:'App.jsx:ApkDownloadButton:click',message:'download link clicked',data:{downloadHref,isPlay,hasDownloadAttr:!isPlay,downloadFilename},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    fetch(downloadHref, { method: 'HEAD', cache: 'no-store' })
-      .then((r) => {
-        // #region agent log
-        fetch('http://localhost:7388/ingest/c1a5669f-3502-446d-95b4-9eeb97be4158',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4a68b9'},body:JSON.stringify({sessionId:'4a68b9',runId:'pre-fix',hypothesisId:'B',location:'App.jsx:ApkDownloadButton:apkHead',message:'HEAD apk response',data:{status:r.status,contentType:r.headers.get('content-type'),contentLength:r.headers.get('content-length'),contentDisposition:r.headers.get('content-disposition')},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      })
-      .catch((err) => {
-        // #region agent log
-        fetch('http://localhost:7388/ingest/c1a5669f-3502-446d-95b4-9eeb97be4158',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'4a68b9'},body:JSON.stringify({sessionId:'4a68b9',runId:'pre-fix',hypothesisId:'B',location:'App.jsx:ApkDownloadButton:apkHeadError',message:'HEAD apk failed',data:{error:String(err)},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-      });
-  };
-
   return (
     <div className={compact ? '' : 'space-y-1'}>
       <a
@@ -82,7 +54,6 @@ const ApkDownloadButton = ({ className = '', compact = false }) => {
         target={isPlay ? '_blank' : undefined}
         rel={isPlay ? 'noopener noreferrer' : undefined}
         download={isPlay ? undefined : downloadFilename}
-        onClick={handleDownloadClick}
         className={
           className ||
           'inline-flex items-center justify-center gap-2 w-full px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm shadow-lg transition-transform active:scale-95'
