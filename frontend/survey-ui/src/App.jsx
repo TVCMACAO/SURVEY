@@ -8387,6 +8387,7 @@ const PublicAttendanceTable = ({ surveyId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
+  const [codeQuery, setCodeQuery] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -8407,6 +8408,18 @@ const PublicAttendanceTable = ({ surveyId }) => {
     return () => { cancelled = true; };
   }, [surveyId]);
 
+  const normalizeCodeQuery = (q) => String(q || '').replace(/\D+/g, '');
+  const filteredRows = (() => {
+    const rows = data?.rows || [];
+    const q = normalizeCodeQuery(codeQuery);
+    if (!q) return rows;
+    return rows.filter((row) => {
+      if (!row.code) return false;
+      const code = String(row.code).replace(/\D+/g, '');
+      return code.includes(q) || code.padStart(3, '0').includes(q.padStart(Math.min(q.length, 3), '0'));
+    });
+  })();
+
   return (
     <div className="min-h-screen w-full bg-[#f8fafc] font-sans">
       <div className="max-w-4xl mx-auto px-4 py-10">
@@ -8420,9 +8433,25 @@ const PublicAttendanceTable = ({ surveyId }) => {
         )}
         {!loading && !error && data && (
           <>
-            <p className="text-sm text-gray-600 mb-4">
-              {data.attended_count} asistieron de {data.total} inscritos
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+              <p className="text-sm text-gray-600">
+                {data.attended_count} asistieron de {data.total} inscritos
+                {normalizeCodeQuery(codeQuery) ? (
+                  <span className="text-amber-700 font-semibold"> · {filteredRows.length} resultado(s)</span>
+                ) : null}
+              </p>
+              <label className="block sm:w-56">
+                <span className="sr-only">Buscar por número asignado</span>
+                <input
+                  type="search"
+                  inputMode="numeric"
+                  placeholder="Buscar por número…"
+                  value={codeQuery}
+                  onChange={(e) => setCodeQuery(e.target.value)}
+                  className="w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-400"
+                />
+              </label>
+            </div>
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -8438,8 +8467,14 @@ const PublicAttendanceTable = ({ surveyId }) => {
                     <tr>
                       <td colSpan={4} className="px-4 py-8 text-center text-gray-400">Sin inscritos aún</td>
                     </tr>
+                  ) : filteredRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
+                        No hay coincidencias para el número «{codeQuery}»
+                      </td>
+                    </tr>
                   ) : (
-                    (data.rows || []).map((row) => (
+                    filteredRows.map((row) => (
                       <tr key={row.id} className="border-t border-gray-100">
                         <td className="px-4 py-3 font-semibold text-gray-800">{row.name}</td>
                         <td className="px-4 py-3 text-gray-600 font-mono">{row.document}</td>
