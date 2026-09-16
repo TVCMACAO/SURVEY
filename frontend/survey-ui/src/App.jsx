@@ -8327,21 +8327,39 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
         </div>
 
         {survey.attendance_enabled && (
-          <div className="mb-6 p-4 rounded-xl border-2 border-amber-200 bg-amber-50">
-            <div className="font-bold text-amber-900 mb-1">Tabla pública de asistencia</div>
-            <p className="text-xs text-amber-800 mb-3 break-all">
-              {`${window.location.origin}/public/survey/${survey.id || survey._id}/asistencia`}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                const surveyId = survey.id || survey._id;
-                copyToClipboard(`${window.location.origin}/public/survey/${surveyId}/asistencia`);
-              }}
-              className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm transition-colors"
-            >
-              Copiar enlace de asistencia
-            </button>
+          <div className="mb-6 space-y-3">
+            <div className="p-4 rounded-xl border-2 border-amber-200 bg-amber-50">
+              <div className="font-bold text-amber-900 mb-1">Tabla pública de asistencia</div>
+              <p className="text-xs text-amber-800 mb-3 break-all">
+                {`${window.location.origin}/public/survey/${survey.id || survey._id}/asistencia`}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const surveyId = survey.id || survey._id;
+                  copyToClipboard(`${window.location.origin}/public/survey/${surveyId}/asistencia`);
+                }}
+                className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm transition-colors"
+              >
+                Copiar enlace de asistencia
+              </button>
+            </div>
+            <div className="p-4 rounded-xl border-2 border-indigo-200 bg-indigo-50">
+              <div className="font-bold text-indigo-900 mb-1">Verificación (requiere login)</div>
+              <p className="text-xs text-indigo-800 mb-3 break-all">
+                {`${window.location.origin}/survey/${survey.id || survey._id}/asistencia/verificar`}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const surveyId = survey.id || survey._id;
+                  copyToClipboard(`${window.location.origin}/survey/${surveyId}/asistencia/verificar`);
+                }}
+                className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-colors"
+              >
+                Copiar enlace de verificación
+              </button>
+            </div>
           </div>
         )}
         
@@ -8468,12 +8486,50 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.detail || 'No se pudo verificar.');
       setResult(body);
+      setDocumento('');
     } catch (err) {
       setError(err.message || 'Error');
     } finally {
       setLoading(false);
     }
   };
+
+  const formBody = (
+    <form onSubmit={handleVerify} className="space-y-4">
+      <div>
+        <label className="block text-sm font-bold text-gray-700 mb-2">Cédula / documento</label>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={documento}
+          onChange={(e) => setDocumento(e.target.value)}
+          className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500"
+          placeholder="Número de cédula"
+          required
+          autoFocus
+        />
+      </div>
+      {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+      {result && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+          <p className="text-sm text-emerald-800 mb-1">{result.name || 'Inscrito'}</p>
+          <p className="text-xs text-emerald-700 mb-2">{result.already_assigned ? 'Número ya asignado' : 'Número asignado'}</p>
+          <p className="text-4xl font-black text-amber-700 tracking-widest">{result.code}</p>
+        </div>
+      )}
+      <button
+        type="submit"
+        disabled={loading}
+        className="w-full px-4 py-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-bold"
+      >
+        {loading ? 'Verificando…' : 'Verificar y asignar número'}
+      </button>
+    </form>
+  );
+
+  if (!onClose) {
+    return formBody;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -8485,36 +8541,66 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
           </button>
         </div>
         <p className="text-sm text-gray-600 mb-4">{survey.title}</p>
-        <form onSubmit={handleVerify} className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">Cédula / documento</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={documento}
-              onChange={(e) => setDocumento(e.target.value)}
-              className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500"
-              placeholder="Número de cédula"
-              required
-              autoFocus
-            />
-          </div>
-          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
-          {result && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
-              <p className="text-sm text-emerald-800 mb-1">{result.name || 'Inscrito'}</p>
-              <p className="text-xs text-emerald-700 mb-2">{result.already_assigned ? 'Número ya asignado' : 'Número asignado'}</p>
-              <p className="text-4xl font-black text-amber-700 tracking-widest">{result.code}</p>
-            </div>
+        {formBody}
+      </div>
+    </div>
+  );
+};
+
+const AttendanceVerifyPage = ({ surveyId, onBack }) => {
+  const [survey, setSurvey] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await authenticatedFetch(`/api/surveys/${surveyId}/`);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.detail || 'No se pudo cargar la encuesta.');
+        if (!body.attendance_enabled) {
+          throw new Error('La asistencia no está activa en esta encuesta.');
+        }
+        if (!cancelled) setSurvey(body);
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'Error');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [surveyId]);
+
+  return (
+    <div className="min-h-screen w-full bg-[#f8fafc] font-sans">
+      <div className="max-w-lg mx-auto px-4 py-10">
+        <div className="flex items-center gap-3 mb-6">
+          {onBack && (
+            <button type="button" onClick={onBack} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500">
+              <FontAwesomeIcon icon={faChevronLeft} size="sm" />
+            </button>
           )}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full px-4 py-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-bold"
-          >
-            {loading ? 'Verificando…' : 'Verificar y asignar número'}
-          </button>
-        </form>
+          <div>
+            <h1 className="text-2xl font-black text-gray-800">Verificar asistencia</h1>
+            <p className="text-sm text-gray-500">{survey?.title || 'Cargando…'}</p>
+          </div>
+        </div>
+        {loading && <p className="text-gray-600">Cargando…</p>}
+        {error && <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-4">{error}</div>}
+        {!loading && !error && survey && (
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+            <AttendanceVerifyModal survey={survey} />
+            <p className="text-xs text-gray-400 mt-4 text-center">
+              Tabla pública:{' '}
+              <a className="text-amber-700 underline" href={`/public/survey/${surveyId}/asistencia`}>
+                ver asistencia
+              </a>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -9108,10 +9194,16 @@ export default function App() {
   const pathname = window.location.pathname;
   const publicAttendanceMatch = pathname.match(/^\/public\/survey\/([^/]+)\/asistencia\/?$/);
   const publicSurveyMatch = pathname.match(/^\/public\/survey\/([^/]+)\/?$/);
+  const verifyAttendanceMatch = pathname.match(/^\/survey\/([^/]+)\/asistencia\/verificar\/?$/);
   const publicAttendanceSurveyId = publicAttendanceMatch ? publicAttendanceMatch[1] : null;
+  const verifyAttendanceSurveyId = verifyAttendanceMatch ? verifyAttendanceMatch[1] : null;
   const publicSurveyId = publicAttendanceSurveyId || (publicSurveyMatch ? publicSurveyMatch[1] : null);
-  const initialView = publicAttendanceSurveyId ? 'public_attendance' : (publicSurveyId ? 'public' : 'dashboard');
-  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'public_attendance' | 'users'
+  const initialView = publicAttendanceSurveyId
+    ? 'public_attendance'
+    : (verifyAttendanceSurveyId
+      ? 'verify_attendance'
+      : (publicSurveyId ? 'public' : 'dashboard'));
+  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'public_attendance' | 'verify_attendance' | 'users'
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingSurveyId, setEditingSurveyId] = useState(null); // State to hold the ID of the survey being edited
@@ -9185,8 +9277,26 @@ export default function App() {
   // Effect to check authentication and fetch surveys on component mount
   useEffect(() => {
     // Skip auth check if this is a public survey route
-    if (publicSurveyId) {
+    if (publicSurveyId && view === 'public_attendance') {
       setLoading(false);
+      return;
+    }
+    if (publicSurveyId && view === 'public') {
+      setLoading(false);
+      return;
+    }
+    if (verifyAttendanceSurveyId) {
+      if (!isAuthenticated()) {
+        try {
+          sessionStorage.setItem('postLoginRedirect', `/survey/${verifyAttendanceSurveyId}/asistencia/verificar`);
+        } catch (_) { /* ignore */ }
+        setView('login');
+        setLoading(false);
+        return;
+      }
+      setView('verify_attendance');
+      setLoading(false);
+      fetchCurrentUser();
       return;
     }
     if (!isAuthenticated()) {
@@ -9232,6 +9342,18 @@ export default function App() {
     try {
       await login(loginCredentials.username, loginCredentials.password);
       await fetchCurrentUser(); // Obtener datos del usuario después del login
+      let redirect = '';
+      try {
+        redirect = sessionStorage.getItem('postLoginRedirect') || '';
+        sessionStorage.removeItem('postLoginRedirect');
+      } catch (_) { /* ignore */ }
+      const verifyMatch = redirect.match(/^\/survey\/([^/]+)\/asistencia\/verificar\/?$/);
+      if (verifyMatch) {
+        window.history.replaceState({}, '', redirect);
+        setView('verify_attendance');
+        setLoading(false);
+        return;
+      }
       setView('dashboard');
       fetchSurveys();
     } catch (error) {
@@ -9655,6 +9777,18 @@ export default function App() {
   }
   if (view === 'public' && publicSurveyId) {
     return <PublicSurveyView surveyId={publicSurveyId} />;
+  }
+  if (view === 'verify_attendance' && verifyAttendanceSurveyId && isAuthenticated()) {
+    return (
+      <AttendanceVerifyPage
+        surveyId={verifyAttendanceSurveyId}
+        onBack={() => {
+          window.history.pushState({}, '', '/');
+          setView('dashboard');
+          fetchSurveys();
+        }}
+      />
+    );
   }
 
   if (loading) {
