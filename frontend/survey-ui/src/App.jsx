@@ -8384,10 +8384,12 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
 };
 
 const PublicAttendanceTable = ({ surveyId }) => {
+  const PAGE_SIZE = 15;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
   const [codeQuery, setCodeQuery] = useState('');
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
@@ -8408,6 +8410,10 @@ const PublicAttendanceTable = ({ surveyId }) => {
     return () => { cancelled = true; };
   }, [surveyId]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [codeQuery]);
+
   const normalizeCodeQuery = (q) => String(q || '').replace(/\D+/g, '');
   const filteredRows = (() => {
     const rows = data?.rows || [];
@@ -8420,27 +8426,31 @@ const PublicAttendanceTable = ({ surveyId }) => {
     });
   })();
 
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <div className="min-h-screen w-full bg-[#f8fafc] font-sans">
-      <div className="max-w-4xl mx-auto px-4 py-10">
-        <h1 className="text-3xl font-black text-gray-800 mb-1">
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 py-5 sm:py-8">
+        <h1 className="text-xl sm:text-2xl font-black text-gray-800 mb-0.5 leading-tight">
           {data?.survey_title || 'Asistencia'}
         </h1>
-        <p className="text-gray-500 mb-6">Tabla pública de asistencia</p>
-        {loading && <p className="text-gray-600">Cargando…</p>}
+        <p className="text-gray-500 text-sm mb-4">Tabla pública de asistencia</p>
+        {loading && <p className="text-gray-600 text-sm">Cargando…</p>}
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-4">{error}</div>
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-3">{error}</div>
         )}
         {!loading && !error && data && (
           <>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-              <p className="text-sm text-gray-600">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+              <p className="text-xs sm:text-sm text-gray-600">
                 {data.attended_count} asistieron de {data.total} inscritos
                 {normalizeCodeQuery(codeQuery) ? (
                   <span className="text-amber-700 font-semibold"> · {filteredRows.length} resultado(s)</span>
                 ) : null}
               </p>
-              <label className="block sm:w-56">
+              <label className="block sm:w-48">
                 <span className="sr-only">Buscar por número asignado</span>
                 <input
                   type="search"
@@ -8448,44 +8458,44 @@ const PublicAttendanceTable = ({ surveyId }) => {
                   placeholder="Buscar por número…"
                   value={codeQuery}
                   onChange={(e) => setCodeQuery(e.target.value)}
-                  className="w-full px-3 py-2 border-2 border-gray-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-400"
+                  className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-400"
                 />
               </label>
             </div>
-            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+              <table className="w-full text-xs sm:text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                    <th className="px-4 py-3">Nombre</th>
-                    <th className="px-4 py-3">Documento</th>
-                    <th className="px-4 py-3">Asistencia</th>
-                    <th className="px-4 py-3">Número</th>
+                  <tr className="bg-gray-50 text-left text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">
+                    <th className="px-2 sm:px-3 py-1.5 font-bold">Nombre</th>
+                    <th className="px-2 sm:px-3 py-1.5 font-bold">Documento</th>
+                    <th className="px-2 sm:px-3 py-1.5 font-bold">Asistencia</th>
+                    <th className="px-2 sm:px-3 py-1.5 font-bold">Número</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data.rows || []).length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-gray-400">Sin inscritos aún</td>
+                      <td colSpan={4} className="px-3 py-6 text-center text-gray-400">Sin inscritos aún</td>
                     </tr>
                   ) : filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
+                      <td colSpan={4} className="px-3 py-6 text-center text-gray-400">
                         No hay coincidencias para el número «{codeQuery}»
                       </td>
                     </tr>
                   ) : (
-                    filteredRows.map((row) => (
-                      <tr key={row.id} className="border-t border-gray-100">
-                        <td className="px-4 py-3 font-semibold text-gray-800">{row.name}</td>
-                        <td className="px-4 py-3 text-gray-600 font-mono">{row.document}</td>
-                        <td className="px-4 py-3">
+                    pageRows.map((row) => (
+                      <tr key={row.id} className="border-t border-gray-100 hover:bg-amber-50/40">
+                        <td className="px-2 sm:px-3 py-1 font-semibold text-gray-800 whitespace-nowrap max-w-[10rem] sm:max-w-none truncate">{row.name}</td>
+                        <td className="px-2 sm:px-3 py-1 text-gray-600 font-mono whitespace-nowrap">{row.document}</td>
+                        <td className="px-2 sm:px-3 py-1 whitespace-nowrap">
                           {row.attended ? (
-                            <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">Asistió</span>
+                            <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-emerald-100 text-emerald-800">Asistió</span>
                           ) : (
-                            <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600">No asistió</span>
+                            <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-gray-100 text-gray-600">No asistió</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 font-mono font-black text-lg text-amber-700">
+                        <td className="px-2 sm:px-3 py-1 font-mono font-black text-sm sm:text-base text-amber-700 tabular-nums">
                           {row.code || '—'}
                         </td>
                       </tr>
@@ -8494,6 +8504,56 @@ const PublicAttendanceTable = ({ surveyId }) => {
                 </tbody>
               </table>
             </div>
+            {filteredRows.length > PAGE_SIZE && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-gray-500">
+                  Página {safePage} de {totalPages} · {filteredRows.length} filas
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((n) => n === 1 || n === totalPages || Math.abs(n - safePage) <= 1)
+                    .reduce((acc, n, idx, arr) => {
+                      if (idx > 0 && n - arr[idx - 1] > 1) acc.push('…');
+                      acc.push(n);
+                      return acc;
+                    }, [])
+                    .map((n, idx) => (
+                      n === '…' ? (
+                        <span key={`e-${idx}`} className="px-1 text-xs text-gray-400">…</span>
+                      ) : (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setPage(n)}
+                          className={`min-w-[1.75rem] px-2 py-1 rounded-lg text-xs font-bold border ${
+                            n === safePage
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
+                          }`}
+                        >
+                          {n}
+                        </button>
+                      )
+                    ))}
+                  <button
+                    type="button"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
