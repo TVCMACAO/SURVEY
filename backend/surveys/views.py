@@ -191,6 +191,116 @@ def check_group_admin_access(user_role, user_group_id, resource_group_id, error_
     return None
 
 
+FEATURE_FLAG_KEYS = (
+    'feature_appearance',
+    'feature_reference_file',
+    'feature_informed_consent',
+    'feature_webhook_rifas',
+)
+
+
+def get_group_feature_flags(group_doc):
+    """
+    Flags de funciones de encuesta para un grupo.
+    Clave ausente (grupos viejos) → True. Valor explícito → bool.
+    """
+    if not isinstance(group_doc, dict):
+        return {k: True for k in FEATURE_FLAG_KEYS}
+    return {
+        k: True if k not in group_doc else bool(group_doc.get(k))
+        for k in FEATURE_FLAG_KEYS
+    }
+
+
+def _resolve_group_doc_for_survey(group_ref):
+    """Resuelve un documento de grupo desde ObjectId, str id o dict."""
+    if group_ref is None:
+        return None
+    if isinstance(group_ref, dict) and ('_id' in group_ref or 'id' in group_ref):
+        return group_ref
+    groups_collection = get_survey_groups_collection()
+    try:
+        oid = group_ref if isinstance(group_ref, ObjectId) else ObjectId(str(group_ref))
+        return groups_collection.find_one({'_id': oid})
+    except Exception:
+        return None
+
+
+def enforce_survey_feature_flags(validated_data, group_doc, existing_survey=None, request_data=None):
+    """
+    Aplica flags del grupo sobre validated_data (mutación in-place).
+    Si el body intenta activar consentimiento/webhook no permitidos → Response 400.
+    Si flag off: limpia/fuerza campos desactivados.
+    Retorna None si OK, o Response de error.
+    """
+    flags = get_group_feature_flags(group_doc)
+    raw = request_data if isinstance(request_data, dict) else {}
+    existing = existing_survey if isinstance(existing_survey, dict) else {}
+
+    # --- Apariencia: forzar theme/imágenes vacíos; no persistir personalización ---
+    if not flags['feature_appearance']:
+        validated_data['theme'] = {}
+        validated_data['header_image'] = ''
+        validated_data['intro_image'] = ''
+        validated_data['intro_image_enabled'] = False
+
+    # --- Referenciación: no aceptar mapping/key nuevos ---
+    if not flags['feature_reference_file']:
+        key_col = None
+        if 'reference_key_column' in validated_data:
+            key_col = validated_data.get('reference_key_column')
+        elif 'reference_key_column' in raw:
+            key_col = raw.get('reference_key_column')
+        mapping = None
+        if 'reference_mapping' in validated_data:
+            mapping = validated_data.get('reference_mapping')
+        elif 'reference_mapping' in raw:
+            mapping = raw.get('reference_mapping')
+        existing_key = str(existing.get('reference_key_column') or '').strip()
+        existing_map = existing.get('reference_mapping') or {}
+        trying_new = False
+        if key_col is not None and str(key_col).strip() and str(key_col).strip() != existing_key:
+            trying_new = True
+        if isinstance(mapping, dict) and mapping and mapping != existing_map:
+            trying_new = True
+        if trying_new:
+            return Response(
+                {"detail": "La función Archivo de referenciación no está habilitada para este grupo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        validated_data.pop('reference_key_column', None)
+        validated_data.pop('reference_mapping', None)
+
+    # --- Consentimiento informado ---
+    if not flags['feature_informed_consent']:
+        ic_enabled = validated_data.get('informed_consent_enabled') if 'informed_consent_enabled' in validated_data else raw.get('informed_consent_enabled')
+        if ic_enabled is True or str(ic_enabled).lower() in ('true', '1', 'yes'):
+            return Response(
+                {"detail": "La función Consentimiento informado no está habilitada para este grupo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        validated_data['informed_consent_enabled'] = False
+        validated_data['informed_consent'] = {}
+        validated_data['consent_responsible'] = ''
+        validated_data['consent_purpose'] = ''
+
+    # --- Webhook rifas ---
+    if not flags['feature_webhook_rifas']:
+        wh_enabled = validated_data.get('webhook_enabled') if 'webhook_enabled' in validated_data else raw.get('webhook_enabled')
+        if wh_enabled is True or str(wh_enabled).lower() in ('true', '1', 'yes'):
+            return Response(
+                {"detail": "La función Webhook (rifas) no está habilitada para este grupo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        validated_data['webhook_enabled'] = False
+        validated_data['webhook_url'] = ''
+        validated_data['webhook_secret'] = ''
+        validated_data['webhook_field_map'] = {}
+        validated_data['webhook_require_otp'] = True
+
+    return None
+
+
 def validate_file_upload_answers(survey_doc, answers):
     """
     Para preguntas con question_type == 'file_upload', valida que answers[question_id]
@@ -455,6 +565,18 @@ class SurveyGroupListCreate(APIView):
                 'smtp_from_name': validated_data.get('smtp_from_name') or '',
                 'smtp_reply_to': validated_data.get('smtp_reply_to') or '',
             }
+            # Grupos nuevos: funciones off hasta que root las active
+            user_role, _ = get_user_role_and_group(request)
+            if user_role == 'root':
+                doc['feature_appearance'] = bool(validated_data.get('feature_appearance', False))
+                doc['feature_reference_file'] = bool(validated_data.get('feature_reference_file', False))
+                doc['feature_informed_consent'] = bool(validated_data.get('feature_informed_consent', False))
+                doc['feature_webhook_rifas'] = bool(validated_data.get('feature_webhook_rifas', False))
+            else:
+                doc['feature_appearance'] = False
+                doc['feature_reference_file'] = False
+                doc['feature_informed_consent'] = False
+                doc['feature_webhook_rifas'] = False
             if validated_data.get('smtp_password'):
                 doc['smtp_password'] = validated_data['smtp_password']
             result = groups_collection.insert_one(doc)
@@ -525,6 +647,11 @@ class SurveyGroupRetrieveUpdateDestroy(APIView):
                 update_fields['smtp_use_tls'] = bool(vd.get('smtp_use_tls'))
             if 'smtp_password' in vd and (vd.get('smtp_password') or '').strip():
                 update_fields['smtp_password'] = vd.get('smtp_password')
+            # Solo root puede cambiar flags de funciones
+            if user_role == 'root':
+                for key in FEATURE_FLAG_KEYS:
+                    if key in vd:
+                        update_fields[key] = bool(vd.get(key))
             if not update_fields:
                 return Response(SurveyGroupSerializer(group).data)
             groups_collection.update_one(
@@ -1100,6 +1227,13 @@ class SurveyListCreate(APIView):
                 {"detail": "Error: no se pudo asignar el grupo automáticamente. Contacta al administrador."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+        group_doc = _resolve_group_doc_for_survey(validated_data.get('group'))
+        flag_err = enforce_survey_feature_flags(
+            validated_data, group_doc, existing_survey=None, request_data=request_data_copy
+        )
+        if flag_err is not None:
+            return flag_err
 
         # Root-only: permitir crear encuestas “en nombre de” otro usuario.
         # Inputs aceptados en el body:
@@ -1685,6 +1819,14 @@ class SurveyRetrieveUpdateDestroy(APIView):
                     # No romper el guardado: mantener el grupo actual si el indicado no existe
                     validated_data['group'] = survey.get('group')
 
+            group_ref = validated_data.get('group', survey.get('group'))
+            group_doc = _resolve_group_doc_for_survey(group_ref)
+            flag_err = enforce_survey_feature_flags(
+                validated_data, group_doc, existing_survey=survey, request_data=request.data
+            )
+            if flag_err is not None:
+                return flag_err
+
             questions_to_save = validated_data.get('questions', survey.get('questions'))
             if not isinstance(questions_to_save, list):
                 questions_to_save = survey.get('questions') or []
@@ -1994,6 +2136,13 @@ class SurveyReferenceFileUpload(APIView):
                     {"detail": "No tienes permisos para modificar esta encuesta."},
                     status=status.HTTP_403_FORBIDDEN
                 )
+        group_doc = _resolve_group_doc_for_survey(survey.get('group'))
+        flags = get_group_feature_flags(group_doc)
+        if not flags.get('feature_reference_file'):
+            return Response(
+                {"detail": "La función Archivo de referenciación no está habilitada para este grupo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         def to_utf8_safe(val):
             """Convierte un valor a str válido UTF-8 para evitar JSON parse error en el cliente."""
             if val is None:

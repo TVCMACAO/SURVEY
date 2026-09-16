@@ -3345,7 +3345,7 @@ const PublicSurveyView = ({ surveyId }) => {
   );
 };
 
-const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initialSurveyData
+const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { // Added initialSurveyData
   const [activeQuestionId, setActiveQuestionId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [surveyData, setSurveyData] = useState(() => normalizeSurveyForEditor(initialSurveyData));
@@ -3358,6 +3358,13 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   const [showConsentSection, setShowConsentSection] = useState(false);
   const [showWebhookSection, setShowWebhookSection] = useState(false);
   const [showGearMenu, setShowGearMenu] = useState(false);
+  // Flags del grupo: ausentes/carga → true (compat); grupos nuevos con false
+  const [groupFeatures, setGroupFeatures] = useState({
+    feature_appearance: true,
+    feature_reference_file: true,
+    feature_informed_consent: true,
+    feature_webhook_rifas: true,
+  });
   const [referenceColumns, setReferenceColumns] = useState(() => {
     if (!initialSurveyData) return [];
     const refKey = initialSurveyData.reference_key_column || '';
@@ -3380,6 +3387,36 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [showGearMenu]);
+
+  // Cargar flags de funciones del grupo de la encuesta (o del usuario al crear)
+  useEffect(() => {
+    let cancelled = false;
+    const resolveGroupId = () => {
+      const fromSurvey = surveyData?.group || initialSurveyData?.group;
+      if (fromSurvey) return String(fromSurvey);
+      if (currentUser?.user_group_id) return String(currentUser.user_group_id);
+      return null;
+    };
+    const groupId = resolveGroupId();
+    if (!groupId) return undefined;
+    (async () => {
+      try {
+        const res = await authenticatedFetch(`/api/groups/${groupId}/`);
+        if (!res.ok) return;
+        const g = await res.json();
+        if (cancelled) return;
+        setGroupFeatures({
+          feature_appearance: g.feature_appearance !== false,
+          feature_reference_file: g.feature_reference_file !== false,
+          feature_informed_consent: g.feature_informed_consent !== false,
+          feature_webhook_rifas: g.feature_webhook_rifas !== false,
+        });
+      } catch (err) {
+        console.error('Error loading group feature flags:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [surveyData?.group, initialSurveyData?.group, currentUser?.user_group_id]);
 
   // Auto-resize textarea when title changes
   React.useEffect(() => {
@@ -3532,7 +3569,33 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
     });
   };
 
-  const handlePublish = () => onSave(surveyData);
+  const handlePublish = () => {
+    const data = { ...surveyData };
+    if (!groupFeatures.feature_appearance) {
+      data.theme = {};
+      data.header_image = '';
+      data.intro_image = '';
+      data.intro_image_enabled = false;
+    }
+    if (!groupFeatures.feature_informed_consent) {
+      data.informed_consent_enabled = false;
+      data.informed_consent = {};
+      data.consent_responsible = '';
+      data.consent_purpose = '';
+    }
+    if (!groupFeatures.feature_webhook_rifas) {
+      data.webhook_enabled = false;
+      data.webhook_url = '';
+      data.webhook_secret = '';
+      data.webhook_field_map = {};
+    }
+    if (!groupFeatures.feature_reference_file) {
+      // No activar referenciación nueva; conservar lo ya guardado si existe
+      data.reference_key_column = initialSurveyData?.reference_key_column || '';
+      data.reference_mapping = initialSurveyData?.reference_mapping || {};
+    }
+    onSave(data);
+  };
 
   const openSectionsFromGear = () => {
     setShowSectionManager(true);
@@ -3540,6 +3603,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
   };
 
   const openReferenceFromGear = () => {
+    if (!groupFeatures.feature_reference_file) return;
     setShowReferenceSection(true);
     setTimeout(() => document.getElementById('archivo-referenciacion')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
   };
@@ -3554,14 +3618,16 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
         <FontAwesomeIcon icon={faListUl} size="sm" className="text-purple-600 fa-icon-force-current" />
         Secciones
       </button>
-      <button
-        type="button"
-        onClick={() => { openReferenceFromGear(); setShowGearMenu(false); }}
-        className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-green-50 flex items-center gap-2"
-      >
-        <FontAwesomeIcon icon={faFileExcel} size="sm" className="text-green-600 fa-icon-force-current" />
-        Referenciación
-      </button>
+      {groupFeatures.feature_reference_file && (
+        <button
+          type="button"
+          onClick={() => { openReferenceFromGear(); setShowGearMenu(false); }}
+          className="w-full px-3 py-2 text-left text-xs font-semibold text-gray-700 hover:bg-green-50 flex items-center gap-2"
+        >
+          <FontAwesomeIcon icon={faFileExcel} size="sm" className="text-green-600 fa-icon-force-current" />
+          Referenciación
+        </button>
+      )}
     </div>
   );
 
@@ -3634,6 +3700,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                <FontAwesomeIcon icon={faListUl} size="sm" className="fa-icon-force-white" /> 
                <span className="hidden sm:inline">Secciones</span>
              </button>
+             {groupFeatures.feature_reference_file && (
              <button 
                onClick={() => {
                  setShowReferenceSection(prev => !prev);
@@ -3645,6 +3712,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                <FontAwesomeIcon icon={faFileExcel} size="sm" className="fa-icon-force-white" /> 
                <span className="hidden sm:inline">Referenciación</span>
              </button>
+             )}
              <button onClick={() => setShowPreview(true)} className="flex-1 md:flex-none px-4 md:px-5 py-2 md:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs md:text-sm shadow-xl flex items-center justify-center gap-2 transition-transform active:scale-95">
                <FontAwesomeIcon icon={faEye} size="sm" className="fa-icon-force-white" /> 
                <span className="hidden sm:inline">Vista Previa</span>
@@ -3674,6 +3742,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
            />
 
            {/* Apariencia / colores de la encuesta pública */}
+           {groupFeatures.feature_appearance && (
            <div id="apariencia-encuesta" className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
              <button
                type="button"
@@ -3910,8 +3979,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                </div>
              )}
            </div>
+           )}
 
            {/* Archivo de referenciación - arriba, al abrir desde el botón del header */}
+           {groupFeatures.feature_reference_file && (
            <div id="archivo-referenciacion" className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
              <button
                type="button"
@@ -4029,6 +4100,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
                </div>
              )}
            </div>
+           )}
 
            {/* Nombre de adjuntos: documento_empleado-documento_votante */}
            {(surveyData.questions || []).some(q => q.type === 'Adjuntar archivos') && (
@@ -4070,6 +4142,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
            )}
 
            {/* Consentimiento informado */}
+           {groupFeatures.feature_informed_consent && (
            <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                <button
@@ -4369,8 +4442,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
              </div>
              )}
            </div>
+           )}
 
            {/* Webhook rifas */}
+           {groupFeatures.feature_webhook_rifas && (
            <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-4 sm:p-6 shadow-lg">
              <div className="flex flex-wrap items-center justify-between gap-3">
                <button
@@ -4536,6 +4611,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData }) => { // Added initi
              </div>
              )}
            </div>
+           )}
 
            {/* Section Manager */}
            {showSectionManager && (
@@ -6798,6 +6874,10 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     smtp_from_name: '',
     smtp_reply_to: '',
     smtp_test_email: '',
+    feature_appearance: false,
+    feature_reference_file: false,
+    feature_informed_consent: false,
+    feature_webhook_rifas: false,
   });
   const emptyGroupForm = () => ({
     name: '',
@@ -6810,6 +6890,10 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     smtp_from_name: '',
     smtp_reply_to: '',
     smtp_test_email: '',
+    feature_appearance: false,
+    feature_reference_file: false,
+    feature_informed_consent: false,
+    feature_webhook_rifas: false,
   });
   const [formError, setFormError] = useState('');
   const [smtpTesting, setSmtpTesting] = useState(false);
@@ -7148,6 +7232,12 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       if (!(payload.smtp_password || '').trim()) {
         delete payload.smtp_password;
       }
+      if (userRole !== 'root') {
+        delete payload.feature_appearance;
+        delete payload.feature_reference_file;
+        delete payload.feature_informed_consent;
+        delete payload.feature_webhook_rifas;
+      }
       const response = await authenticatedFetch(`/api/groups/${editingGroup.id}/`, {
         method: 'PUT',
         body: JSON.stringify(payload)
@@ -7205,6 +7295,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       smtp_from_name: group.smtp_from_name || '',
       smtp_reply_to: group.smtp_reply_to || '',
       smtp_test_email: '',
+      // API: ausentes → true; grupos nuevos con false explícito
+      feature_appearance: group.feature_appearance !== false,
+      feature_reference_file: group.feature_reference_file !== false,
+      feature_informed_consent: group.feature_informed_consent !== false,
+      feature_webhook_rifas: group.feature_webhook_rifas !== false,
     });
     setShowGroupForm(true);
     setFormError('');
@@ -7751,6 +7846,31 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                       autoComplete="off"
                     />
                   </div>
+
+                  {userRole === 'root' && (
+                    <div className="border-t border-gray-200 pt-4 space-y-3">
+                      <h4 className="text-sm font-black text-gray-800">Funciones de encuesta</h4>
+                      <p className="text-xs text-gray-500">
+                        Activa qué secciones verán los editores de este grupo. Los grupos nuevos empiezan con todas desactivadas.
+                      </p>
+                      {[
+                        { key: 'feature_appearance', label: 'Apariencia (colores e imagen previa)' },
+                        { key: 'feature_reference_file', label: 'Archivo de referenciación' },
+                        { key: 'feature_informed_consent', label: 'Consentimiento informado' },
+                        { key: 'feature_webhook_rifas', label: 'Webhook rifas' },
+                      ].map(({ key, label }) => (
+                        <label key={key} className="flex items-center gap-3 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                            checked={Boolean(groupFormData[key])}
+                            onChange={(e) => setGroupFormData({ ...groupFormData, [key]: e.target.checked })}
+                          />
+                          <span className="text-sm font-semibold text-gray-700">{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
 
                     <div className="border-t border-gray-200 pt-4 space-y-3">
                     <h4 className="text-sm font-black text-gray-800">Correo / SMTP (OTP de consentimiento)</h4>
@@ -9399,6 +9519,7 @@ export default function App() {
               onSave={handleSaveSurvey}
               onBack={handleBackToDashboard}
               initialSurveyData={surveyToEdit}
+              currentUser={currentUser}
           />
       )}
 

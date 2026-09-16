@@ -279,6 +279,18 @@ class SurveyGroupSerializer(serializers.Serializer):
     smtp_reply_to = serializers.EmailField(required=False, allow_blank=True, default='')
     smtp_configured = serializers.SerializerMethodField(read_only=True)
     smtp_password_set = serializers.SerializerMethodField(read_only=True)
+    # Funciones de encuesta permitidas para el grupo (solo root las edita)
+    feature_appearance = serializers.BooleanField(required=False)
+    feature_reference_file = serializers.BooleanField(required=False)
+    feature_informed_consent = serializers.BooleanField(required=False)
+    feature_webhook_rifas = serializers.BooleanField(required=False)
+
+    FEATURE_FLAG_KEYS = (
+        'feature_appearance',
+        'feature_reference_file',
+        'feature_informed_consent',
+        'feature_webhook_rifas',
+    )
 
     def get_smtp_configured(self, obj):
         if not isinstance(obj, dict):
@@ -306,6 +318,13 @@ class SurveyGroupSerializer(serializers.Serializer):
             data['smtp_from_email'] = instance.get('smtp_from_email') or ''
             data['smtp_from_name'] = instance.get('smtp_from_name') or ''
             data['smtp_reply_to'] = instance.get('smtp_reply_to') or ''
+            # Ausentes en grupos viejos → true (compatibilidad)
+            for key in self.FEATURE_FLAG_KEYS:
+                data[key] = True if key not in instance else bool(instance.get(key))
+        else:
+            for key in self.FEATURE_FLAG_KEYS:
+                if data.get(key) is None:
+                    data[key] = True
         return data
 
     def create(self, validated_data):
