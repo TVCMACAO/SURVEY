@@ -8,10 +8,11 @@ from .views import (
     SurveyListCreate, SurveyRetrieveUpdateDestroy, SurveyWebhookTest, SurveyWebhookBackfill,
     SurveyRestoreView, SurveyPermanentDeleteView,
     SurveyReferenceFileUpload,
+    SurveyAttendanceVerify,
     AttachmentUploadView, AttachmentRetrieveView, PublicAttachmentRetrieveView,
     ResponseListCreate, ResponseRetrieve, ResponseResetView,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
-    PublicSurveyView, ReferenceLookup, UniqueAnswerCheck, PublicResponseCreate,
+    PublicSurveyView, PublicAttendanceList, ReferenceLookup, UniqueAnswerCheck, PublicResponseCreate,
     PublicConsentOtpSend, PublicConsentOtpVerify, PublicConsentPdfEmail,
     ResponseSyncView, SyncStatusView
 )
@@ -40,6 +41,7 @@ urlpatterns = [
     path('surveys/<str:pk>/webhook-test/', SurveyWebhookTest.as_view(), name='survey-webhook-test'),
     path('surveys/<str:pk>/webhook-backfill/', SurveyWebhookBackfill.as_view(), name='survey-webhook-backfill'),
     path('surveys/<str:pk>/reference-file/', SurveyReferenceFileUpload.as_view(), name='survey-reference-file'),
+    path('surveys/<str:pk>/attendance/verify/', SurveyAttendanceVerify.as_view(), name='survey-attendance-verify'),
     path('surveys/<str:pk>/restore/', SurveyRestoreView.as_view(), name='survey-restore'),
     path('surveys/<str:pk>/permanent-delete/', SurveyPermanentDeleteView.as_view(), name='survey-permanent-delete'),
 
@@ -60,6 +62,7 @@ urlpatterns = [
     
     # Rutas públicas (sin autenticación)
     path('public/surveys/<str:pk>/', PublicSurveyView.as_view(), name='public-survey-detail'),
+    path('public/surveys/<str:pk>/attendance/', PublicAttendanceList.as_view(), name='public-attendance-list'),
     path('public/surveys/<str:pk>/reference-lookup/', ReferenceLookup.as_view(), name='reference-lookup'),
     path('public/surveys/<str:pk>/unique-check/', UniqueAnswerCheck.as_view(), name='unique-answer-check'),
     path('public/surveys/<str:pk>/consent-otp/send/', PublicConsentOtpSend.as_view(), name='public-consent-otp-send'),

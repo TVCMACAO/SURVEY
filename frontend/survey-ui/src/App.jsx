@@ -761,6 +761,8 @@ const normalizeSurveyForEditor = (raw) => {
         tipo_documento: '',
         cargo: '',
       },
+      attendance_enabled: false,
+      attendance_document_question_id: '',
     };
   }
   const questions = (raw.questions || []).map((q) => {
@@ -834,6 +836,8 @@ const normalizeSurveyForEditor = (raw) => {
       tipo_documento: raw.webhook_field_map?.tipo_documento || '',
       cargo: raw.webhook_field_map?.cargo || '',
     },
+    attendance_enabled: Boolean(raw.attendance_enabled),
+    attendance_document_question_id: raw.attendance_document_question_id || '',
     theme: normalizeSurveyTheme(raw.theme),
     intro_image_enabled: Boolean(raw.intro_image_enabled),
     intro_image: raw.intro_image || '',
@@ -3364,6 +3368,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
     feature_reference_file: true,
     feature_informed_consent: true,
     feature_webhook_rifas: true,
+    feature_attendance_public: true,
   });
   const [referenceColumns, setReferenceColumns] = useState(() => {
     if (!initialSurveyData) return [];
@@ -3410,6 +3415,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
           feature_reference_file: g.feature_reference_file !== false,
           feature_informed_consent: g.feature_informed_consent !== false,
           feature_webhook_rifas: g.feature_webhook_rifas !== false,
+          feature_attendance_public: g.feature_attendance_public !== false,
         });
       } catch (err) {
         console.error('Error loading group feature flags:', err);
@@ -3588,6 +3594,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
       data.webhook_url = '';
       data.webhook_secret = '';
       data.webhook_field_map = {};
+    }
+    if (!groupFeatures.feature_attendance_public) {
+      data.attendance_enabled = false;
+      data.attendance_document_question_id = '';
     }
     if (!groupFeatures.feature_reference_file) {
       // No activar referenciación nueva; conservar lo ya guardado si existe
@@ -4609,6 +4619,50 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
                </div>
              )}
              </div>
+             )}
+           </div>
+           )}
+
+           {/* Asistencia pública / número 000–999 */}
+           {groupFeatures.feature_attendance_public && (
+           <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-4 sm:p-6 shadow-lg">
+             <div className="flex flex-wrap items-center justify-between gap-3">
+               <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center gap-2">
+                 <FontAwesomeIcon icon={faUsers} size="sm" className="text-amber-600" />
+                 Asistencia pública
+               </h3>
+               <label className="inline-flex items-center gap-2 cursor-pointer select-none shrink-0">
+                 <input
+                   type="checkbox"
+                   className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                   checked={Boolean(surveyData.attendance_enabled)}
+                   onChange={(e) => setSurveyData((prev) => ({ ...prev, attendance_enabled: e.target.checked }))}
+                 />
+                 <span className="text-sm font-semibold text-gray-700">Activar tabla pública y verificación</span>
+               </label>
+             </div>
+             {surveyData.attendance_enabled && (
+               <div className="mt-4 space-y-3">
+                 <p className="text-sm text-gray-600">
+                   Los inscritos son las respuestas de esta encuesta. Un encuestador logueado digita la cédula
+                   y se asigna un número único del 000 al 999. La tabla pública muestra Asistió/No y el número.
+                 </p>
+                 <div>
+                   <label className="block text-xs font-bold text-gray-600 mb-1">Pregunta de cédula / documento</label>
+                   <select
+                     value={surveyData.attendance_document_question_id || ''}
+                     onChange={(e) => setSurveyData((prev) => ({ ...prev, attendance_document_question_id: e.target.value }))}
+                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500"
+                   >
+                     <option value="">— Seleccionar —</option>
+                     {(surveyData.questions || [])
+                       .filter((q) => q.type && !['Título', 'titulo', 'Firma', 'Adjuntar archivos', 'Evaluación'].includes(q.type))
+                       .map((q) => (
+                         <option key={q.id} value={q.id}>{q.text || q.question_text || q.id}</option>
+                       ))}
+                   </select>
+                 </div>
+               </div>
              )}
            </div>
            )}
@@ -6878,6 +6932,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     feature_reference_file: false,
     feature_informed_consent: false,
     feature_webhook_rifas: false,
+    feature_attendance_public: false,
   });
   const emptyGroupForm = () => ({
     name: '',
@@ -6894,6 +6949,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     feature_reference_file: false,
     feature_informed_consent: false,
     feature_webhook_rifas: false,
+    feature_attendance_public: false,
   });
   const [formError, setFormError] = useState('');
   const [smtpTesting, setSmtpTesting] = useState(false);
@@ -7237,6 +7293,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         delete payload.feature_reference_file;
         delete payload.feature_informed_consent;
         delete payload.feature_webhook_rifas;
+        delete payload.feature_attendance_public;
       }
       const response = await authenticatedFetch(`/api/groups/${editingGroup.id}/`, {
         method: 'PUT',
@@ -7300,6 +7357,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       feature_reference_file: group.feature_reference_file !== false,
       feature_informed_consent: group.feature_informed_consent !== false,
       feature_webhook_rifas: group.feature_webhook_rifas !== false,
+      feature_attendance_public: group.feature_attendance_public !== false,
     });
     setShowGroupForm(true);
     setFormError('');
@@ -7858,6 +7916,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                         { key: 'feature_reference_file', label: 'Archivo de referenciación' },
                         { key: 'feature_informed_consent', label: 'Consentimiento informado' },
                         { key: 'feature_webhook_rifas', label: 'Webhook rifas' },
+                        { key: 'feature_attendance_public', label: 'Asistencia pública / número de verificación' },
                       ].map(({ key, label }) => (
                         <label key={key} className="flex items-center gap-3 cursor-pointer select-none">
                           <input
@@ -8266,6 +8325,25 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
             </label>
           </div>
         </div>
+
+        {survey.attendance_enabled && (
+          <div className="mb-6 p-4 rounded-xl border-2 border-amber-200 bg-amber-50">
+            <div className="font-bold text-amber-900 mb-1">Tabla pública de asistencia</div>
+            <p className="text-xs text-amber-800 mb-3 break-all">
+              {`${window.location.origin}/public/survey/${survey.id || survey._id}/asistencia`}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                const surveyId = survey.id || survey._id;
+                copyToClipboard(`${window.location.origin}/public/survey/${surveyId}/asistencia`);
+              }}
+              className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm transition-colors"
+            >
+              Copiar enlace de asistencia
+            </button>
+          </div>
+        )}
         
         <div className="flex gap-3">
           <button
@@ -8287,8 +8365,164 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
 );
 };
 
+const PublicAttendanceTable = ({ surveyId }) => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await fetch(`/api/public/surveys/${surveyId}/attendance/`);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.detail || 'No se pudo cargar la asistencia.');
+        if (!cancelled) setData(body);
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'Error al cargar');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [surveyId]);
+
+  return (
+    <div className="min-h-screen w-full bg-[#f8fafc] font-sans">
+      <div className="max-w-4xl mx-auto px-4 py-10">
+        <h1 className="text-3xl font-black text-gray-800 mb-1">
+          {data?.survey_title || 'Asistencia'}
+        </h1>
+        <p className="text-gray-500 mb-6">Tabla pública de asistencia</p>
+        {loading && <p className="text-gray-600">Cargando…</p>}
+        {error && (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-4">{error}</div>
+        )}
+        {!loading && !error && data && (
+          <>
+            <p className="text-sm text-gray-600 mb-4">
+              {data.attended_count} asistieron de {data.total} inscritos
+            </p>
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                    <th className="px-4 py-3">Nombre</th>
+                    <th className="px-4 py-3">Documento</th>
+                    <th className="px-4 py-3">Asistencia</th>
+                    <th className="px-4 py-3">Número</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.rows || []).length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-gray-400">Sin inscritos aún</td>
+                    </tr>
+                  ) : (
+                    (data.rows || []).map((row) => (
+                      <tr key={row.id} className="border-t border-gray-100">
+                        <td className="px-4 py-3 font-semibold text-gray-800">{row.name}</td>
+                        <td className="px-4 py-3 text-gray-600 font-mono">{row.document}</td>
+                        <td className="px-4 py-3">
+                          {row.attended ? (
+                            <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">Asistió</span>
+                          ) : (
+                            <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600">No asistió</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-mono font-black text-lg text-amber-700">
+                          {row.code || '—'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const AttendanceVerifyModal = ({ survey, onClose }) => {
+  const [documento, setDocumento] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setResult(null);
+    try {
+      const surveyId = survey.id || survey._id;
+      const res = await authenticatedFetch(`/api/surveys/${surveyId}/attendance/verify/`, {
+        method: 'POST',
+        body: JSON.stringify({ documento }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || 'No se pudo verificar.');
+      setResult(body);
+    } catch (err) {
+      setError(err.message || 'Error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-black text-gray-800">Verificar asistencia</h2>
+          <button type="button" onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+            <FontAwesomeIcon icon={faXmark} size="lg" className="text-gray-500" />
+          </button>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">{survey.title}</p>
+        <form onSubmit={handleVerify} className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">Cédula / documento</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={documento}
+              onChange={(e) => setDocumento(e.target.value)}
+              className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500"
+              placeholder="Número de cédula"
+              required
+              autoFocus
+            />
+          </div>
+          {error && <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">{error}</div>}
+          {result && (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+              <p className="text-sm text-emerald-800 mb-1">{result.name || 'Inscrito'}</p>
+              <p className="text-xs text-emerald-700 mb-2">{result.already_assigned ? 'Número ya asignado' : 'Número asignado'}</p>
+              <p className="text-4xl font-black text-amber-700 tracking-widest">{result.code}</p>
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full px-4 py-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-bold"
+          >
+            {loading ? 'Verificando…' : 'Verificar y asignar número'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus, onDuplicate, canEdit = true }) => {
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [showAttendanceVerify, setShowAttendanceVerify] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const titleRef = React.useRef(null);
   const cardRef = React.useRef(null);
@@ -8317,6 +8551,12 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
           survey={survey}
           onClose={() => setShowShareDialog(false)}
           onUpdatePublicStatus={onUpdatePublicStatus}
+        />
+      )}
+      {showAttendanceVerify && (
+        <AttendanceVerifyModal
+          survey={survey}
+          onClose={() => setShowAttendanceVerify(false)}
         />
       )}
       <div 
@@ -8377,6 +8617,16 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
 
             {/* Botones de acción mejorados */}
             <div className="flex items-center justify-end gap-1">
+              {canEdit && survey.attendance_enabled && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowAttendanceVerify(true); }}
+                className="p-2.5 rounded-xl hover:bg-gradient-to-br hover:from-amber-50 hover:to-orange-50 text-gray-500 hover:text-amber-600 transition-all duration-200 hover:scale-110 active:scale-95"
+                title="Verificar asistencia"
+              >
+                <FontAwesomeIcon icon={faCheck} size="sm" className="fa-icon-force-current" />
+              </button>
+              )}
               {canEdit && (
               <button 
                 onClick={handleShare} 
@@ -8856,10 +9106,12 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
 export default function App() {
   // Check if we're on a public survey route
   const pathname = window.location.pathname;
-  const publicSurveyMatch = pathname.match(/^\/public\/survey\/(.+)$/);
-  const publicSurveyId = publicSurveyMatch ? publicSurveyMatch[1] : null;
-  const initialView = publicSurveyId ? 'public' : 'dashboard';
-  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'users'
+  const publicAttendanceMatch = pathname.match(/^\/public\/survey\/([^/]+)\/asistencia\/?$/);
+  const publicSurveyMatch = pathname.match(/^\/public\/survey\/([^/]+)\/?$/);
+  const publicAttendanceSurveyId = publicAttendanceMatch ? publicAttendanceMatch[1] : null;
+  const publicSurveyId = publicAttendanceSurveyId || (publicSurveyMatch ? publicSurveyMatch[1] : null);
+  const initialView = publicAttendanceSurveyId ? 'public_attendance' : (publicSurveyId ? 'public' : 'dashboard');
+  const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'public_attendance' | 'users'
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingSurveyId, setEditingSurveyId] = useState(null); // State to hold the ID of the survey being edited
@@ -9136,6 +9388,8 @@ export default function App() {
         tipo_documento: surveyData.webhook_field_map?.tipo_documento || '',
         cargo: surveyData.webhook_field_map?.cargo || '',
       },
+      attendance_enabled: Boolean(surveyData.attendance_enabled),
+      attendance_document_question_id: surveyData.attendance_document_question_id || '',
     };
     if ((surveyData.webhook_secret || '').trim()) {
       surveyPayload.webhook_secret = surveyData.webhook_secret.trim();
@@ -9396,6 +9650,9 @@ export default function App() {
 
 
   // Public survey view (no authentication required)
+  if (view === 'public_attendance' && publicAttendanceSurveyId) {
+    return <PublicAttendanceTable surveyId={publicAttendanceSurveyId} />;
+  }
   if (view === 'public' && publicSurveyId) {
     return <PublicSurveyView surveyId={publicSurveyId} />;
   }

@@ -63,8 +63,10 @@ if not DEBUG:
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000", # For local development
     "http://localhost:8080", # Typical Flutter web port
+    "http://localhost:8085", # Frontend local (docker nginx)
+    "http://127.0.0.1:8085",
     "capacitor://localhost", # For Capacitor/Ionic/Flutter mobile builds
-    "http://192.168.0.248:8085", # Frontend IP and port (local)
+    "http://192.168.0.248:8085", # Frontend IP and port (local LAN)
     "https://easypanel.clinicamaicao.com", # EasyPanel production domain
     "http://easypanel.clinicamaicao.com", # EasyPanel production domain (HTTP fallback)
     "https://www.clinicamaicao.com", # Production domain
@@ -75,10 +77,12 @@ CORS_ALLOWED_ORIGINS = [
     "http://chat-survey-app2.rhfh8t.easypanel.host", # EasyPanel subdomain 2 HTTP
 ]
 
-# Permitir CORS desde cualquier subdominio de EasyPanel
+# Permitir CORS desde cualquier subdominio de EasyPanel y red local 192.168.x.x
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https?://[^.]+\.rhfh8t\.easypanel\.host$",
     r"^https?://[^.]+\.easypanel\.host$",
+    r"^https?://192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$",
+    r"^https?://10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$",
 ]
 
 # Allow CORS from environment variable (comma-separated)
@@ -86,13 +90,26 @@ CORS_EXTRA_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
 if CORS_EXTRA_ORIGINS and CORS_EXTRA_ORIGINS[0]:
     CORS_ALLOWED_ORIGINS.extend([origin.strip() for origin in CORS_EXTRA_ORIGINS if origin.strip()])
 
-# Permitir CORS desde cualquier subdominio de EasyPanel usando regex
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https?://[^.]+\.rhfh8t\.easypanel\.host$",
-    r"^https?://[^.]+\.easypanel\.host$",
-]
-
 CORS_ALLOW_CREDENTIALS = True # To allow cookies, authorization headers with CORS
+
+# CSRF: mismo origen en LAN y localhost (necesario si el navegador envía cookies)
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:8085",
+    "http://127.0.0.1:8085",
+    "http://192.168.0.248:8085",
+]
+_CSRF_EXTRA = os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
+for origin in _CSRF_EXTRA:
+    origin = origin.strip()
+    if origin and origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(origin)
+# Derivar orígenes http://host:8085 desde ALLOWED_HOSTS (LAN / hostname)
+for host in ALLOWED_HOSTS:
+    if not host or host.startswith('.'):
+        continue
+    for origin in (f"http://{host}:8085", f"http://{host}"):
+        if origin not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(origin)
 
 # Application definition
 

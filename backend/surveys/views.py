@@ -196,6 +196,7 @@ FEATURE_FLAG_KEYS = (
     'feature_reference_file',
     'feature_informed_consent',
     'feature_webhook_rifas',
+    'feature_attendance_public',
 )
 
 
@@ -298,7 +299,130 @@ def enforce_survey_feature_flags(validated_data, group_doc, existing_survey=None
         validated_data['webhook_field_map'] = {}
         validated_data['webhook_require_otp'] = True
 
+    # --- Asistencia pública ---
+    if not flags.get('feature_attendance_public', True):
+        att_enabled = validated_data.get('attendance_enabled') if 'attendance_enabled' in validated_data else raw.get('attendance_enabled')
+        if att_enabled is True or str(att_enabled).lower() in ('true', '1', 'yes'):
+            return Response(
+                {"detail": "La función Asistencia pública no está habilitada para este grupo."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        validated_data['attendance_enabled'] = False
+        validated_data['attendance_document_question_id'] = ''
+
     return None
+
+
+def _normalize_attendance_document(value):
+    """Normaliza cédula/documento a solo dígitos."""
+    if value is None:
+        return ''
+    return re.sub(r'\D+', '', str(value).strip())
+
+
+def _answer_value_as_str(answers, question_id):
+    if not question_id or not isinstance(answers, dict):
+        return ''
+    val = answers.get(question_id)
+    if val is None:
+        val = answers.get(str(question_id))
+    if val is None:
+        return ''
+    if isinstance(val, list):
+        return ' '.join(str(v) for v in val if v is not None).strip()
+    return str(val).strip()
+
+
+def _guess_name_from_response(survey, answers):
+    """Primera pregunta de texto distinto a cédula / título."""
+    doc_qid = (survey.get('attendance_document_question_id') or '').strip()
+    questions = survey.get('questions') or []
+    text_types = {
+        'short_text', 'Texto Corto', 'Texto corto', 'long_text', 'Texto Largo',
+        'email', 'Correo Electrónico', 'number', 'Número',
+    }
+    for q in questions:
+        if not isinstance(q, dict):
+            continue
+        qid = str(q.get('id') or '')
+        if not qid or qid == doc_qid:
+            continue
+        qtype = q.get('question_type') or q.get('type') or ''
+        if qtype in ('Título', 'titulo', 'title'):
+            continue
+        if qtype not in text_types and qtype not in ('',):
+            # permitir tipos de texto conocidos; saltar firma/archivo/etc.
+            if qtype in ('signature', 'Firma', 'file_upload', 'Adjuntar archivos', 'multiple_choice', 'Opción Múltiple'):
+                continue
+        name = _answer_value_as_str(answers, qid)
+        if name:
+            return name
+    return ''
+
+
+def _get_used_attendance_codes(survey_id):
+    responses_collection = get_responses_collection()
+    used = set()
+    for sid in (survey_id, str(survey_id)):
+        for doc in responses_collection.find(
+            {'survey': sid, 'attendance_code': {'$exists': True, '$nin': [None, '']}},
+            {'attendance_code': 1},
+        ):
+            code = str(doc.get('attendance_code') or '').strip()
+            if code:
+                used.add(code.zfill(3)[-3:])
+    try:
+        oid = survey_id if isinstance(survey_id, ObjectId) else ObjectId(str(survey_id))
+        for doc in responses_collection.find(
+            {'survey': oid, 'attendance_code': {'$exists': True, '$nin': [None, '']}},
+            {'attendance_code': 1},
+        ):
+            code = str(doc.get('attendance_code') or '').strip()
+            if code:
+                used.add(code.zfill(3)[-3:])
+    except Exception:
+        pass
+    return used
+
+
+def _allocate_attendance_code(survey_id):
+    """Asigna un código aleatorio 000–999 no usado. Raises ValueError si agotados."""
+    import random
+    used = _get_used_attendance_codes(survey_id)
+    if len(used) >= 1000:
+        raise ValueError('Códigos de asistencia agotados (000–999).')
+    available = [f'{i:03d}' for i in range(1000) if f'{i:03d}' not in used]
+    return random.choice(available)
+
+
+def _find_response_by_document(survey, documento_norm):
+    """Busca respuesta cuya pregunta de cédula coincida (normalizada)."""
+    doc_qid = (survey.get('attendance_document_question_id') or '').strip()
+    if not doc_qid or not documento_norm:
+        return None
+    survey_id = survey.get('_id') or survey.get('id')
+    responses_collection = get_responses_collection()
+    candidates = []
+    queries = []
+    for sid in (survey_id, str(survey_id)):
+        queries.append({'survey': sid})
+    try:
+        oid = survey_id if isinstance(survey_id, ObjectId) else ObjectId(str(survey_id))
+        queries.append({'survey': oid})
+    except Exception:
+        pass
+    seen = set()
+    for q in queries:
+        for resp in responses_collection.find(q):
+            rid = str(resp.get('_id') or resp.get('id'))
+            if rid in seen:
+                continue
+            seen.add(rid)
+            answers = resp.get('answers') or {}
+            raw_doc = _answer_value_as_str(answers, doc_qid)
+            if _normalize_attendance_document(raw_doc) == documento_norm:
+                candidates.append(resp)
+    return candidates[0] if candidates else None
 
 
 def validate_file_upload_answers(survey_doc, answers):
@@ -572,11 +696,13 @@ class SurveyGroupListCreate(APIView):
                 doc['feature_reference_file'] = bool(validated_data.get('feature_reference_file', False))
                 doc['feature_informed_consent'] = bool(validated_data.get('feature_informed_consent', False))
                 doc['feature_webhook_rifas'] = bool(validated_data.get('feature_webhook_rifas', False))
+                doc['feature_attendance_public'] = bool(validated_data.get('feature_attendance_public', False))
             else:
                 doc['feature_appearance'] = False
                 doc['feature_reference_file'] = False
                 doc['feature_informed_consent'] = False
                 doc['feature_webhook_rifas'] = False
+                doc['feature_attendance_public'] = False
             if validated_data.get('smtp_password'):
                 doc['smtp_password'] = validated_data['smtp_password']
             result = groups_collection.insert_one(doc)
@@ -1321,6 +1447,8 @@ class SurveyListCreate(APIView):
         survey_doc['webhook_field_map'] = validated_data.get('webhook_field_map') or {}
         if (validated_data.get('webhook_secret') or '').strip():
             survey_doc['webhook_secret'] = validated_data.get('webhook_secret').strip()
+        survey_doc['attendance_enabled'] = bool(validated_data.get('attendance_enabled', False))
+        survey_doc['attendance_document_question_id'] = (validated_data.get('attendance_document_question_id') or '').strip()
 
         result = surveys_collection.insert_one(survey_doc)
         new_survey = surveys_collection.find_one({'_id': result.inserted_id})
@@ -1880,6 +2008,10 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['webhook_field_map'] = validated_data.get('webhook_field_map') or {}
             if (validated_data.get('webhook_secret') or '').strip():
                 update_fields['webhook_secret'] = validated_data.get('webhook_secret').strip()
+            if 'attendance_enabled' in validated_data:
+                update_fields['attendance_enabled'] = bool(validated_data.get('attendance_enabled'))
+            if 'attendance_document_question_id' in validated_data:
+                update_fields['attendance_document_question_id'] = (validated_data.get('attendance_document_question_id') or '').strip()
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
@@ -2026,6 +2158,201 @@ class SurveyPermanentDeleteView(APIView):
         surveys_collection.delete_one({"_id": survey.get('_id')})
         
         return Response({"detail": "Encuesta eliminada permanentemente."}, status=status.HTTP_200_OK)
+
+
+def _load_survey_by_pk(pk, require_not_deleted=True):
+    surveys_collection = get_surveys_collection()
+    survey = None
+    deleted_filter = {
+        "$or": [
+            {"is_deleted": {"$ne": True}},
+            {"is_deleted": {"$exists": False}},
+        ]
+    } if require_not_deleted else None
+    try:
+        q = {"_id": ObjectId(pk)}
+        if deleted_filter:
+            q = {"$and": [q, deleted_filter]}
+        survey = surveys_collection.find_one(q)
+    except Exception:
+        pass
+    if not survey:
+        q = {"_id": pk}
+        if deleted_filter:
+            q = {"$and": [q, deleted_filter]}
+        survey = surveys_collection.find_one(q)
+    if not survey:
+        q = {"id": pk}
+        if deleted_filter:
+            q = {"$and": [q, deleted_filter]}
+        survey = surveys_collection.find_one(q)
+    return survey
+
+
+class PublicAttendanceList(APIView):
+    """
+    GET público: tabla de asistencia de inscritos (respuestas) de la encuesta.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        survey = _load_survey_by_pk(pk)
+        if not survey:
+            raise NotFound(detail="Encuesta no encontrada.")
+        if not survey.get('is_public', False):
+            return Response(
+                {"detail": "Esta encuesta no es pública."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not survey.get('attendance_enabled'):
+            return Response(
+                {"detail": "La asistencia pública no está activa en esta encuesta."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        group_doc = _resolve_group_doc_for_survey(survey.get('group'))
+        flags = get_group_feature_flags(group_doc)
+        if not flags.get('feature_attendance_public', True):
+            return Response(
+                {"detail": "La función Asistencia pública no está habilitada para este grupo."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        doc_qid = (survey.get('attendance_document_question_id') or '').strip()
+        survey_id = survey.get('_id') or survey.get('id')
+        responses_collection = get_responses_collection()
+        rows = []
+        seen = set()
+        queries = [{'survey': survey_id}, {'survey': str(survey_id)}]
+        try:
+            oid = survey_id if isinstance(survey_id, ObjectId) else ObjectId(str(survey_id))
+            queries.append({'survey': oid})
+        except Exception:
+            pass
+        for q in queries:
+            for resp in responses_collection.find(q):
+                rid = str(resp.get('_id') or resp.get('id'))
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                answers = resp.get('answers') or {}
+                document = _answer_value_as_str(answers, doc_qid) if doc_qid else ''
+                code = resp.get('attendance_code')
+                code_str = str(code).strip().zfill(3)[-3:] if code not in (None, '') else None
+                rows.append({
+                    'id': rid,
+                    'name': _guess_name_from_response(survey, answers) or '—',
+                    'document': document or '—',
+                    'attended': bool(code_str),
+                    'code': code_str,
+                })
+        # Orden: primero asistieron, luego por nombre
+        rows.sort(key=lambda r: (0 if r['attended'] else 1, (r.get('name') or '').lower()))
+        return Response({
+            'survey_id': str(survey_id),
+            'survey_title': survey.get('title') or '',
+            'rows': rows,
+            'total': len(rows),
+            'attended_count': sum(1 for r in rows if r['attended']),
+        })
+
+
+class SurveyAttendanceVerify(APIView):
+    """
+    POST autenticado: verifica cédula de un inscrito y asigna código 000–999 único.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        err = require_not_analista(request, "verificar asistencia")
+        if err is not None:
+            return err
+        survey = _load_survey_by_pk(pk)
+        if not survey:
+            raise NotFound(detail="Encuesta no encontrada.")
+        user_role, user_group_id = get_user_role_and_group(request)
+        access_err = user_can_access_survey_group(
+            user_role, user_group_id, survey.get('group'),
+            deny_message="No tienes permisos para verificar asistencia en esta encuesta.",
+        )
+        if access_err is not None:
+            return access_err
+        if not survey.get('attendance_enabled'):
+            return Response(
+                {"detail": "La asistencia no está activa en esta encuesta."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        group_doc = _resolve_group_doc_for_survey(survey.get('group'))
+        flags = get_group_feature_flags(group_doc)
+        if not flags.get('feature_attendance_public', True):
+            return Response(
+                {"detail": "La función Asistencia pública no está habilitada para este grupo."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        doc_qid = (survey.get('attendance_document_question_id') or '').strip()
+        if not doc_qid:
+            return Response(
+                {"detail": "Configura la pregunta de cédula en la encuesta antes de verificar."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        raw_doc = ''
+        if isinstance(request.data, dict):
+            raw_doc = request.data.get('documento') or request.data.get('document') or ''
+        documento = _normalize_attendance_document(raw_doc)
+        if not documento:
+            return Response(
+                {"detail": "Indica un número de cédula válido."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        resp = _find_response_by_document(survey, documento)
+        if not resp:
+            return Response(
+                {"detail": "No inscrito."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        answers = resp.get('answers') or {}
+        name = _guess_name_from_response(survey, answers) or ''
+        existing_code = resp.get('attendance_code')
+        if existing_code not in (None, ''):
+            code_str = str(existing_code).strip().zfill(3)[-3:]
+            return Response({
+                'detail': 'Ya tenía número asignado.',
+                'code': code_str,
+                'name': name,
+                'document': documento,
+                'attended': True,
+                'already_assigned': True,
+                'response_id': str(resp.get('_id') or resp.get('id')),
+            })
+
+        survey_id = survey.get('_id') or survey.get('id')
+        try:
+            code_str = _allocate_attendance_code(survey_id)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+
+        user_id = str(request.user.id) if request.user and hasattr(request.user, 'id') else None
+        responses_collection = get_responses_collection()
+        responses_collection.update_one(
+            {'_id': resp['_id']},
+            {'$set': {
+                'attendance_code': code_str,
+                'attendance_verified_at': datetime.utcnow(),
+                'attendance_verified_by': user_id,
+            }},
+        )
+        return Response({
+            'detail': 'Asistencia registrada.',
+            'code': code_str,
+            'name': name,
+            'document': documento,
+            'attended': True,
+            'already_assigned': False,
+            'response_id': str(resp.get('_id') or resp.get('id')),
+        })
+
 
 # Vistas públicas (sin autenticación)
 class PublicSurveyView(APIView):

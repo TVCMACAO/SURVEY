@@ -284,12 +284,14 @@ class SurveyGroupSerializer(serializers.Serializer):
     feature_reference_file = serializers.BooleanField(required=False)
     feature_informed_consent = serializers.BooleanField(required=False)
     feature_webhook_rifas = serializers.BooleanField(required=False)
+    feature_attendance_public = serializers.BooleanField(required=False)
 
     FEATURE_FLAG_KEYS = (
         'feature_appearance',
         'feature_reference_file',
         'feature_informed_consent',
         'feature_webhook_rifas',
+        'feature_attendance_public',
     )
 
     def get_smtp_configured(self, obj):
@@ -488,6 +490,9 @@ class SurveySerializer(serializers.Serializer):
     webhook_require_otp = serializers.BooleanField(required=False, default=True)
     webhook_field_map = serializers.JSONField(required=False, default=dict)
     webhook_secret_set = serializers.SerializerMethodField(read_only=True)
+    # Asistencia pública / número 000–999
+    attendance_enabled = serializers.BooleanField(required=False, default=False)
+    attendance_document_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
 
     def get_webhook_secret_set(self, obj):
         if not isinstance(obj, dict):
@@ -532,6 +537,9 @@ class SurveySerializer(serializers.Serializer):
         data['webhook_field_map'] = wfm if isinstance(wfm, dict) else {}
         data['webhook_secret_set'] = self.get_webhook_secret_set(instance)
         data.pop('webhook_secret', None)
+
+        data['attendance_enabled'] = bool(instance.get('attendance_enabled', False))
+        data['attendance_document_question_id'] = instance.get('attendance_document_question_id') or ''
 
         theme = instance.get('theme') if isinstance(instance, dict) else {}
         data['theme'] = normalize_survey_theme(theme)
