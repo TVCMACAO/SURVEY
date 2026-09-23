@@ -2239,12 +2239,14 @@ class PublicAttendanceList(APIView):
                 document = _answer_value_as_str(answers, doc_qid) if doc_qid else ''
                 code = resp.get('attendance_code')
                 code_str = str(code).strip().zfill(3)[-3:] if code not in (None, '') else None
+                ticket_delivered = bool(resp.get('attendance_ticket_delivered'))
                 rows.append({
                     'id': rid,
                     'name': _guess_name_from_response(survey, answers) or '—',
                     'document': document or '—',
                     'attended': bool(code_str),
                     'code': code_str,
+                    'ticket_delivered': ticket_delivered,
                 })
         # Orden: primero asistieron, luego por nombre
         rows.sort(key=lambda r: (0 if r['attended'] else 1, (r.get('name') or '').lower()))
@@ -2254,6 +2256,7 @@ class PublicAttendanceList(APIView):
             'rows': rows,
             'total': len(rows),
             'attended_count': sum(1 for r in rows if r['attended']),
+            'ticket_delivered_count': sum(1 for r in rows if r.get('ticket_delivered')),
         })
 
 
@@ -2325,6 +2328,7 @@ class SurveyAttendanceVerify(APIView):
                 'document': documento,
                 'attended': True,
                 'already_assigned': True,
+                'ticket_delivered': bool(resp.get('attendance_ticket_delivered')),
                 'response_id': str(resp.get('_id') or resp.get('id')),
             })
 
@@ -2351,6 +2355,108 @@ class SurveyAttendanceVerify(APIView):
             'document': documento,
             'attended': True,
             'already_assigned': False,
+            'ticket_delivered': bool(resp.get('attendance_ticket_delivered')),
+            'response_id': str(resp.get('_id') or resp.get('id')),
+        })
+
+
+class SurveyAttendanceTicketDeliver(APIView):
+    """
+    POST autenticado: marca entrega de boletas a un inscrito (por cédula o response_id).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        err = require_not_analista(request, "marcar entrega de boletas")
+        if err is not None:
+            return err
+        survey = _load_survey_by_pk(pk)
+        if not survey:
+            raise NotFound(detail="Encuesta no encontrada.")
+        user_role, user_group_id = get_user_role_and_group(request)
+        access_err = user_can_access_survey_group(
+            user_role, user_group_id, survey.get('group'),
+            deny_message="No tienes permisos para marcar entrega de boletas en esta encuesta.",
+        )
+        if access_err is not None:
+            return access_err
+        if not survey.get('attendance_enabled'):
+            return Response(
+                {"detail": "La asistencia no está activa en esta encuesta."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        group_doc = _resolve_group_doc_for_survey(survey.get('group'))
+        flags = get_group_feature_flags(group_doc)
+        if not flags.get('feature_attendance_public', True):
+            return Response(
+                {"detail": "La función Asistencia pública no está habilitada para este grupo."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        raw = request.data if isinstance(request.data, dict) else {}
+        response_id = str(raw.get('response_id') or '').strip()
+        documento = _normalize_attendance_document(raw.get('documento') or raw.get('document') or '')
+        resp = None
+        if response_id:
+            responses_collection = get_responses_collection()
+            try:
+                resp = responses_collection.find_one({'_id': ObjectId(response_id)})
+            except Exception:
+                resp = responses_collection.find_one({'_id': response_id}) or responses_collection.find_one({'id': response_id})
+            if resp:
+                survey_id = survey.get('_id') or survey.get('id')
+                resp_survey = resp.get('survey')
+                if str(resp_survey) != str(survey_id):
+                    resp = None
+        if resp is None:
+            if not documento:
+                return Response(
+                    {"detail": "Indica una cédula o el inscrito a marcar."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            resp = _find_response_by_document(survey, documento)
+        if not resp:
+            return Response(
+                {"detail": "No inscrito."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        answers = resp.get('answers') or {}
+        name = _guess_name_from_response(survey, answers) or ''
+        doc_qid = (survey.get('attendance_document_question_id') or '').strip()
+        document = documento or _normalize_attendance_document(_answer_value_as_str(answers, doc_qid))
+        existing_code = resp.get('attendance_code')
+        code_str = str(existing_code).strip().zfill(3)[-3:] if existing_code not in (None, '') else None
+        already = bool(resp.get('attendance_ticket_delivered'))
+        if already:
+            return Response({
+                'detail': 'Las boletas ya estaban entregadas.',
+                'ticket_delivered': True,
+                'already_delivered': True,
+                'name': name,
+                'document': document,
+                'code': code_str,
+                'attended': bool(code_str),
+                'response_id': str(resp.get('_id') or resp.get('id')),
+            })
+
+        user_id = str(request.user.id) if request.user and hasattr(request.user, 'id') else None
+        get_responses_collection().update_one(
+            {'_id': resp['_id']},
+            {'$set': {
+                'attendance_ticket_delivered': True,
+                'attendance_ticket_delivered_at': datetime.utcnow(),
+                'attendance_ticket_delivered_by': user_id,
+            }},
+        )
+        return Response({
+            'detail': 'Entrega de boletas registrada.',
+            'ticket_delivered': True,
+            'already_delivered': False,
+            'name': name,
+            'document': document,
+            'code': code_str,
+            'attended': bool(code_str),
             'response_id': str(resp.get('_id') or resp.get('id')),
         })
 

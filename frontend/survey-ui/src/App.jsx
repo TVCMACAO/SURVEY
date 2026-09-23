@@ -8389,7 +8389,18 @@ const PublicAttendanceTable = ({ surveyId }) => {
   const [error, setError] = useState('');
   const [data, setData] = useState(null);
   const [codeQuery, setCodeQuery] = useState('');
+  const [docQuery, setDocQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [canMarkTickets, setCanMarkTickets] = useState(() => isAuthenticated());
+  const [ticketBusyId, setTicketBusyId] = useState('');
+  const [ticketError, setTicketError] = useState('');
+
+  const loadAttendance = async () => {
+    const res = await fetch(`/api/public/surveys/${surveyId}/attendance/`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || 'No se pudo cargar la asistencia.');
+    return body;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -8397,9 +8408,7 @@ const PublicAttendanceTable = ({ surveyId }) => {
       setLoading(true);
       setError('');
       try {
-        const res = await fetch(`/api/public/surveys/${surveyId}/attendance/`);
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.detail || 'No se pudo cargar la asistencia.');
+        const body = await loadAttendance();
         if (!cancelled) setData(body);
       } catch (e) {
         if (!cancelled) setError(e.message || 'Error al cargar');
@@ -8412,19 +8421,61 @@ const PublicAttendanceTable = ({ surveyId }) => {
 
   useEffect(() => {
     setPage(1);
-  }, [codeQuery]);
+  }, [codeQuery, docQuery]);
 
-  const normalizeCodeQuery = (q) => String(q || '').replace(/\D+/g, '');
+  const normalizeDigits = (q) => String(q || '').replace(/\D+/g, '');
   const filteredRows = (() => {
     const rows = data?.rows || [];
-    const q = normalizeCodeQuery(codeQuery);
-    if (!q) return rows;
+    const codeQ = normalizeDigits(codeQuery);
+    const docQ = normalizeDigits(docQuery);
+    if (!codeQ && !docQ) return rows;
     return rows.filter((row) => {
-      if (!row.code) return false;
-      const code = String(row.code).replace(/\D+/g, '');
-      return code.includes(q) || code.padStart(3, '0').includes(q.padStart(Math.min(q.length, 3), '0'));
+      if (codeQ) {
+        if (!row.code) return false;
+        const code = String(row.code).replace(/\D+/g, '');
+        const codeOk = code.includes(codeQ) || code.padStart(3, '0').includes(codeQ.padStart(Math.min(codeQ.length, 3), '0'));
+        if (!codeOk) return false;
+      }
+      if (docQ) {
+        const document = String(row.document || '').replace(/\D+/g, '');
+        if (!document.includes(docQ)) return false;
+      }
+      return true;
     });
   })();
+
+  const handleMarkTicket = async (row) => {
+    if (!isAuthenticated()) {
+      setCanMarkTickets(false);
+      setTicketError('Inicia sesión para marcar la entrega de boletas.');
+      return;
+    }
+    setTicketBusyId(row.id);
+    setTicketError('');
+    try {
+      const res = await authenticatedFetch(`/api/surveys/${surveyId}/attendance/ticket/`, {
+        method: 'POST',
+        body: JSON.stringify({ response_id: row.id, documento: row.document }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || 'No se pudo marcar la entrega.');
+      setData((prev) => {
+        if (!prev) return prev;
+        const rows = (prev.rows || []).map((r) => (
+          r.id === row.id ? { ...r, ticket_delivered: true } : r
+        ));
+        return {
+          ...prev,
+          rows,
+          ticket_delivered_count: rows.filter((r) => r.ticket_delivered).length,
+        };
+      });
+    } catch (e) {
+      setTicketError(e.message || 'Error al marcar entrega');
+    } finally {
+      setTicketBusyId('');
+    }
+  };
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -8443,24 +8494,43 @@ const PublicAttendanceTable = ({ surveyId }) => {
         )}
         {!loading && !error && data && (
           <>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <div className="flex flex-col gap-2 mb-3">
               <p className="text-xs sm:text-sm text-gray-600">
                 {data.attended_count} asistieron de {data.total} inscritos
-                {normalizeCodeQuery(codeQuery) ? (
+                {typeof data.ticket_delivered_count === 'number' ? (
+                  <span> · {data.ticket_delivered_count} boletas entregadas</span>
+                ) : null}
+                {(normalizeDigits(codeQuery) || normalizeDigits(docQuery)) ? (
                   <span className="text-amber-700 font-semibold"> · {filteredRows.length} resultado(s)</span>
                 ) : null}
               </p>
-              <label className="block sm:w-48">
-                <span className="sr-only">Buscar por número asignado</span>
-                <input
-                  type="search"
-                  inputMode="numeric"
-                  placeholder="Buscar por número…"
-                  value={codeQuery}
-                  onChange={(e) => setCodeQuery(e.target.value)}
-                  className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-400"
-                />
-              </label>
+              <div className="flex flex-col sm:flex-row gap-2 sm:justify-end">
+                <label className="block sm:w-48">
+                  <span className="sr-only">Buscar por cédula</span>
+                  <input
+                    type="search"
+                    inputMode="numeric"
+                    placeholder="Buscar por cédula…"
+                    value={docQuery}
+                    onChange={(e) => setDocQuery(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-400"
+                  />
+                </label>
+                <label className="block sm:w-48">
+                  <span className="sr-only">Buscar por número asignado</span>
+                  <input
+                    type="search"
+                    inputMode="numeric"
+                    placeholder="Buscar por número…"
+                    value={codeQuery}
+                    onChange={(e) => setCodeQuery(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-amber-500 focus:border-amber-400"
+                  />
+                </label>
+              </div>
+              {ticketError && (
+                <p className="text-xs text-red-600">{ticketError}</p>
+              )}
             </div>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
               <table className="w-full text-xs sm:text-sm">
@@ -8470,17 +8540,18 @@ const PublicAttendanceTable = ({ surveyId }) => {
                     <th className="px-2 sm:px-3 py-1.5 font-bold">Documento</th>
                     <th className="px-2 sm:px-3 py-1.5 font-bold">Asistencia</th>
                     <th className="px-2 sm:px-3 py-1.5 font-bold">Número</th>
+                    <th className="px-2 sm:px-3 py-1.5 font-bold">Boletas</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data.rows || []).length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-3 py-6 text-center text-gray-400">Sin inscritos aún</td>
+                      <td colSpan={5} className="px-3 py-6 text-center text-gray-400">Sin inscritos aún</td>
                     </tr>
                   ) : filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-3 py-6 text-center text-gray-400">
-                        No hay coincidencias para el número «{codeQuery}»
+                      <td colSpan={5} className="px-3 py-6 text-center text-gray-400">
+                        No hay coincidencias{docQuery || codeQuery ? ` para «${docQuery || codeQuery}»` : ''}
                       </td>
                     </tr>
                   ) : (
@@ -8497,6 +8568,22 @@ const PublicAttendanceTable = ({ surveyId }) => {
                         </td>
                         <td className="px-2 sm:px-3 py-1 font-mono font-black text-sm sm:text-base text-amber-700 tabular-nums">
                           {row.code || '—'}
+                        </td>
+                        <td className="px-2 sm:px-3 py-1 whitespace-nowrap">
+                          {row.ticket_delivered ? (
+                            <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-indigo-100 text-indigo-800">Entregada</span>
+                          ) : canMarkTickets ? (
+                            <button
+                              type="button"
+                              disabled={ticketBusyId === row.id}
+                              onClick={() => handleMarkTicket(row)}
+                              className="px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white"
+                            >
+                              {ticketBusyId === row.id ? '…' : 'Marcar entrega'}
+                            </button>
+                          ) : (
+                            <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-gray-100 text-gray-600">Pendiente</span>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -8566,6 +8653,7 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [ticketBusy, setTicketBusy] = useState(false);
 
   const handleVerify = async (e) => {
     e.preventDefault();
@@ -8586,6 +8674,29 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
       setError(err.message || 'Error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleMarkTicket = async () => {
+    if (!result) return;
+    setTicketBusy(true);
+    setError('');
+    try {
+      const surveyId = survey.id || survey._id;
+      const res = await authenticatedFetch(`/api/surveys/${surveyId}/attendance/ticket/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          response_id: result.response_id,
+          documento: result.document,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || 'No se pudo marcar la entrega.');
+      setResult((prev) => prev ? { ...prev, ticket_delivered: true } : prev);
+    } catch (err) {
+      setError(err.message || 'Error al marcar entrega');
+    } finally {
+      setTicketBusy(false);
     }
   };
 
@@ -8610,6 +8721,18 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
           <p className="text-sm text-emerald-800 mb-1">{result.name || 'Inscrito'}</p>
           <p className="text-xs text-emerald-700 mb-2">{result.already_assigned ? 'Número ya asignado' : 'Número asignado'}</p>
           <p className="text-4xl font-black text-amber-700 tracking-widest">{result.code}</p>
+          {result.ticket_delivered ? (
+            <p className="mt-3 text-xs font-bold text-indigo-700">Boletas entregadas</p>
+          ) : (
+            <button
+              type="button"
+              disabled={ticketBusy}
+              onClick={handleMarkTicket}
+              className="mt-3 w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold"
+            >
+              {ticketBusy ? 'Marcando…' : 'Marcar entrega de boletas'}
+            </button>
+          )}
         </div>
       )}
       <button

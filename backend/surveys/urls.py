@@ -8,7 +8,7 @@ from .views import (
     SurveyListCreate, SurveyRetrieveUpdateDestroy, SurveyWebhookTest, SurveyWebhookBackfill,
     SurveyRestoreView, SurveyPermanentDeleteView,
     SurveyReferenceFileUpload,
-    SurveyAttendanceVerify,
+    SurveyAttendanceVerify, SurveyAttendanceTicketDeliver,
     AttachmentUploadView, AttachmentRetrieveView, PublicAttachmentRetrieveView,
     ResponseListCreate, ResponseRetrieve, ResponseResetView,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
@@ -42,6 +42,7 @@ urlpatterns = [
     path('surveys/<str:pk>/webhook-backfill/', SurveyWebhookBackfill.as_view(), name='survey-webhook-backfill'),
     path('surveys/<str:pk>/reference-file/', SurveyReferenceFileUpload.as_view(), name='survey-reference-file'),
     path('surveys/<str:pk>/attendance/verify/', SurveyAttendanceVerify.as_view(), name='survey-attendance-verify'),
+    path('surveys/<str:pk>/attendance/ticket/', SurveyAttendanceTicketDeliver.as_view(), name='survey-attendance-ticket'),
     path('surveys/<str:pk>/restore/', SurveyRestoreView.as_view(), name='survey-restore'),
     path('surveys/<str:pk>/permanent-delete/', SurveyPermanentDeleteView.as_view(), name='survey-permanent-delete'),
 
