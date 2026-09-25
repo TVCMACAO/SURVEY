@@ -1,9 +1,14 @@
 import logging
 import json
+import base64
 import mimetypes
 import os
 import re
+import unicodedata
 import uuid
+import urllib.error
+import urllib.request
+from urllib.parse import urlsplit
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, permissions
@@ -319,6 +324,38 @@ def _normalize_attendance_document(value):
     if value is None:
         return ''
     return re.sub(r'\D+', '', str(value).strip())
+
+
+def _fold_question_label(value):
+    text = unicodedata.normalize('NFD', str(value or ''))
+    text = ''.join(ch for ch in text if unicodedata.category(ch) != 'Mn')
+    return text.lower()
+
+
+def _find_phone_question_id(survey):
+    """Primera pregunta de teléfono/celular/whatsapp distinta de la cédula."""
+    doc_qid = (survey.get('attendance_document_question_id') or '').strip()
+    hints = ('telefono', 'celular', 'whatsapp')
+    for question in survey.get('questions') or []:
+        if not isinstance(question, dict):
+            continue
+        qid = str(question.get('id') or question.get('_id') or '').strip()
+        if not qid or qid == doc_qid:
+            continue
+        label = _fold_question_label(question.get('text') or question.get('question_text') or '')
+        if any(hint in label for hint in hints):
+            return qid
+    return ''
+
+
+def _normalize_co_mobile(value):
+    """3001234567 o 573001234567 → +573001234567. Vacío si no encaja."""
+    digits = re.sub(r'\D+', '', str(value or ''))
+    if len(digits) == 12 and digits.startswith('57'):
+        return '+' + digits
+    if len(digits) == 10 and digits.startswith('3'):
+        return '+57' + digits
+    return ''
 
 
 def _answer_value_as_str(answers, question_id):
@@ -689,6 +726,8 @@ class SurveyGroupListCreate(APIView):
                 'smtp_from_email': validated_data.get('smtp_from_email') or '',
                 'smtp_from_name': validated_data.get('smtp_from_name') or '',
                 'smtp_reply_to': validated_data.get('smtp_reply_to') or '',
+                'sms_gateway_url': validated_data.get('sms_gateway_url') or '',
+                'sms_gateway_user': validated_data.get('sms_gateway_user') or '',
             }
             # Grupos nuevos: funciones off hasta que root las active
             user_role, _ = get_user_role_and_group(request)
@@ -706,6 +745,8 @@ class SurveyGroupListCreate(APIView):
                 doc['feature_attendance_public'] = False
             if validated_data.get('smtp_password'):
                 doc['smtp_password'] = validated_data['smtp_password']
+            if (validated_data.get('sms_gateway_password') or '').strip():
+                doc['sms_gateway_password'] = validated_data['sms_gateway_password']
             result = groups_collection.insert_one(doc)
             # Recuperar el objeto insertado para serializarlo con el ID correcto
             new_group = groups_collection.find_one({'_id': result.inserted_id})
@@ -774,6 +815,11 @@ class SurveyGroupRetrieveUpdateDestroy(APIView):
                 update_fields['smtp_use_tls'] = bool(vd.get('smtp_use_tls'))
             if 'smtp_password' in vd and (vd.get('smtp_password') or '').strip():
                 update_fields['smtp_password'] = vd.get('smtp_password')
+            for key in ('sms_gateway_url', 'sms_gateway_user'):
+                if key in vd:
+                    update_fields[key] = (vd.get(key) or '').strip()
+            if 'sms_gateway_password' in vd and (vd.get('sms_gateway_password') or '').strip():
+                update_fields['sms_gateway_password'] = vd.get('sms_gateway_password')
             # Solo root puede cambiar flags de funciones
             if user_role == 'root':
                 for key in FEATURE_FLAG_KEYS:
@@ -863,6 +909,178 @@ class SurveyGroupSmtpTest(APIView):
             'message': f'Correo de prueba enviado a {test_to}.',
             'smtp_ms': (result or {}).get('smtp_ms'),
             'message_id': (result or {}).get('message_id'),
+        })
+
+
+class _SmsGatewayNoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def probe_sms_gateway(url, username, password, timeout=10):
+    """GET {url}/device with Basic auth. Raises ValueError or ConnectionError. Does not return the body."""
+    raw = (url or '').strip()
+    user = (username or '').strip()
+    secret = password or ''
+    if not raw or not user or not str(secret).strip():
+        raise ValueError('Indica la URL, el usuario y la contraseña del SMS Gateway.')
+    parts = urlsplit(raw)
+    if parts.scheme not in ('http', 'https') or not parts.netloc:
+        raise ValueError('La URL debe empezar por http:// o https://.')
+    if parts.username or parts.password:
+        raise ValueError('Pon el usuario y la contraseña en sus campos, no dentro de la URL.')
+    device_url = raw.rstrip('/') + '/device'
+    token = base64.b64encode(f'{user}:{secret}'.encode('utf-8')).decode('ascii')
+    req = urllib.request.Request(
+        device_url,
+        headers={
+            'Authorization': f'Basic {token}',
+            'Accept': 'application/json',
+            'User-Agent': 'survey-app-sms-test',
+        },
+        method='GET',
+    )
+    opener = urllib.request.build_opener(_SmsGatewayNoRedirect)
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            code = getattr(resp, 'status', None) or resp.getcode()
+            resp.read(64)
+            if code != 200:
+                raise ConnectionError(f'El SMS Gateway respondió {code}.')
+            return code
+    except urllib.error.HTTPError as exc:
+        if exc.code in (301, 302, 303, 307, 308):
+            raise ValueError('La URL no debe redirigir. Usa la URL directa que termina en /api/3rdparty/v1.')
+        if exc.code in (401, 403):
+            raise ValueError('El SMS Gateway rechazó el usuario o la contraseña.')
+        raise ConnectionError(f'El SMS Gateway respondió {exc.code}.')
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise ConnectionError('No se pudo conectar con el SMS Gateway.')
+
+
+def send_sms_gateway_message(url, username, password, phone, text, timeout=15):
+    """POST {url}/message. Acepta 200 o 202. No devuelve el cuerpo del gateway."""
+    raw = (url or '').strip()
+    user = (username or '').strip()
+    secret = password or ''
+    if not raw or not user or not str(secret).strip():
+        raise ValueError('El grupo no tiene configurado el SMS Gateway.')
+    parts = urlsplit(raw)
+    if parts.scheme not in ('http', 'https') or not parts.netloc:
+        raise ValueError('La URL del SMS Gateway no es válida.')
+    if parts.username or parts.password:
+        raise ValueError('La URL del SMS Gateway no debe incluir usuario ni contraseña.')
+    message_url = raw.rstrip('/') + '/message'
+    payload = json.dumps({
+        'textMessage': {'text': text},
+        'phoneNumbers': [phone],
+    }, ensure_ascii=False).encode('utf-8')
+    token = base64.b64encode(f'{user}:{secret}'.encode('utf-8')).decode('ascii')
+    req = urllib.request.Request(
+        message_url,
+        data=payload,
+        headers={
+            'Authorization': f'Basic {token}',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json; charset=utf-8',
+            'User-Agent': 'survey-app-sms',
+        },
+        method='POST',
+    )
+    opener = urllib.request.build_opener(_SmsGatewayNoRedirect)
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            code = getattr(resp, 'status', None) or resp.getcode()
+            resp.read(64)
+            if code not in (200, 202):
+                raise ConnectionError(f'El SMS Gateway respondió {code}.')
+    except urllib.error.HTTPError as exc:
+        if exc.code in (301, 302, 303, 307, 308):
+            raise ValueError('La URL del SMS Gateway no debe redirigir.')
+        if exc.code in (401, 403):
+            raise ValueError('El SMS Gateway rechazó el usuario o la contraseña.')
+        raise ConnectionError(f'El SMS Gateway respondió {exc.code}.')
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise ConnectionError('No se pudo conectar con el SMS Gateway.')
+
+
+def _attendance_sms_status(survey, group_doc, answers, code_str):
+    """Envía el código por SMS. Nunca lanza: (enviado, detalle)."""
+    try:
+        qid = _find_phone_question_id(survey)
+        if not qid:
+            return False, 'La encuesta no tiene una pregunta de teléfono.'
+        phone = _normalize_co_mobile(_answer_value_as_str(answers, qid))
+        if not phone:
+            return False, 'El teléfono de la inscripción no tiene un formato válido.'
+        group = group_doc if isinstance(group_doc, dict) else {}
+        title = (survey.get('title') or 'Inscripción').strip().rstrip('.')
+        text = f'{title}. Tu número para el sorteo de esta noche es {code_str}.'
+        send_sms_gateway_message(
+            group.get('sms_gateway_url'),
+            group.get('sms_gateway_user'),
+            group.get('sms_gateway_password'),
+            phone,
+            text,
+        )
+        return True, f'SMS enviado al celular {phone}.'
+    except ValueError as exc:
+        return False, str(exc)
+    except ConnectionError as exc:
+        return False, str(exc)
+    except Exception:
+        logging.getLogger(__name__).exception('No se pudo enviar el SMS de asistencia')
+        return False, 'No se pudo enviar el SMS.'
+
+
+class SurveyGroupSmsTest(APIView):
+    """POST: prueba de conexión al SMS Gateway del grupo (solo root o group_admin del grupo)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        user_role, user_group_id = get_user_role_and_group(request)
+        if user_role == 'root':
+            pass
+        elif user_role == 'group_admin' and user_group_id and str(user_group_id) == str(pk):
+            pass
+        else:
+            return Response(
+                {"detail": "No tienes permisos para probar el SMS Gateway de este grupo."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        groups_collection = get_survey_groups_collection()
+        try:
+            group = groups_collection.find_one({"_id": ObjectId(pk)})
+        except Exception:
+            group = None
+        if not group:
+            raise NotFound(detail="Grupo no encontrado.")
+
+        overrides = request.data if hasattr(request, 'data') else {}
+        if isinstance(overrides, dict):
+            merged = dict(group)
+            for key in ('sms_gateway_url', 'sms_gateway_user'):
+                if key in overrides and overrides.get(key) is not None:
+                    merged[key] = overrides.get(key)
+            if (overrides.get('sms_gateway_password') or '').strip():
+                merged['sms_gateway_password'] = overrides.get('sms_gateway_password')
+            group = merged
+
+        try:
+            probe_sms_gateway(
+                group.get('sms_gateway_url'),
+                group.get('sms_gateway_user'),
+                group.get('sms_gateway_password'),
+            )
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ConnectionError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response({
+            'ok': True,
+            'message': 'Conexión con el SMS Gateway correcta.',
         })
 
 
@@ -2260,6 +2478,93 @@ class PublicAttendanceList(APIView):
         })
 
 
+def _prepare_attendance_lookup(request, pk, action_label, deny_message):
+    """Valida permisos y busca al inscrito. Retorna (error_response, survey, group_doc, documento, resp)."""
+    err = require_not_analista(request, action_label)
+    if err is not None:
+        return err, None, None, None, None
+    survey = _load_survey_by_pk(pk)
+    if not survey:
+        raise NotFound(detail="Encuesta no encontrada.")
+    user_role, user_group_id = get_user_role_and_group(request)
+    access_err = user_can_access_survey_group(
+        user_role, user_group_id, survey.get('group'),
+        deny_message=deny_message,
+    )
+    if access_err is not None:
+        return access_err, None, None, None, None
+    if not survey.get('attendance_enabled'):
+        return Response(
+            {"detail": "La asistencia no está activa en esta encuesta."},
+            status=status.HTTP_400_BAD_REQUEST,
+        ), None, None, None, None
+    group_doc = _resolve_group_doc_for_survey(survey.get('group'))
+    flags = get_group_feature_flags(group_doc)
+    if not flags.get('feature_attendance_public', True):
+        return Response(
+            {"detail": "La función Asistencia pública no está habilitada para este grupo."},
+            status=status.HTTP_403_FORBIDDEN,
+        ), None, None, None, None
+    doc_qid = (survey.get('attendance_document_question_id') or '').strip()
+    if not doc_qid:
+        return Response(
+            {"detail": "Configura la pregunta de cédula en la encuesta antes de verificar."},
+            status=status.HTTP_400_BAD_REQUEST,
+        ), None, None, None, None
+
+    raw_doc = ''
+    if isinstance(request.data, dict):
+        raw_doc = request.data.get('documento') or request.data.get('document') or ''
+    documento = _normalize_attendance_document(raw_doc)
+    if not documento:
+        return Response(
+            {"detail": "Indica un número de cédula válido."},
+            status=status.HTTP_400_BAD_REQUEST,
+        ), None, None, None, None
+
+    resp = _find_response_by_document(survey, documento)
+    if not resp:
+        return Response(
+            {"detail": "No inscrito."},
+            status=status.HTTP_404_NOT_FOUND,
+        ), None, None, None, None
+    return None, survey, group_doc, documento, resp
+
+
+def _attendance_person_payload(survey, resp, documento):
+    answers = resp.get('answers') or {}
+    name = _guess_name_from_response(survey, answers) or ''
+    existing_code = resp.get('attendance_code')
+    code_str = None
+    if existing_code not in (None, ''):
+        code_str = str(existing_code).strip().zfill(3)[-3:]
+    return answers, {
+        'code': code_str,
+        'name': name,
+        'document': documento,
+        'attended': bool(code_str),
+        'already_assigned': bool(code_str),
+        'ticket_delivered': bool(resp.get('attendance_ticket_delivered')),
+        'response_id': str(resp.get('_id') or resp.get('id')),
+    }
+
+
+class SurveyAttendanceConsult(APIView):
+    """POST autenticado: consulta cédula sin asignar número ni enviar SMS."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        err, survey, _group_doc, documento, resp = _prepare_attendance_lookup(
+            request, pk, "consultar asistencia",
+            "No tienes permisos para consultar asistencia en esta encuesta.",
+        )
+        if err is not None:
+            return err
+        _answers, payload = _attendance_person_payload(survey, resp, documento)
+        payload['detail'] = 'Consulta realizada.'
+        return Response(payload)
+
+
 class SurveyAttendanceVerify(APIView):
     """
     POST autenticado: verifica cédula de un inscrito y asigna código 000–999 único.
@@ -2267,70 +2572,21 @@ class SurveyAttendanceVerify(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        err = require_not_analista(request, "verificar asistencia")
+        err, survey, group_doc, documento, resp = _prepare_attendance_lookup(
+            request, pk, "verificar asistencia",
+            "No tienes permisos para verificar asistencia en esta encuesta.",
+        )
         if err is not None:
             return err
-        survey = _load_survey_by_pk(pk)
-        if not survey:
-            raise NotFound(detail="Encuesta no encontrada.")
-        user_role, user_group_id = get_user_role_and_group(request)
-        access_err = user_can_access_survey_group(
-            user_role, user_group_id, survey.get('group'),
-            deny_message="No tienes permisos para verificar asistencia en esta encuesta.",
-        )
-        if access_err is not None:
-            return access_err
-        if not survey.get('attendance_enabled'):
-            return Response(
-                {"detail": "La asistencia no está activa en esta encuesta."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        group_doc = _resolve_group_doc_for_survey(survey.get('group'))
-        flags = get_group_feature_flags(group_doc)
-        if not flags.get('feature_attendance_public', True):
-            return Response(
-                {"detail": "La función Asistencia pública no está habilitada para este grupo."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        doc_qid = (survey.get('attendance_document_question_id') or '').strip()
-        if not doc_qid:
-            return Response(
-                {"detail": "Configura la pregunta de cédula en la encuesta antes de verificar."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
-        raw_doc = ''
-        if isinstance(request.data, dict):
-            raw_doc = request.data.get('documento') or request.data.get('document') or ''
-        documento = _normalize_attendance_document(raw_doc)
-        if not documento:
-            return Response(
-                {"detail": "Indica un número de cédula válido."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        resp = _find_response_by_document(survey, documento)
-        if not resp:
-            return Response(
-                {"detail": "No inscrito."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        answers = resp.get('answers') or {}
-        name = _guess_name_from_response(survey, answers) or ''
-        existing_code = resp.get('attendance_code')
-        if existing_code not in (None, ''):
-            code_str = str(existing_code).strip().zfill(3)[-3:]
-            return Response({
-                'detail': 'Ya tenía número asignado.',
-                'code': code_str,
-                'name': name,
-                'document': documento,
-                'attended': True,
-                'already_assigned': True,
-                'ticket_delivered': bool(resp.get('attendance_ticket_delivered')),
-                'response_id': str(resp.get('_id') or resp.get('id')),
-            })
+        answers, payload = _attendance_person_payload(survey, resp, documento)
+        if payload['already_assigned']:
+            code_str = payload['code']
+            sms_sent, sms_detail = _attendance_sms_status(survey, group_doc, answers, code_str)
+            payload['detail'] = 'Ya tenía número asignado.'
+            payload['sms_sent'] = sms_sent
+            payload['sms_detail'] = sms_detail
+            return Response(payload)
 
         survey_id = survey.get('_id') or survey.get('id')
         try:
@@ -2348,16 +2604,16 @@ class SurveyAttendanceVerify(APIView):
                 'attendance_verified_by': user_id,
             }},
         )
-        return Response({
+        sms_sent, sms_detail = _attendance_sms_status(survey, group_doc, answers, code_str)
+        payload.update({
             'detail': 'Asistencia registrada.',
             'code': code_str,
-            'name': name,
-            'document': documento,
             'attended': True,
             'already_assigned': False,
-            'ticket_delivered': bool(resp.get('attendance_ticket_delivered')),
-            'response_id': str(resp.get('_id') or resp.get('id')),
+            'sms_sent': sms_sent,
+            'sms_detail': sms_detail,
         })
+        return Response(payload)
 
 
 class SurveyAttendanceTicketDeliver(APIView):

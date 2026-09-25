@@ -279,6 +279,12 @@ class SurveyGroupSerializer(serializers.Serializer):
     smtp_reply_to = serializers.EmailField(required=False, allow_blank=True, default='')
     smtp_configured = serializers.SerializerMethodField(read_only=True)
     smtp_password_set = serializers.SerializerMethodField(read_only=True)
+    # SMS Gateway (API de terceros): URL, usuario y contraseña de la app Android
+    sms_gateway_url = serializers.CharField(max_length=500, required=False, allow_blank=True, default='')
+    sms_gateway_user = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    sms_gateway_password = serializers.CharField(max_length=500, required=False, allow_blank=True, default='', write_only=True)
+    sms_configured = serializers.SerializerMethodField(read_only=True)
+    sms_password_set = serializers.SerializerMethodField(read_only=True)
     # Funciones de encuesta permitidas para el grupo (solo root las edita)
     feature_appearance = serializers.BooleanField(required=False)
     feature_reference_file = serializers.BooleanField(required=False)
@@ -306,10 +312,24 @@ class SurveyGroupSerializer(serializers.Serializer):
             return False
         return bool((obj.get('smtp_password') or '').strip())
 
+    def get_sms_configured(self, obj):
+        if not isinstance(obj, dict):
+            return False
+        url = (obj.get('sms_gateway_url') or '').strip()
+        user = (obj.get('sms_gateway_user') or '').strip()
+        password = (obj.get('sms_gateway_password') or '').strip()
+        return bool(url and user and password)
+
+    def get_sms_password_set(self, obj):
+        if not isinstance(obj, dict):
+            return False
+        return bool((obj.get('sms_gateway_password') or '').strip())
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        # Never expose password
+        # Never expose passwords
         data.pop('smtp_password', None)
+        data.pop('sms_gateway_password', None)
         if isinstance(instance, dict):
             data['smtp_configured'] = self.get_smtp_configured(instance)
             data['smtp_password_set'] = self.get_smtp_password_set(instance)
@@ -320,6 +340,10 @@ class SurveyGroupSerializer(serializers.Serializer):
             data['smtp_from_email'] = instance.get('smtp_from_email') or ''
             data['smtp_from_name'] = instance.get('smtp_from_name') or ''
             data['smtp_reply_to'] = instance.get('smtp_reply_to') or ''
+            data['sms_configured'] = self.get_sms_configured(instance)
+            data['sms_password_set'] = self.get_sms_password_set(instance)
+            data['sms_gateway_url'] = instance.get('sms_gateway_url') or ''
+            data['sms_gateway_user'] = instance.get('sms_gateway_user') or ''
             # Ausentes en grupos viejos → true (compatibilidad)
             for key in self.FEATURE_FLAG_KEYS:
                 data[key] = True if key not in instance else bool(instance.get(key))

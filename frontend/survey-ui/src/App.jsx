@@ -6906,6 +6906,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   const [showGroupForm, setShowGroupForm] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [editingGroup, setEditingGroup] = useState(null);
+  const [groupFormTab, setGroupFormTab] = useState('general');
   const [formData, setFormData] = useState({
     username: '',
     first_name: '',
@@ -6928,6 +6929,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     smtp_from_name: '',
     smtp_reply_to: '',
     smtp_test_email: '',
+    sms_gateway_url: '',
+    sms_gateway_user: '',
+    sms_gateway_password: '',
     feature_appearance: false,
     feature_reference_file: false,
     feature_informed_consent: false,
@@ -6945,6 +6949,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     smtp_from_name: '',
     smtp_reply_to: '',
     smtp_test_email: '',
+    sms_gateway_url: '',
+    sms_gateway_user: '',
+    sms_gateway_password: '',
     feature_appearance: false,
     feature_reference_file: false,
     feature_informed_consent: false,
@@ -6953,6 +6960,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   });
   const [formError, setFormError] = useState('');
   const [smtpTesting, setSmtpTesting] = useState(false);
+  const [smsTesting, setSmsTesting] = useState(false);
   const { useTableLayout } = useBreakpoint();
   const showGroupColumn = users.some(u => u.group_name || u.user_group_id);
 
@@ -7257,6 +7265,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   const handleCreateGroup = async (e) => {
     e.preventDefault();
     setFormError('');
+    if (!(groupFormData.name || '').trim()) {
+      setGroupFormTab('general');
+      setFormError('El nombre del grupo es obligatorio.');
+      return;
+    }
 
     try {
       const response = await authenticatedFetch('/api/groups/', {
@@ -7271,6 +7284,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 
       await fetchGroups();
       setShowGroupForm(false);
+      setGroupFormTab('general');
       setGroupFormData(emptyGroupForm());
       alert('Grupo creado exitosamente.');
     } catch (error) {
@@ -7282,11 +7296,19 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   const handleUpdateGroup = async (e) => {
     e.preventDefault();
     setFormError('');
+    if (!(groupFormData.name || '').trim()) {
+      setGroupFormTab('general');
+      setFormError('El nombre del grupo es obligatorio.');
+      return;
+    }
 
     try {
       const payload = { ...groupFormData };
       if (!(payload.smtp_password || '').trim()) {
         delete payload.smtp_password;
+      }
+      if (!(payload.sms_gateway_password || '').trim()) {
+        delete payload.sms_gateway_password;
       }
       if (userRole !== 'root') {
         delete payload.feature_appearance;
@@ -7308,6 +7330,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       await fetchGroups();
       setShowGroupForm(false);
       setEditingGroup(null);
+      setGroupFormTab('general');
       setGroupFormData(emptyGroupForm());
       alert('Grupo actualizado exitosamente.');
     } catch (error) {
@@ -7352,6 +7375,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       smtp_from_name: group.smtp_from_name || '',
       smtp_reply_to: group.smtp_reply_to || '',
       smtp_test_email: '',
+      sms_gateway_url: group.sms_gateway_url || '',
+      sms_gateway_user: group.sms_gateway_user || '',
+      sms_gateway_password: '',
       // API: ausentes → true; grupos nuevos con false explícito
       feature_appearance: group.feature_appearance !== false,
       feature_reference_file: group.feature_reference_file !== false,
@@ -7359,6 +7385,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       feature_webhook_rifas: group.feature_webhook_rifas !== false,
       feature_attendance_public: group.feature_attendance_public !== false,
     });
+    setGroupFormTab('general');
     setShowGroupForm(true);
     setFormError('');
   };
@@ -7366,6 +7393,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   const handleNewGroup = () => {
     setEditingGroup(null);
     setGroupFormData(emptyGroupForm());
+    setGroupFormTab('general');
     setShowGroupForm(true);
     setFormError('');
   };
@@ -7402,6 +7430,35 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       setFormError(error.message);
     } finally {
       setSmtpTesting(false);
+    }
+  };
+
+  const handleSmsTest = async () => {
+    if (!editingGroup?.id) {
+      setFormError('Guarda el grupo primero para poder probar la conexión SMS.');
+      return;
+    }
+    setSmsTesting(true);
+    setFormError('');
+    try {
+      const payload = {
+        sms_gateway_url: groupFormData.sms_gateway_url,
+        sms_gateway_user: groupFormData.sms_gateway_user,
+      };
+      if ((groupFormData.sms_gateway_password || '').trim()) {
+        payload.sms_gateway_password = groupFormData.sms_gateway_password;
+      }
+      const response = await authenticatedFetch(`/api/groups/${editingGroup.id}/sms-test/`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || 'No se pudo conectar con el SMS Gateway');
+      alert(data.message || 'Conexión con el SMS Gateway correcta.');
+    } catch (error) {
+      setFormError(error.message);
+    } finally {
+      setSmsTesting(false);
     }
   };
 
@@ -7876,6 +7933,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                     onClick={() => {
                       setShowGroupForm(false);
                       setEditingGroup(null);
+                      setGroupFormTab('general');
                       setFormError('');
                     }}
                     className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -7891,6 +7949,28 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                     </div>
                   )}
 
+                  <div className="flex border-b border-gray-200">
+                    {[
+                      { id: 'general', label: 'General' },
+                      { id: 'correo', label: 'Correo' },
+                      { id: 'sms', label: 'SMS Gateway' },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setGroupFormTab(tab.id)}
+                        className={`px-4 py-2 text-sm font-bold border-b-2 -mb-px transition-colors ${
+                          groupFormTab === tab.id
+                            ? 'border-indigo-600 text-indigo-700'
+                            : 'border-transparent text-gray-500 hover:text-gray-800'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {groupFormTab === 'general' && (
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">
                       Nombre del Grupo <span className="text-red-500">*</span>
@@ -7900,12 +7980,12 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                       value={groupFormData.name}
                       onChange={(e) => setGroupFormData({...groupFormData, name: e.target.value})}
                       className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                      required
                       autoComplete="off"
                     />
                   </div>
+                  )}
 
-                  {userRole === 'root' && (
+                  {groupFormTab === 'general' && userRole === 'root' && (
                     <div className="border-t border-gray-200 pt-4 space-y-3">
                       <h4 className="text-sm font-black text-gray-800">Funciones de encuesta</h4>
                       <p className="text-xs text-gray-500">
@@ -7931,7 +8011,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                     </div>
                   )}
 
-                    <div className="border-t border-gray-200 pt-4 space-y-3">
+                  {groupFormTab === 'correo' && (
+                    <div className="space-y-3">
                     <h4 className="text-sm font-black text-gray-800">Correo / SMTP (OTP de consentimiento)</h4>
                     <p className="text-xs text-gray-500">
                       Credenciales del servidor de correo del departamento/grupo (ej. Hostinger: smtp.hostinger.com, puerto 465).
@@ -8062,6 +8143,57 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                       <p className="text-xs text-emerald-700">SMTP configurado en este grupo.</p>
                     )}
                   </div>
+                  )}
+
+                  {groupFormTab === 'sms' && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-black text-gray-800">SMS Gateway</h4>
+                      <p className="text-xs text-gray-500">
+                        URL de la API de terceros (termina en <span className="font-mono">/api/3rdparty/v1</span>).
+                        El usuario y la contraseña son el Username y el Password que muestra la app Android en Cloud Server, sin comillas.
+                        No uses el token privado ni las claves de la base de datos.
+                      </p>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">URL de conexión</label>
+                        <input
+                          type="url"
+                          value={groupFormData.sms_gateway_url}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, sms_gateway_url: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="https://chat-sms-gateway.rhfh8t.easypanel.host/api/3rdparty/v1"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Usuario</label>
+                        <input
+                          type="text"
+                          value={groupFormData.sms_gateway_user}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, sms_gateway_user: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="Username de la app"
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">Contraseña</label>
+                        <input
+                          type="password"
+                          value={groupFormData.sms_gateway_password}
+                          onChange={(e) => setGroupFormData({ ...groupFormData, sms_gateway_password: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm"
+                          placeholder="Dejar en blanco para mantener la contraseña guardada"
+                          autoComplete="new-password"
+                        />
+                        {editingGroup?.sms_password_set && (
+                          <p className="text-xs text-gray-500 mt-1">Ya hay una contraseña guardada. Déjala vacía para no cambiarla.</p>
+                        )}
+                      </div>
+                      {editingGroup?.sms_configured && (
+                        <p className="text-xs text-emerald-700">SMS Gateway configurado en este grupo.</p>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap gap-3 pt-4">
                     <button
@@ -8071,7 +8203,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                       <FontAwesomeIcon icon={faCheck} size="sm" className="fa-icon-force-white" />
                       {editingGroup ? 'Guardar' : 'Crear Grupo'}
                     </button>
-                    {editingGroup && (
+                    {editingGroup && groupFormTab === 'correo' && (
                       <button
                         type="button"
                         onClick={handleSmtpTest}
@@ -8082,11 +8214,23 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                         {smtpTesting ? 'Enviando…' : 'Probar envío'}
                       </button>
                     )}
+                    {editingGroup && groupFormTab === 'sms' && (
+                      <button
+                        type="button"
+                        onClick={handleSmsTest}
+                        disabled={smsTesting}
+                        className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-2"
+                      >
+                        <FontAwesomeIcon icon={faPaperPlane} size="sm" />
+                        {smsTesting ? 'Probando…' : 'Probar conexión'}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
                         setShowGroupForm(false);
                         setEditingGroup(null);
+                        setGroupFormTab('general');
                         setFormError('');
                       }}
                       className="px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold transition-colors"
@@ -8147,7 +8291,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                                   <button
                                     onClick={() => handleEditGroup(group)}
                                     className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                    title="Editar grupo / SMTP"
+                                    title="Editar grupo"
                                   >
                                     <FontAwesomeIcon icon={faPenToSquare} size="sm" className="fa-icon-force-current" />
                                   </button>
@@ -8571,13 +8715,13 @@ const PublicAttendanceTable = ({ surveyId }) => {
                         </td>
                         <td className="px-2 sm:px-3 py-1 whitespace-nowrap">
                           {row.ticket_delivered ? (
-                            <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-indigo-100 text-indigo-800">Entregada</span>
+                            <span className="inline-flex px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs font-black bg-red-100 text-red-700">Entregada</span>
                           ) : canMarkTickets ? (
                             <button
                               type="button"
                               disabled={ticketBusyId === row.id}
                               onClick={() => handleMarkTicket(row)}
-                              className="px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-bold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white"
+                              className="px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-bold bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white"
                             >
                               {ticketBusyId === row.id ? '…' : 'Marcar entrega'}
                             </button>
@@ -8654,26 +8798,45 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [ticketBusy, setTicketBusy] = useState(false);
+  const [assigning, setAssigning] = useState(false);
 
-  const handleVerify = async (e) => {
+  const handleConsult = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     setResult(null);
     try {
       const surveyId = survey.id || survey._id;
-      const res = await authenticatedFetch(`/api/surveys/${surveyId}/attendance/verify/`, {
+      const res = await authenticatedFetch(`/api/surveys/${surveyId}/attendance/consult/`, {
         method: 'POST',
         body: JSON.stringify({ documento }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.detail || 'No se pudo verificar.');
+      if (!res.ok) throw new Error(body.detail || 'No se pudo consultar.');
       setResult(body);
-      setDocumento('');
     } catch (err) {
       setError(err.message || 'Error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVerify = async () => {
+    setAssigning(true);
+    setError('');
+    try {
+      const surveyId = survey.id || survey._id;
+      const res = await authenticatedFetch(`/api/surveys/${surveyId}/attendance/verify/`, {
+        method: 'POST',
+        body: JSON.stringify({ documento: documento || result?.document }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || 'No se pudo verificar.');
+      setResult(body);
+    } catch (err) {
+      setError(err.message || 'Error');
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -8701,7 +8864,7 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
   };
 
   const formBody = (
-    <form onSubmit={handleVerify} className="space-y-4">
+    <form onSubmit={handleConsult} className="space-y-4">
       <div>
         <label className="block text-sm font-bold text-gray-700 mb-2">Cédula / documento</label>
         <input
@@ -8719,28 +8882,50 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
       {result && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
           <p className="text-sm text-emerald-800 mb-1">{result.name || 'Inscrito'}</p>
-          <p className="text-xs text-emerald-700 mb-2">{result.already_assigned ? 'Número ya asignado' : 'Número asignado'}</p>
-          <p className="text-4xl font-black text-amber-700 tracking-widest">{result.code}</p>
+          <p className="text-xs text-emerald-700 mb-2">Cédula {result.document}</p>
+          {result.code ? (
+            <>
+              <p className="text-xs text-emerald-700 mb-2">{result.already_assigned ? 'Número ya asignado' : 'Número asignado'}</p>
+              <p className="text-4xl font-black text-amber-700 tracking-widest">{result.code}</p>
+            </>
+          ) : (
+            <p className="text-sm font-bold text-gray-600">Sin número asignado</p>
+          )}
+          {result.sms_detail && (
+            <p className={`mt-2 text-xs font-bold ${result.sms_sent ? 'text-emerald-800' : 'text-amber-800'}`}>
+              {result.sms_detail}
+            </p>
+          )}
           {result.ticket_delivered ? (
-            <p className="mt-3 text-xs font-bold text-indigo-700">Boletas entregadas</p>
+            <p className="mt-3 text-sm font-black text-red-600">Boletas entregadas</p>
           ) : (
             <button
               type="button"
-              disabled={ticketBusy}
+              disabled={ticketBusy || assigning}
               onClick={handleMarkTicket}
-              className="mt-3 w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold"
+              className="mt-3 w-full px-3 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold"
             >
               {ticketBusy ? 'Marcando…' : 'Marcar entrega de boletas'}
+            </button>
+          )}
+          {!result.code && (
+            <button
+              type="button"
+              disabled={assigning || ticketBusy}
+              onClick={handleVerify}
+              className="mt-3 w-full px-3 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold"
+            >
+              {assigning ? 'Asignando…' : 'Verificar y asignar número'}
             </button>
           )}
         </div>
       )}
       <button
         type="submit"
-        disabled={loading}
-        className="w-full px-4 py-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl font-bold"
+        disabled={loading || assigning}
+        className="w-full px-4 py-3 bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white rounded-xl font-bold"
       >
-        {loading ? 'Verificando…' : 'Verificar y asignar número'}
+        {loading ? 'Consultando…' : 'Consultar'}
       </button>
     </form>
   );
