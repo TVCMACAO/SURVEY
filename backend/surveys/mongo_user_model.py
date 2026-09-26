@@ -13,7 +13,8 @@ class MongoUser:
     
     def __init__(self, id, username, email='', role='encuestador', 
                  is_active=True, is_staff=False, is_superuser=False,
-                 first_name='', last_name='', date_joined=None, user_group_id=None):
+                 first_name='', last_name='', date_joined=None, user_group_id=None,
+                 attendance_survey_id=None):
         self.id = id
         self.pk = id
         self.username = username
@@ -26,6 +27,7 @@ class MongoUser:
         self.last_name = last_name
         self.date_joined = date_joined
         self.user_group_id = user_group_id  # ID del grupo que administra (para group_admin)
+        self.attendance_survey_id = str(attendance_survey_id) if attendance_survey_id else None
         self.is_authenticated = True
         self.is_anonymous = False
     

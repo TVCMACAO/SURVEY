@@ -118,6 +118,8 @@ def user_can_access_survey_group(user_role, user_group_id, survey_group, deny_me
     root/analista: allow; users with group: only their group; else deny.
     Returns Response (403) or None if allowed.
     """
+    if user_role == 'verificador':
+        return Response({"detail": deny_message}, status=status.HTTP_403_FORBIDDEN)
     if user_role in ('root', 'analista'):
         return None
     if user_role and user_group_id:
@@ -1291,6 +1293,11 @@ class SurveyListCreate(APIView):
         err = require_not_analista(request, "crear encuestas")
         if err is not None:
             return err
+        if get_user_role_and_group(request)[0] == 'verificador':
+            return Response(
+                {"detail": "No tienes permisos para crear encuestas."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         # Debe asignarse antes de usarse en el ajuste de grupo pre-validación
         user_role, user_group_id = get_user_role_and_group(request)
@@ -1753,6 +1760,12 @@ class SurveyListCreate(APIView):
                 except (AttributeError, TypeError):
                     user_role = None
                     user_group_id = None
+
+            if user_role == 'verificador':
+                return Response(
+                    {"detail": "No tienes permisos para listar encuestas."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             
             # Filtrar encuestas por grupo del usuario
             # - Si el usuario NO es root y tiene user_group_id: solo ver encuestas de su grupo
@@ -2001,9 +2014,16 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 user_group_id = None
         
         survey_group = survey.get('group')
-        
+
+        if user_role == 'verificador':
+            assigned = str(getattr(request.user, 'attendance_survey_id', '') or '')
+            if assigned != str(pk):
+                return Response(
+                    {"detail": "No tienes permisos para ver esta encuesta."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         # Root y analista pueden ver cualquier encuesta (analista es solo lectura, independiente)
-        if user_role in ('root', 'analista'):
+        elif user_role in ('root', 'analista'):
             pass  # Permitir acceso
         elif user_role and user_group_id:
             # Usuario con grupo: solo puede ver encuestas de su grupo
@@ -2478,19 +2498,33 @@ class PublicAttendanceList(APIView):
         })
 
 
+def _verificador_owns_survey(request, pk):
+    role, _user_group_id = get_user_role_and_group(request)
+    if role != 'verificador':
+        return False
+    assigned = str(getattr(request.user, 'attendance_survey_id', '') or '')
+    return bool(assigned) and assigned == str(pk)
+
+
 def _prepare_attendance_lookup(request, pk, action_label, deny_message):
     """Valida permisos y busca al inscrito. Retorna (error_response, survey, group_doc, documento, resp)."""
-    err = require_not_analista(request, action_label)
-    if err is not None:
-        return err, None, None, None, None
+    user_role, user_group_id = get_user_role_and_group(request)
+    verifier_ok = _verificador_owns_survey(request, pk)
+    if user_role == 'verificador' and not verifier_ok:
+        return Response({"detail": deny_message}, status=status.HTTP_403_FORBIDDEN), None, None, None, None
+    if not verifier_ok:
+        err = require_not_analista(request, action_label)
+        if err is not None:
+            return err, None, None, None, None
     survey = _load_survey_by_pk(pk)
     if not survey:
         raise NotFound(detail="Encuesta no encontrada.")
-    user_role, user_group_id = get_user_role_and_group(request)
-    access_err = user_can_access_survey_group(
-        user_role, user_group_id, survey.get('group'),
-        deny_message=deny_message,
-    )
+    access_err = None
+    if not verifier_ok:
+        access_err = user_can_access_survey_group(
+            user_role, user_group_id, survey.get('group'),
+            deny_message=deny_message,
+        )
     if access_err is not None:
         return access_err, None, None, None, None
     if not survey.get('attendance_enabled'):
@@ -2630,10 +2664,18 @@ class SurveyAttendanceTicketDeliver(APIView):
         if not survey:
             raise NotFound(detail="Encuesta no encontrada.")
         user_role, user_group_id = get_user_role_and_group(request)
-        access_err = user_can_access_survey_group(
-            user_role, user_group_id, survey.get('group'),
-            deny_message="No tienes permisos para marcar entrega de boletas en esta encuesta.",
-        )
+        verifier_ok = _verificador_owns_survey(request, pk)
+        if user_role == 'verificador' and not verifier_ok:
+            return Response(
+                {"detail": "No tienes permisos para marcar entrega de boletas en esta encuesta."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        access_err = None
+        if not verifier_ok:
+            access_err = user_can_access_survey_group(
+                user_role, user_group_id, survey.get('group'),
+                deny_message="No tienes permisos para marcar entrega de boletas en esta encuesta.",
+            )
         if access_err is not None:
             return access_err
         if not survey.get('attendance_enabled'):
@@ -3792,9 +3834,14 @@ class ResponseListCreate(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        user_role, user_group_id = get_user_role_and_group(request)
+        if user_role == 'verificador':
+            return Response(
+                {"detail": "No tienes permisos para ver respuestas."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         responses_collection = get_responses_collection()
         survey_id = request.query_params.get('survey_id')
-        user_role, user_group_id = get_user_role_and_group(request)
         query = {}
         if survey_id:
             try:
@@ -3866,6 +3913,11 @@ class ResponseListCreate(APIView):
         return Response(serializer.data)
 
     def post(self, request):
+        if get_user_role_and_group(request)[0] == 'verificador':
+            return Response(
+                {"detail": "No tienes permisos para crear respuestas."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         err = require_not_analista(request, "crear respuestas")
         if err is not None:
             return err
@@ -4294,6 +4346,8 @@ class CurrentUserView(APIView):
                 
                 user_data['date_joined'] = date_joined_value
                 user_data['user_group_id'] = user_group_id_value
+                assigned_survey = getattr(request.user, 'attendance_survey_id', None)
+                user_data['attendance_survey_id'] = str(assigned_survey) if assigned_survey else None
                 # Validar que user_data se puede serializar
                 try:
                     json.dumps(user_data)
@@ -4310,7 +4364,8 @@ class CurrentUserView(APIView):
                         'email': str(request.user.email) if request.user.email else '',
                         'role': str(request.user.role) if request.user.role else 'encuestador',
                         'is_active': True,
-                        'user_group_id': None  # Omitir si causa problemas
+                        'user_group_id': None,  # Omitir si causa problemas
+                        'attendance_survey_id': str(getattr(request.user, 'attendance_survey_id', '') or '') or None,
                     }
                     return Response(safe_user_data)
             else:
@@ -4447,7 +4502,8 @@ class UserListCreate(APIView):
                     'last_name': user_doc.get('last_name', ''),
                     'date_joined': date_joined_value,
                     'user_group_id': user_group_id_value,
-                    'group_name': group_name  # Nombre del grupo asociado
+                    'group_name': group_name,  # Nombre del grupo asociado
+                    'attendance_survey_id': str(user_doc.get('attendance_survey_id') or '') or None,
                 }
                 users_data.append(user_data)
             
@@ -4582,7 +4638,8 @@ class UserListCreate(APIView):
                             role=user_data.get('role', 'encuestador'),
                             first_name=user_data.get('first_name', ''),
                             last_name=user_data.get('last_name', ''),
-                            user_group_id=user_group_id_to_save  # Root puede asignar cualquier grupo
+                            user_group_id=user_group_id_to_save,  # Root puede asignar cualquier grupo
+                            attendance_survey_id=user_data.get('attendance_survey_id') or None,
                         )
                         # Manejar date_joined de forma segura
                         date_joined_value = None
@@ -4619,7 +4676,8 @@ class UserListCreate(APIView):
                             'last_name': user_doc.get('last_name', ''),
                             'date_joined': date_joined_value,
                             'user_group_id': user_group_id_str,
-                            'group_name': group_name
+                            'group_name': group_name,
+                            'attendance_survey_id': str(user_doc.get('attendance_survey_id') or '') or None,
                         }, status=status.HTTP_201_CREATED)
                     except ValueError as e:
                         # Usuario ya existe
@@ -4678,6 +4736,7 @@ class UserRetrieveUpdateDestroy(APIView):
             last_name=user_doc.get('last_name', ''),
             date_joined=user_doc.get('date_joined'),
             user_group_id=user_doc.get('user_group_id'),
+            attendance_survey_id=user_doc.get('attendance_survey_id'),
         )
         return user
 
@@ -4736,6 +4795,11 @@ class UserRetrieveUpdateDestroy(APIView):
             
             serializer = UserUpdateSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
+                if serializer.validated_data.get('role') == 'verificador' and user_role != 'root':
+                    return Response(
+                        {"detail": "Solo root puede asignar el rol Verificador de asistencia."},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
                 # Si es group_admin, no permitir cambiar el user_group_id
                 if user_role == 'group_admin' and user_group_id:
                     # Asegurar que el usuario actualizado mantiene su grupo
@@ -4795,7 +4859,8 @@ class UserRetrieveUpdateDestroy(APIView):
                         'last_name': updated_user_doc.get('last_name', ''),
                         'date_joined': date_joined_value,
                         'user_group_id': user_group_id_value,
-                        'group_name': group_name
+                        'group_name': group_name,
+                        'attendance_survey_id': str(updated_user_doc.get('attendance_survey_id') or '') or None,
                     }
                     
                     

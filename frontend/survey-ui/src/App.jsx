@@ -6916,6 +6916,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     password_confirm: '',
     role: 'encuestador',
     user_group_id: '',
+    attendance_survey_id: '',
     is_active: true
   });
   const [groupFormData, setGroupFormData] = useState({
@@ -6958,6 +6959,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
     feature_webhook_rifas: false,
     feature_attendance_public: false,
   });
+  const [surveyOptions, setSurveyOptions] = useState([]);
   const [formError, setFormError] = useState('');
   const [smtpTesting, setSmtpTesting] = useState(false);
   const [smsTesting, setSmsTesting] = useState(false);
@@ -7024,6 +7026,20 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   const canViewUsers = canManageUsers || userRole === 'analista';
 
   useEffect(() => {
+    if (userRole !== 'root') return;
+    authenticatedFetch('/api/surveys/')
+      .then((response) => (response.ok ? response.json() : []))
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setSurveyOptions(list.map((survey) => ({
+          id: String(survey.id || survey._id || ''),
+          title: survey.title || 'Sin título',
+        })).filter((survey) => survey.id));
+      })
+      .catch(() => setSurveyOptions([]));
+  }, [userRole]);
+
+  useEffect(() => {
     if (canViewUsers) {
       fetchUsers().then(() => {
         fetchGroups();
@@ -7060,6 +7076,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       return;
     }
 
+    if (formData.role === 'verificador' && !formData.attendance_survey_id) {
+      setFormError('Selecciona la encuesta que este verificador puede gestionar.');
+      return;
+    }
+
     try {
       const userData = { ...formData };
       // Si es group_admin creando usuario, NO enviar user_group_id (el backend lo asigna automáticamente)
@@ -7072,6 +7093,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         if (!userData.user_group_id) {
           delete userData.user_group_id;
         }
+      }
+      if (userData.role === 'verificador') {
+        delete userData.user_group_id;
+      } else {
+        delete userData.attendance_survey_id;
       }
       
       const response = await authenticatedFetch('/api/users/', {
@@ -7095,6 +7121,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         password_confirm: '',
         role: 'encuestador',
         user_group_id: '',
+        attendance_survey_id: '',
         is_active: true
       });
       alert('Usuario creado exitosamente.');
@@ -7124,6 +7151,11 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       return;
     }
 
+    if (formData.role === 'verificador' && !formData.attendance_survey_id) {
+      setFormError('Selecciona la encuesta que este verificador puede gestionar.');
+      return;
+    }
+
     try {
       const updateData = { ...formData };
       if (!updateData.password) {
@@ -7134,6 +7166,9 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       // Solo eliminar si no hay valor
       if (!updateData.user_group_id) {
         delete updateData.user_group_id;
+      }
+      if (updateData.role !== 'verificador') {
+        updateData.attendance_survey_id = '';
       }
 
       const response = await authenticatedFetch(`/api/users/${editingUser.id}/`, {
@@ -7158,6 +7193,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         password_confirm: '',
         role: 'encuestador',
         user_group_id: '',
+        attendance_survey_id: '',
         is_active: true
       });
       alert('Usuario actualizado exitosamente.');
@@ -7208,6 +7244,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       password_confirm: '',
       role: user.role || 'encuestador',
       user_group_id: userGroupId,
+      attendance_survey_id: user.attendance_survey_id ? String(user.attendance_survey_id) : '',
       is_active: user.is_active !== undefined ? user.is_active : true
     });
     setShowUserForm(true);
@@ -7225,6 +7262,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
       password_confirm: '',
       role: 'encuestador',
       user_group_id: '',
+      attendance_survey_id: '',
       is_active: true
     });
     setShowUserForm(true);
@@ -7241,6 +7279,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         return 'bg-blue-100 text-blue-700 border-blue-300';
       case 'encuestador':
         return 'bg-green-100 text-green-700 border-green-300';
+      case 'verificador':
+        return 'bg-amber-100 text-amber-800 border-amber-300';
       default:
         return 'bg-gray-100 text-gray-700 border-gray-300';
     }
@@ -7256,6 +7296,8 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
         return 'Analista';
       case 'encuestador':
         return 'Encuestador';
+      case 'verificador':
+        return 'Verificador de asistencia';
       default:
         return role;
     }
@@ -7676,12 +7718,35 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                   <option value="encuestador">Encuestador</option>
                   <option value="analista">Analista</option>
                   {userRole === 'root' && <option value="group_admin">Administrador de Grupo</option>}
+                  {userRole === 'root' && <option value="verificador">Verificador de asistencia</option>}
                   {userRole === 'root' && <option value="root">Root</option>}
                 </select>
               </div>
 
+              {userRole === 'root' && formData.role === 'verificador' && (
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    Encuesta que puede verificar <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.attendance_survey_id}
+                    onChange={(e) => setFormData({ ...formData, attendance_survey_id: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Selecciona una encuesta</option>
+                    {surveyOptions.map((survey) => (
+                      <option key={survey.id} value={survey.id}>{survey.title}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Solo podrá consultar, asignar número y marcar boletas en la verificación de esta encuesta.
+                  </p>
+                </div>
+              )}
+
               {/* Mostrar selector de grupo para todos los roles excepto root, solo cuando el usuario actual es root */}
-              {userRole === 'root' && formData.role !== 'root' && (
+              {userRole === 'root' && formData.role !== 'root' && formData.role !== 'verificador' && (
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
                     Grupo {formData.role === 'group_admin' && <span className="text-red-500">*</span>}
@@ -8950,7 +9015,7 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
   );
 };
 
-const AttendanceVerifyPage = ({ surveyId, onBack }) => {
+const AttendanceVerifyPage = ({ surveyId, onBack, onLogout, lockNavigation = false }) => {
   const [survey, setSurvey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -8981,27 +9046,38 @@ const AttendanceVerifyPage = ({ surveyId, onBack }) => {
     <div className="min-h-screen w-full bg-[#f8fafc] font-sans">
       <div className="max-w-lg mx-auto px-4 py-10">
         <div className="flex items-center gap-3 mb-6">
-          {onBack && (
+          {onBack && !lockNavigation && (
             <button type="button" onClick={onBack} className="p-2 rounded-xl hover:bg-gray-100 text-gray-500">
               <FontAwesomeIcon icon={faChevronLeft} size="sm" />
             </button>
           )}
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-black text-gray-800">Verificar asistencia</h1>
             <p className="text-sm text-gray-500">{survey?.title || 'Cargando…'}</p>
           </div>
+          {onLogout && (
+            <button
+              type="button"
+              onClick={onLogout}
+              className="shrink-0 px-3 py-2 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-100"
+            >
+              Salir
+            </button>
+          )}
         </div>
         {loading && <p className="text-gray-600">Cargando…</p>}
         {error && <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-4">{error}</div>}
         {!loading && !error && survey && (
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
             <AttendanceVerifyModal survey={survey} />
+            {!lockNavigation && (
             <p className="text-xs text-gray-400 mt-4 text-center">
               Tabla pública:{' '}
               <a className="text-amber-700 underline" href={`/public/survey/${surveyId}/asistencia`}>
                 ver asistencia
               </a>
             </p>
+            )}
           </div>
         )}
       </div>
@@ -9277,7 +9353,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
   const canEditSurveys = !isAnalista;  // analista es solo lectura, no puede crear/editar/eliminar
 
   const displayName = currentUser ? [currentUser.first_name, currentUser.last_name].filter(Boolean).join(' ').trim() || currentUser.username : '';
-  const roleLabel = (currentUser?.role && { root: 'Administrador', group_admin: 'Administrador de grupo', encuestador: 'Encuestador', analista: 'Analista' }[currentUser.role]) || currentUser?.role || '';
+  const roleLabel = (currentUser?.role && { root: 'Administrador', group_admin: 'Administrador de grupo', encuestador: 'Encuestador', analista: 'Analista', verificador: 'Verificador de asistencia' }[currentUser.role]) || currentUser?.role || '';
 
   return (
     <main className="flex-1 relative z-10">
@@ -9697,9 +9773,15 @@ export default function App() {
         setLoading(false);
         return;
       }
-      setView('verify_attendance');
-      setLoading(false);
-      fetchCurrentUser();
+      (async () => {
+        const user = await fetchCurrentUser();
+        if (user?.role === 'verificador' && String(user.attendance_survey_id || '') !== String(verifyAttendanceSurveyId)) {
+          openVerifierHome(user);
+          return;
+        }
+        setView('verify_attendance');
+        setLoading(false);
+      })();
       return;
     }
     if (!isAuthenticated()) {
@@ -9713,8 +9795,9 @@ export default function App() {
           setLoading(false);
           return;
         }
+        const user = await fetchCurrentUser();
+        if (openVerifierHome(user)) return;
         fetchSurveys();
-        fetchCurrentUser();
       })();
     }
   }, []);
@@ -9732,11 +9815,24 @@ export default function App() {
       if (response.ok) {
         const userData = await response.json();
         setCurrentUser(userData);
+        return userData;
       }
     } catch (error) {
       console.error("Error fetching current user:", error);
       requireAuthOrLogin(error);
     }
+    return null;
+  };
+
+  const openVerifierHome = (user) => {
+    if (user?.role !== 'verificador' || !user.attendance_survey_id) return false;
+    const path = `/survey/${user.attendance_survey_id}/asistencia/verificar`;
+    if (window.location.pathname.replace(/\/$/, '') !== path) {
+      window.history.replaceState({}, '', path);
+    }
+    setView('verify_attendance');
+    setLoading(false);
+    return true;
   };
 
   const handleLogin = async (e) => {
@@ -9744,12 +9840,13 @@ export default function App() {
     setLoginError('');
     try {
       await login(loginCredentials.username, loginCredentials.password);
-      await fetchCurrentUser(); // Obtener datos del usuario después del login
+      const loggedUser = await fetchCurrentUser();
       let redirect = '';
       try {
         redirect = sessionStorage.getItem('postLoginRedirect') || '';
         sessionStorage.removeItem('postLoginRedirect');
       } catch (_) { /* ignore */ }
+      if (openVerifierHome(loggedUser)) return;
       const verifyMatch = redirect.match(/^\/survey\/([^/]+)\/asistencia\/verificar\/?$/);
       if (verifyMatch) {
         window.history.replaceState({}, '', redirect);
@@ -9766,6 +9863,8 @@ export default function App() {
 
   const handleLogout = () => {
     logout();
+    setCurrentUser(null);
+    try { window.history.replaceState({}, '', '/'); } catch (_) { /* ignore */ }
     setView('login');
     setSurveys([]);
   };
@@ -10181,17 +10280,28 @@ export default function App() {
   if (view === 'public' && publicSurveyId) {
     return <PublicSurveyView surveyId={publicSurveyId} />;
   }
-  if (view === 'verify_attendance' && verifyAttendanceSurveyId && isAuthenticated()) {
-    return (
-      <AttendanceVerifyPage
-        surveyId={verifyAttendanceSurveyId}
-        onBack={() => {
-          window.history.pushState({}, '', '/');
-          setView('dashboard');
-          fetchSurveys();
-        }}
-      />
-    );
+  if (view === 'verify_attendance' && isAuthenticated()) {
+    if (!currentUser) {
+      return <div className="h-screen w-full flex items-center justify-center bg-gray-100"><p>Cargando…</p></div>;
+    }
+    const lockedVerifier = currentUser?.role === 'verificador';
+    const pageSurveyId = lockedVerifier && currentUser.attendance_survey_id
+      ? String(currentUser.attendance_survey_id)
+      : verifyAttendanceSurveyId;
+    if (pageSurveyId) {
+      return (
+        <AttendanceVerifyPage
+          surveyId={pageSurveyId}
+          lockNavigation={lockedVerifier}
+          onLogout={handleLogout}
+          onBack={lockedVerifier ? undefined : () => {
+            window.history.pushState({}, '', '/');
+            setView('dashboard');
+            fetchSurveys();
+          }}
+        />
+      );
+    }
   }
 
   if (loading) {

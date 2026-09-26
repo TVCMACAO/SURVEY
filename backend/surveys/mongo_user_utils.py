@@ -8,7 +8,8 @@ from bson import ObjectId
 
 
 def create_user(username, password, email='', role='encuestador', 
-                is_staff=False, is_superuser=False, first_name='', last_name='', user_group_id=None):
+                is_staff=False, is_superuser=False, first_name='', last_name='', user_group_id=None,
+                attendance_survey_id=None):
     """
     Crea un nuevo usuario en MongoDB.
     """
@@ -39,6 +40,9 @@ def create_user(username, password, email='', role='encuestador',
             user_doc['user_group_id'] = ObjectId(user_group_id)
         except Exception:
             user_doc['user_group_id'] = user_group_id
+
+    if attendance_survey_id:
+        user_doc['attendance_survey_id'] = str(attendance_survey_id).strip()
     
     # Insertar en MongoDB
     result = users_collection.insert_one(user_doc)
@@ -103,6 +107,9 @@ def update_user(user_id, **kwargs):
         update_data['last_name'] = kwargs['last_name']
     if 'user_group_id' in kwargs:
         update_data['user_group_id'] = kwargs['user_group_id']
+    if 'attendance_survey_id' in kwargs:
+        raw = kwargs['attendance_survey_id']
+        update_data['attendance_survey_id'] = str(raw).strip() if raw else ''
     
     if not update_data:
         return None

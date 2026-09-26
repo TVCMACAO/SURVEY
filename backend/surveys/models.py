@@ -8,6 +8,7 @@ class User(AbstractUser):
         ('group_admin', 'Administrador de Grupo'),
         ('encuestador', 'Encuestador'),
         ('analista', 'Analista'),
+        ('verificador', 'Verificador de asistencia'),
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='encuestador')
     user_group_id = models.CharField(

@@ -82,14 +82,16 @@ class UserSerializer(serializers.ModelSerializer):
             ('group_admin', 'Administrador de Grupo'),
             ('encuestador', 'Encuestador'),
             ('analista', 'Analista'),
+            ('verificador', 'Verificador de asistencia'),
         ],
         required=False
     )
     user_group_id = serializers.SerializerMethodField()  # Campo para obtener el user_group_id del objeto
+    attendance_survey_id = serializers.SerializerMethodField()
     
     class Meta:
         model = User
-        fields = ('id', 'username', 'first_name', 'last_name', 'email', 'role', 'is_active', 'date_joined', 'user_group_id')
+        fields = ('id', 'username', 'first_name', 'last_name', 'email', 'role', 'is_active', 'date_joined', 'user_group_id', 'attendance_survey_id')
         read_only_fields = ('id', 'date_joined', 'user_group_id')
     
     def get_user_group_id(self, obj):
@@ -100,6 +102,10 @@ class UserSerializer(serializers.ModelSerializer):
                 return str(obj.user_group_id)
             return str(obj.user_group_id)
         return None
+
+    def get_attendance_survey_id(self, obj):
+        raw = getattr(obj, 'attendance_survey_id', None)
+        return str(raw) if raw else None
 
 class UserCreateSerializer(serializers.Serializer):
     """
@@ -119,16 +125,22 @@ class UserCreateSerializer(serializers.Serializer):
             ('group_admin', 'Administrador de Grupo'),
             ('encuestador', 'Encuestador'),
             ('analista', 'Analista'),
+            ('verificador', 'Verificador de asistencia'),
         ],
         required=False,
         default='encuestador'
     )
     is_active = serializers.BooleanField(required=False, default=True)
     user_group_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)  # Campo para asignar grupo
+    attendance_survey_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     
     def validate(self, attrs):
         if attrs.get('password') != attrs.get('password_confirm'):
             raise serializers.ValidationError({"password_confirm": "Las contraseñas no coinciden."})
+        if attrs.get('role') == 'verificador' and not str(attrs.get('attendance_survey_id') or '').strip():
+            raise serializers.ValidationError({
+                "attendance_survey_id": "Selecciona la encuesta que este verificador puede gestionar."
+            })
         return attrs
     
     def create(self, validated_data):
@@ -147,6 +159,7 @@ class UserCreateSerializer(serializers.Serializer):
             role=validated_data.get('role', 'encuestador'),
             is_staff=validated_data.get('is_staff', False),
             is_superuser=validated_data.get('is_superuser', False),
+            attendance_survey_id=validated_data.get('attendance_survey_id') or None,
         )
         
         # Convertir a objeto MongoUser para compatibilidad
@@ -163,6 +176,7 @@ class UserCreateSerializer(serializers.Serializer):
             first_name=user_doc.get('first_name', ''),
             last_name=user_doc.get('last_name', ''),
             date_joined=user_doc.get('date_joined'),
+            attendance_survey_id=user_doc.get('attendance_survey_id'),
         )
         return user
 
@@ -176,14 +190,16 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             ('group_admin', 'Administrador de Grupo'),
             ('encuestador', 'Encuestador'),
             ('analista', 'Analista'),
+            ('verificador', 'Verificador de asistencia'),
         ],
         required=False
     )
     user_group_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)  # Campo para asignar grupo
+    attendance_survey_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     
     class Meta:
         model = User
-        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'password_confirm', 'role', 'is_active', 'user_group_id')
+        fields = ('username', 'first_name', 'last_name', 'email', 'password', 'password_confirm', 'role', 'is_active', 'user_group_id', 'attendance_survey_id')
         extra_kwargs = {
             'username': {'read_only': True},  # No permitir cambiar username
             'password': {'write_only': True, 'required': False},
@@ -197,6 +213,19 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         if password or password_confirm:
             if password != password_confirm:
                 raise serializers.ValidationError({"password_confirm": "Las contraseñas no coinciden."})
+
+        role = attrs.get('role', getattr(self.instance, 'role', None) if self.instance else None)
+        if role == 'verificador' and ('role' in attrs or 'attendance_survey_id' in attrs):
+            survey_id = attrs.get(
+                'attendance_survey_id',
+                getattr(self.instance, 'attendance_survey_id', None) if self.instance else None,
+            )
+            if not str(survey_id or '').strip():
+                raise serializers.ValidationError({
+                    "attendance_survey_id": "Selecciona la encuesta que este verificador puede gestionar."
+                })
+        elif 'role' in attrs and role != 'verificador':
+            attrs['attendance_survey_id'] = ''
         
         return attrs
     

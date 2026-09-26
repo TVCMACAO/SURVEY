@@ -85,6 +85,7 @@ class MongoAuthBackend(BaseBackend):
             last_name=user_doc.get('last_name', ''),
             date_joined=date_joined,
             user_group_id=user_doc.get('user_group_id'),
+            attendance_survey_id=user_doc.get('attendance_survey_id'),
         )
         return user
 
