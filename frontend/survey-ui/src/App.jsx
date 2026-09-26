@@ -8950,11 +8950,22 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
           <p className="text-xs text-emerald-700 mb-2">Cédula {result.document}</p>
           {result.code ? (
             <>
-              <p className="text-xs text-emerald-700 mb-2">{result.already_assigned ? 'Número ya asignado' : 'Número asignado'}</p>
+              <p className="text-xs font-bold text-emerald-800 mb-2">Llegada marcada</p>
               <p className="text-4xl font-black text-amber-700 tracking-widest">{result.code}</p>
+              <p className="text-xs text-emerald-700 mt-2">{result.already_assigned ? 'Número ya asignado' : 'Número asignado'}</p>
             </>
           ) : (
-            <p className="text-sm font-bold text-gray-600">Sin número asignado</p>
+            <>
+              <p className="text-sm font-bold text-gray-600 mb-3">Aún no tiene llegada ni número</p>
+              <button
+                type="button"
+                disabled={assigning || ticketBusy}
+                onClick={handleVerify}
+                className="w-full px-3 py-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold"
+              >
+                {assigning ? 'Asignando…' : 'Marcar llegada y asignar número'}
+              </button>
+            </>
           )}
           {result.sms_detail && (
             <p className={`mt-2 text-xs font-bold ${result.sms_sent ? 'text-emerald-800' : 'text-amber-800'}`}>
@@ -8971,16 +8982,6 @@ const AttendanceVerifyModal = ({ survey, onClose }) => {
               className="mt-3 w-full px-3 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold"
             >
               {ticketBusy ? 'Marcando…' : 'Marcar entrega de boletas'}
-            </button>
-          )}
-          {!result.code && (
-            <button
-              type="button"
-              disabled={assigning || ticketBusy}
-              onClick={handleVerify}
-              className="mt-3 w-full px-3 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold"
-            >
-              {assigning ? 'Asignando…' : 'Verificar y asignar número'}
             </button>
           )}
         </div>
