@@ -7026,7 +7026,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
   const canViewUsers = canManageUsers || userRole === 'analista';
 
   useEffect(() => {
-    if (userRole !== 'root') return;
+    if (userRole !== 'root' && userRole !== 'group_admin') return;
     authenticatedFetch('/api/surveys/')
       .then((response) => (response.ok ? response.json() : []))
       .then((data) => {
@@ -7718,12 +7718,12 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                   <option value="encuestador">Encuestador</option>
                   <option value="analista">Analista</option>
                   {userRole === 'root' && <option value="group_admin">Administrador de Grupo</option>}
-                  {userRole === 'root' && <option value="verificador">Verificador de asistencia</option>}
+                  {(userRole === 'root' || userRole === 'group_admin') && <option value="verificador">Verificador de asistencia</option>}
                   {userRole === 'root' && <option value="root">Root</option>}
                 </select>
               </div>
 
-              {userRole === 'root' && formData.role === 'verificador' && (
+              {(userRole === 'root' || userRole === 'group_admin') && formData.role === 'verificador' && (
                 <div>
                   <label className="block text-sm font-bold text-gray-700 mb-2">
                     Encuesta que puede verificar <span className="text-red-500">*</span>
@@ -7801,7 +7801,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
                     </div>
                     <div className="ml-3">
                       <p className="text-sm text-blue-700">
-                        <strong>Nota:</strong> Los usuarios que crees heredarán automáticamente tu grupo. Solo puedes crear usuarios con rol <strong>Encuestador</strong> o <strong>Analista</strong>.
+                        <strong>Nota:</strong> Los usuarios que crees heredarán automáticamente tu grupo. Puedes crear <strong>Encuestador</strong>, <strong>Analista</strong> o <strong>Verificador de asistencia</strong> de una encuesta de tu grupo.
                       </p>
                     </div>
                   </div>

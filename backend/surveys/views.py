@@ -2498,6 +2498,18 @@ class PublicAttendanceList(APIView):
         })
 
 
+def _survey_belongs_to_group(survey, group_id):
+    if not survey or not group_id:
+        return False
+    survey_group = survey.get('group')
+    if survey_group is None:
+        return False
+    try:
+        return str(survey_group) == str(group_id) or str(survey_group) == str(ObjectId(group_id))
+    except Exception:
+        return str(survey_group) == str(group_id)
+
+
 def _verificador_owns_survey(request, pk):
     role, _user_group_id = get_user_role_and_group(request)
     if role != 'verificador':
@@ -4537,28 +4549,37 @@ class UserListCreate(APIView):
                         )
                     if requested_role == 'group_admin':
                         return Response(
-                            {"detail": "No tienes permisos para crear usuarios con rol 'Administrador de Grupo'. Solo puedes crear 'Encuestador' o 'Analista'."},
+                            {"detail": "No tienes permisos para crear usuarios con rol 'Administrador de Grupo'."},
                             status=status.HTTP_403_FORBIDDEN
                         )
                     
                     from .mongo_user_utils import create_user
                     user_data = serializer.validated_data
-                    # Asegurar que el rol sea válido para group_admin (solo encuestador o analista)
-                    if requested_role not in ['encuestador', 'analista']:
+                    if requested_role not in ['encuestador', 'analista', 'verificador']:
                         return Response(
-                            {"detail": "Solo puedes crear usuarios con rol 'Encuestador' o 'Analista'."},
+                            {"detail": "Solo puedes crear usuarios con rol 'Encuestador', 'Analista' o 'Verificador de asistencia'."},
                             status=status.HTTP_403_FORBIDDEN
                         )
+                    attendance_survey_id = None
+                    if requested_role == 'verificador':
+                        attendance_survey_id = str(user_data.get('attendance_survey_id') or '').strip()
+                        survey = _load_survey_by_pk(attendance_survey_id) if attendance_survey_id else None
+                        if not _survey_belongs_to_group(survey, user_group_id):
+                            return Response(
+                                {"detail": "Solo puedes asignar una encuesta de tu grupo."},
+                                status=status.HTTP_403_FORBIDDEN
+                            )
                     # Crear usuario directamente en MongoDB con el grupo asignado automáticamente
                     try:
                         user_doc = create_user(
                             username=user_data['username'],
                             password=user_data['password'],
                             email=user_data.get('email', ''),
-                            role=requested_role,  # Solo puede ser 'encuestador' o 'analista'
+                            role=requested_role,
                             first_name=user_data.get('first_name', ''),
                             last_name=user_data.get('last_name', ''),
-                            user_group_id=user_group_id  # Asignar automáticamente al grupo del admin
+                            user_group_id=user_group_id,  # Asignar automáticamente al grupo del admin
+                            attendance_survey_id=attendance_survey_id,
                         )
                         # Manejar date_joined de forma segura
                         date_joined_value = None
@@ -4595,7 +4616,8 @@ class UserListCreate(APIView):
                             'last_name': user_doc.get('last_name', ''),
                             'date_joined': date_joined_value,
                             'user_group_id': user_group_id_str,
-                            'group_name': group_name
+                            'group_name': group_name,
+                            'attendance_survey_id': str(user_doc.get('attendance_survey_id') or '') or None,
                         }, status=status.HTTP_201_CREATED)
                     except ValueError as e:
                         # Usuario ya existe
@@ -4795,11 +4817,20 @@ class UserRetrieveUpdateDestroy(APIView):
             
             serializer = UserUpdateSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
-                if serializer.validated_data.get('role') == 'verificador' and user_role != 'root':
-                    return Response(
-                        {"detail": "Solo root puede asignar el rol Verificador de asistencia."},
-                        status=status.HTTP_403_FORBIDDEN,
-                    )
+                if serializer.validated_data.get('role') == 'verificador':
+                    if user_role not in ('root', 'group_admin'):
+                        return Response(
+                            {"detail": "No tienes permisos para asignar el rol Verificador de asistencia."},
+                            status=status.HTTP_403_FORBIDDEN,
+                        )
+                    if user_role == 'group_admin':
+                        survey_id = str(serializer.validated_data.get('attendance_survey_id') or '').strip()
+                        survey = _load_survey_by_pk(survey_id) if survey_id else None
+                        if not _survey_belongs_to_group(survey, user_group_id):
+                            return Response(
+                                {"detail": "Solo puedes asignar una encuesta de tu grupo."},
+                                status=status.HTTP_403_FORBIDDEN,
+                            )
                 # Si es group_admin, no permitir cambiar el user_group_id
                 if user_role == 'group_admin' and user_group_id:
                     # Asegurar que el usuario actualizado mantiene su grupo
