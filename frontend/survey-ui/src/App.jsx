@@ -6271,6 +6271,10 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       const questionText = q.text || q.question_text || `Pregunta ${questionId}`;
       headers.push(questionText);
     });
+    const includeAttendance = Boolean(survey?.attendance_enabled);
+    if (includeAttendance) {
+      headers.push('Asistió', 'Número asignado', 'Boletas');
+    }
     headers.push('Link público');
 
     const metaCols = 10;
@@ -6292,6 +6296,9 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       else if (i === 6) col.width = 28;
       else if (i === 7) col.width = 12;
       else if (i === headers.length - 1) col.width = 40;
+      else if (includeAttendance && i === headers.length - 4) col.width = 12;
+      else if (includeAttendance && i === headers.length - 3) col.width = 16;
+      else if (includeAttendance && i === headers.length - 2) col.width = 14;
       else col.width = 24;
     });
 
@@ -6351,6 +6358,16 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
           rowValues.push(formatted === '__SIGNATURE_IMAGE__' ? 'Firma' : formatted);
         }
       });
+
+      if (includeAttendance) {
+        const codeRaw = response.attendance_code;
+        const code = codeRaw != null && String(codeRaw).trim() !== ''
+          ? String(codeRaw).trim().padStart(3, '0').slice(-3)
+          : '';
+        rowValues.push(code ? 'Sí' : 'No');
+        rowValues.push(code || '-');
+        rowValues.push(response.attendance_ticket_delivered ? 'Entregada' : (code ? 'Pendiente' : '-'));
+      }
 
       const links = getResponsePublicLinks(response, questions);
       rowValues.push(links.length > 0 ? links.join('\n') : '-');

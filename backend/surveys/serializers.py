@@ -663,6 +663,8 @@ class ResponseSerializer(serializers.Serializer):
     consent_email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     consent_token = serializers.CharField(required=False, allow_blank=True, write_only=True)
     consent_otp_verified_at = serializers.DateTimeField(required=False, allow_null=True, read_only=True)
+    attendance_code = serializers.CharField(read_only=True, allow_blank=True, allow_null=True, default=None)
+    attendance_ticket_delivered = serializers.BooleanField(read_only=True, default=False)
 
     def create(self, validated_data):
         pass
