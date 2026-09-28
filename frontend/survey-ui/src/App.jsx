@@ -4,7 +4,7 @@ import {
   faPlus, faGear, faFont, faListUl, faSquareCheck, faStar, faCalendarDays, 
   faShareNodes, faTrash, faXmark, faBars, faEllipsisVertical, faChevronLeft, 
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
-  faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faUsers, faUserPlus, faUser,
+  faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faChartColumn, faChartArea, faCircleNotch, faPalette, faUsers, faUserPlus, faUser,
   faSignature, faEraser, faEnvelope, faHeading, faCopy,
   faChevronUp, faChevronDown, faGripVertical, faPaperclip, faSearch, faFilter
 } from '@fortawesome/free-solid-svg-icons';
@@ -109,6 +109,7 @@ import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
+  RadialLinearScale,
   BarElement,
   ArcElement,
   PointElement,
@@ -118,12 +119,14 @@ import {
   Legend,
   Filler,
 } from 'chart.js';
-import { Bar, Doughnut, Line } from 'react-chartjs-2';
+import { Bar, Doughnut, Line, Pie, PolarArea } from 'react-chartjs-2';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 
 // Registrar componentes de Chart.js
 ChartJS.register(
   CategoryScale,
   LinearScale,
+  RadialLinearScale,
   BarElement,
   ArcElement,
   PointElement,
@@ -131,41 +134,84 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  ChartDataLabels
 );
+ChartJS.defaults.plugins.datalabels = { display: false };
 
-const DELUXE_PALETTE = [
-  ['#4f46e5', '#818cf8'],
-  ['#7c3aed', '#a78bfa'],
-  ['#db2777', '#f472b6'],
-  ['#059669', '#34d399'],
-  ['#0284c7', '#38bdf8'],
-  ['#d97706', '#fbbf24'],
-  ['#dc2626', '#f87171'],
-  ['#9333ea', '#c084fc'],
-  ['#0d9488', '#2dd4bf'],
-  ['#ea580c', '#fb923c'],
-  ['#4f46e5', '#a5b4fc'],
-  ['#be185d', '#f9a8d4'],
+const CHART_PALETTES = [
+  { id: 'indigo', name: 'Índigo', colors: ['#4f46e5', '#f97316', '#16a34a', '#dc2626', '#0891b2', '#44403c', '#0f172a', '#a16207'] },
+  { id: 'oceano', name: 'Océano', colors: ['#0284c7', '#f97316', '#16a34a', '#dc2626', '#7c3aed', '#44403c', '#0f172a', '#a16207'] },
+  { id: 'bosque', name: 'Bosque', colors: ['#16a34a', '#2563eb', '#f97316', '#db2777', '#0891b2', '#44403c', '#0f172a', '#7c3aed'] },
+  { id: 'atardecer', name: 'Atardecer', colors: ['#ea580c', '#2563eb', '#16a34a', '#7c3aed', '#0891b2', '#db2777', '#44403c', '#0f172a'] },
+  { id: 'rosa', name: 'Rosa', colors: ['#db2777', '#2563eb', '#16a34a', '#f97316', '#0891b2', '#ca8a04', '#44403c', '#0f172a'] },
+  { id: 'corporativo', name: 'Corporativo', colors: ['#1e3a8a', '#d97706', '#047857', '#e11d48', '#7c3aed', '#0891b2', '#44403c', '#0f172a'] },
 ];
 
-const deluxeColor = (index, shade = 0) =>
-  DELUXE_PALETTE[index % DELUXE_PALETTE.length][shade];
+const DEFAULT_CHART_PALETTE_ID = 'indigo';
 
-const makeLineAreaGradient = (context) => {
+const ARC_CHART_TYPES = new Set(['doughnut', 'pie', 'polar']);
+
+const paletteById = (id) => CHART_PALETTES.find((item) => item.id === id) || CHART_PALETTES[0];
+
+const mixWithWhite = (hex, amount) => {
+  const raw = String(hex || '').replace('#', '');
+  if (raw.length !== 6) return '#818cf8';
+  const mix = (channel) => Math.round(channel + (255 - channel) * amount);
+  const parts = [0, 2, 4].map((start) => mix(parseInt(raw.slice(start, start + 2), 16)).toString(16).padStart(2, '0'));
+  return `#${parts.join('')}`;
+};
+
+const hexToRgba = (hex, alpha) => {
+  const raw = String(hex || '#4f46e5').replace('#', '');
+  const r = parseInt(raw.slice(0, 2), 16) || 79;
+  const g = parseInt(raw.slice(2, 4), 16) || 70;
+  const b = parseInt(raw.slice(4, 6), 16) || 229;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const resolveChartColorMap = (labels, selection) => {
+  const preset = paletteById(selection?.presetId || DEFAULT_CHART_PALETTE_ID);
+  const custom = selection?.presetId === 'custom' ? (selection.custom || {}) : null;
+  const map = {};
+  labels.forEach((label, index) => {
+    map[label] = custom?.[label] || preset.colors[index % preset.colors.length];
+  });
+  return map;
+};
+
+const formatStatPercent = (value, total) => {
+  const n = Number(value) || 0;
+  const pct = total > 0 ? (n / total) * 100 : 0;
+  return `${Number.isInteger(pct) ? pct : pct.toFixed(1)}%`;
+};
+
+const readChartValue = (context, chartType) => {
+  const parsed = context.parsed;
+  if (chartType === 'barHorizontal') return parsed?.x ?? context.raw ?? 0;
+  if (chartType === 'bar' || chartType === 'line') return parsed?.y ?? context.raw ?? 0;
+  if (typeof parsed === 'number') return parsed;
+  return context.raw ?? 0;
+};
+
+const makeLineAreaGradient = (context, color) => {
   const { chart } = context;
   const { ctx, chartArea } = chart;
-  if (!chartArea) return 'rgba(99, 102, 241, 0.15)';
+  if (!chartArea) return hexToRgba(color, 0.15);
   const gradient = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-  gradient.addColorStop(0, 'rgba(99, 102, 241, 0.02)');
-  gradient.addColorStop(0.5, 'rgba(139, 92, 246, 0.18)');
-  gradient.addColorStop(1, 'rgba(167, 139, 250, 0.45)');
+  gradient.addColorStop(0, hexToRgba(color, 0.02));
+  gradient.addColorStop(0.5, hexToRgba(color, 0.2));
+  gradient.addColorStop(1, hexToRgba(color, 0.45));
   return gradient;
 };
 
-const buildDeluxeChartData = (stat, chartType) => {
+const buildDeluxeChartData = (stat, chartType, palette) => {
   const labels = Object.keys(stat.data || {});
   const data = Object.values(stat.data || {});
+  const colorMap = resolveChartColorMap(labels, palette);
+  const fills = labels.map((label) => colorMap[label]);
+  const hovers = fills.map((color) => mixWithWhite(color, 0.28));
+  const primary = fills[0] || '#4f46e5';
 
   if (chartType === 'line') {
     return {
@@ -173,60 +219,68 @@ const buildDeluxeChartData = (stat, chartType) => {
       datasets: [{
         label: 'Respuestas',
         data,
-        borderColor: labels.map((_, i) => deluxeColor(i, 0)),
-        backgroundColor: (ctx) => makeLineAreaGradient(ctx),
+        borderColor: fills,
+        backgroundColor: (ctx) => makeLineAreaGradient(ctx, primary),
         segment: {
-          borderColor: (ctx) => deluxeColor(ctx.p0DataIndex, 0),
+          borderColor: (ctx) => fills[ctx.p0DataIndex] || primary,
         },
         borderWidth: 3,
         fill: true,
         tension: 0.42,
-        pointBackgroundColor: labels.map((_, i) => deluxeColor(i, 0)),
+        pointBackgroundColor: fills,
         pointBorderColor: '#ffffff',
         pointBorderWidth: 3,
         pointRadius: 7,
         pointHoverRadius: 10,
-        pointHoverBackgroundColor: labels.map((_, i) => deluxeColor(i, 1)),
+        pointHoverBackgroundColor: hovers,
         pointHoverBorderColor: '#ffffff',
         pointHoverBorderWidth: 3,
       }],
     };
   }
 
-  if (chartType === 'doughnut') {
+  if (ARC_CHART_TYPES.has(chartType)) {
     return {
       labels,
       datasets: [{
         label: 'Respuestas',
         data,
-        backgroundColor: labels.map((_, i) => deluxeColor(i, 0)),
-        hoverBackgroundColor: labels.map((_, i) => deluxeColor(i, 1)),
+        backgroundColor: fills,
+        hoverBackgroundColor: hovers,
         borderColor: '#ffffff',
-        borderWidth: 4,
+        borderWidth: chartType === 'polar' ? 2 : 3,
         hoverBorderColor: '#ffffff',
-        hoverOffset: 16,
-        spacing: 2,
+        hoverOffset: chartType === 'polar' ? 8 : 14,
+        spacing: chartType === 'polar' ? 1 : 2,
       }],
     };
   }
 
+  const horizontal = chartType === 'barHorizontal';
   return {
     labels,
     datasets: [{
       label: 'Respuestas',
       data,
-      backgroundColor: labels.map((_, i) => deluxeColor(i, 0)),
-      hoverBackgroundColor: labels.map((_, i) => deluxeColor(i, 1)),
-      borderColor: labels.map((_, i) => deluxeColor(i, 0)),
+      backgroundColor: fills,
+      hoverBackgroundColor: hovers,
+      borderColor: fills,
       borderWidth: 0,
-      borderRadius: { topLeft: 12, topRight: 12, bottomLeft: 4, bottomRight: 4 },
+      borderRadius: horizontal
+        ? { topLeft: 4, bottomLeft: 4, topRight: 12, bottomRight: 12 }
+        : { topLeft: 12, topRight: 12, bottomLeft: 4, bottomRight: 4 },
       borderSkipped: false,
-      maxBarThickness: 58,
+      maxBarThickness: horizontal ? 28 : 58,
     }],
   };
 };
 
 const buildDeluxeChartOptions = (stat, chartType) => {
+  const isArc = ARC_CHART_TYPES.has(chartType);
+  const isHorizontal = chartType === 'barHorizontal';
+  const isLine = chartType === 'line';
+  const total = stat.totalAnswers || 0;
+
   const deluxeTooltip = {
     backgroundColor: 'rgba(15, 23, 42, 0.94)',
     titleColor: '#f8fafc',
@@ -243,9 +297,8 @@ const buildDeluxeChartOptions = (stat, chartType) => {
     callbacks: {
       label(context) {
         const label = context.label || '';
-        const value = context.parsed.y ?? context.parsed ?? context.raw ?? 0;
-        const percentage = stat.totalAnswers > 0 ? ((value / stat.totalAnswers) * 100).toFixed(1) : '0.0';
-        return ` ${label}: ${value} respuestas (${percentage}%)`;
+        const value = readChartValue(context, chartType);
+        return ` ${label}: ${value} respuestas (${formatStatPercent(value, total)})`;
       },
     },
   };
@@ -255,68 +308,142 @@ const buildDeluxeChartOptions = (stat, chartType) => {
     easing: 'easeOutQuart',
   };
 
+  const datalabels = {
+    display: (ctx) => Number(ctx.dataset.data[ctx.dataIndex]) > 0,
+    clamp: true,
+    clip: false,
+    color: isArc ? '#ffffff' : '#312e81',
+    font: {
+      weight: '700',
+      size: 11,
+      family: 'system-ui, sans-serif',
+    },
+    anchor: isArc ? 'center' : 'end',
+    align: isLine ? 'top' : (isArc ? 'center' : 'end'),
+    offset: isLine ? 8 : (isArc ? 0 : 4),
+    textStrokeColor: isArc ? 'rgba(15, 23, 42, 0.45)' : undefined,
+    textStrokeWidth: isArc ? 3 : 0,
+    formatter(value, context) {
+      const n = Number(value) || 0;
+      const pct = formatStatPercent(n, total);
+      const full = `${n} · ${pct}`;
+      const element = context.chart.getDatasetMeta(context.datasetIndex).data[context.dataIndex];
+      if (isArc) {
+        const sweep = element?.circumference || 0;
+        return sweep < 0.7 ? pct : full;
+      }
+      const span = isHorizontal
+        ? Math.abs((element?.x ?? 0) - (element?.base ?? 0))
+        : Math.abs((element?.base ?? 0) - (element?.y ?? 0));
+      return span > 0 && span < 48 ? pct : full;
+    },
+  };
+
   const deluxeLegend = {
-    display: chartType === 'doughnut',
-    position: 'right',
+    display: isArc,
+    position: 'bottom',
     labels: {
       color: '#374151',
       font: { size: 11, weight: '600', family: 'system-ui, sans-serif' },
-      padding: 14,
+      padding: 12,
       usePointStyle: true,
       pointStyle: 'circle',
       boxWidth: 8,
       boxHeight: 8,
+      generateLabels(chart) {
+        const dataset = chart.data.datasets?.[0] || {};
+        const labels = chart.data.labels || [];
+        const values = dataset.data || [];
+        const colors = dataset.backgroundColor || [];
+        return labels.map((label, index) => {
+          const count = Number(values[index]) || 0;
+          const name = String(label ?? '');
+          const short = name.length > 28 ? `${name.slice(0, 26)}…` : name;
+          return {
+            text: `${short} · ${count} · ${formatStatPercent(count, total)}`,
+            fillStyle: Array.isArray(colors) ? colors[index] : colors,
+            strokeStyle: '#ffffff',
+            lineWidth: 1,
+            hidden: false,
+            index,
+            datasetIndex: 0,
+          };
+        });
+      },
     },
   };
 
-  if (chartType === 'doughnut') {
+  const axisTicks = {
+    color: '#6b7280',
+    font: { size: 11, weight: '600', family: 'system-ui, sans-serif' },
+    padding: 6,
+  };
+  const valueScale = {
+    beginAtZero: true,
+    ticks: { ...axisTicks, stepSize: 1, precision: 0 },
+    grid: { color: 'rgba(99, 102, 241, 0.08)', drawBorder: false },
+    border: { display: false },
+  };
+  const categoryScale = {
+    ticks: {
+      ...axisTicks,
+      color: '#374151',
+      autoSkip: false,
+      maxRotation: isHorizontal ? 0 : 40,
+      minRotation: 0,
+    },
+    grid: { display: false },
+    border: { display: false },
+  };
+
+  if (isArc) {
     return {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: '64%',
+      cutout: chartType === 'doughnut' ? '62%' : '0%',
       animation: deluxeAnimation,
+      layout: { padding: 8 },
       plugins: {
         legend: deluxeLegend,
         tooltip: deluxeTooltip,
+        datalabels,
       },
+      ...(chartType === 'polar'
+        ? {
+            scales: {
+              r: {
+                beginAtZero: true,
+                ticks: { display: false },
+                grid: { color: 'rgba(99, 102, 241, 0.14)' },
+                angleLines: { color: 'rgba(99, 102, 241, 0.14)' },
+                pointLabels: {
+                  color: '#374151',
+                  font: { size: 11, weight: '600', family: 'system-ui, sans-serif' },
+                },
+              },
+            },
+          }
+        : {}),
     };
   }
 
   return {
     responsive: true,
     maintainAspectRatio: false,
+    indexAxis: isHorizontal ? 'y' : 'x',
     animation: deluxeAnimation,
     interaction: { mode: 'index', intersect: false },
+    layout: {
+      padding: isHorizontal ? { right: 64, left: 4 } : { top: 28 },
+    },
     plugins: {
       legend: { display: false },
       tooltip: deluxeTooltip,
+      datalabels,
     },
-    scales: {
-      y: {
-        beginAtZero: true,
-        ticks: {
-          stepSize: 1,
-          color: '#6b7280',
-          font: { size: 11, weight: '600', family: 'system-ui, sans-serif' },
-          padding: 8,
-        },
-        grid: {
-          color: 'rgba(99, 102, 241, 0.08)',
-          drawBorder: false,
-        },
-        border: { display: false },
-      },
-      x: {
-        ticks: {
-          color: '#374151',
-          font: { size: 11, weight: '600', family: 'system-ui, sans-serif' },
-          maxRotation: 45,
-          minRotation: 0,
-        },
-        grid: { display: false },
-        border: { display: false },
-      },
-    },
+    scales: isHorizontal
+      ? { x: valueScale, y: categoryScale }
+      : { y: valueScale, x: categoryScale },
   };
 };
 
@@ -4914,7 +5041,7 @@ const calculateResponseStats = (survey, responsesList) => {
   return stats;
 };
 
-const DistributionTable = ({ stat, showAll, onToggleShowAll, maxRows = 8 }) => {
+const DistributionTable = ({ stat, showAll, onToggleShowAll, maxRows = 8, colorMap = {} }) => {
   const entries = Object.entries(stat.data || {}).sort((a, b) => b[1] - a[1]);
   const visible = showAll ? entries : entries.slice(0, maxRows);
   const hiddenCount = entries.length - maxRows;
@@ -4927,13 +5054,14 @@ const DistributionTable = ({ stat, showAll, onToggleShowAll, maxRows = 8 }) => {
     <div className="space-y-1.5">
       {visible.map(([option, count]) => {
         const percentage = stat.totalAnswers > 0 ? (count / stat.totalAnswers) * 100 : 0;
+        const barColor = colorMap[option] || '#4f46e5';
         return (
           <div key={option} className="flex items-center gap-2 text-xs">
             <span className="w-24 sm:w-32 truncate shrink-0 text-gray-700" title={option}>{option}</span>
             <div className="flex-1 h-2 bg-indigo-50 rounded-full overflow-hidden min-w-[40px] border border-indigo-100/50">
               <div
-                className="h-2 rounded-full transition-all duration-500 bg-gradient-to-r from-indigo-500 via-purple-500 to-violet-500 shadow-sm"
-                style={{ width: `${Math.max(percentage, count > 0 ? 2 : 0)}%` }}
+                className="h-2 rounded-full transition-all duration-500 shadow-sm"
+                style={{ width: `${Math.max(percentage, count > 0 ? 2 : 0)}%`, backgroundColor: barColor }}
               />
             </div>
             <span className="w-8 text-right font-bold text-gray-800 shrink-0">{count}</span>
@@ -5066,6 +5194,8 @@ const QuestionStatCard = ({
   stat,
   chartType,
   onChartTypeChange,
+  chartPalette,
+  onChartPaletteChange,
   textExpanded,
   onToggleText,
   showAllRows,
@@ -5076,16 +5206,34 @@ const QuestionStatCard = ({
   variant = 'featured',
 }) => {
   const chartRef = useRef(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const isFeatured = variant === 'featured';
-  const optionCount = Object.keys(stat.data || {}).length;
+  const optionLabels = Object.keys(stat.data || {});
+  const optionCount = optionLabels.length;
   const resolvedChartType = chartType || getDefaultChartType(questionId, optionCount);
-  const chartHeight = isFeatured
-    ? Math.min(380, Math.max(260, 100 + optionCount * 44))
-    : Math.min(280, Math.max(160, 60 + optionCount * 32));
+  const colorMap = resolveChartColorMap(optionLabels, chartPalette);
+  const activePresetId = chartPalette?.presetId || DEFAULT_CHART_PALETTE_ID;
+  const chartHeight = resolvedChartType === 'barHorizontal'
+    ? Math.min(720, Math.max(isFeatured ? 200 : 160, 40 + optionCount * (isFeatured ? 44 : 34)))
+    : ARC_CHART_TYPES.has(resolvedChartType)
+      ? (isFeatured ? 380 : 250)
+      : (isFeatured
+        ? Math.min(400, Math.max(280, 160 + Math.min(optionCount, 6) * 16))
+        : Math.min(280, Math.max(160, 60 + optionCount * 32)));
   const showChart = stat.statKind === 'categorical' && optionCount >= 1;
   const longText = (stat.questionText || '').length > (isFeatured ? 120 : 80);
-  const chartData = getChartData(stat, resolvedChartType);
+  const chartData = getChartData(stat, resolvedChartType, chartPalette);
   const chartOptions = getChartOptions(stat, resolvedChartType);
+
+  const applyPreset = (presetId) => {
+    onChartPaletteChange(questionId, { presetId, custom: {} });
+  };
+
+  const applyCustomColor = (label, hex) => {
+    const normalized = String(hex || '#4f46e5').toLowerCase();
+    const custom = { ...(chartPalette?.presetId === 'custom' ? chartPalette.custom : colorMap), [label]: normalized };
+    onChartPaletteChange(questionId, { presetId: 'custom', custom });
+  };
   const tableMaxRows = isFeatured ? 8 : 5;
 
   const handleDownloadChart = () => {
@@ -5114,8 +5262,12 @@ const QuestionStatCard = ({
         }}
       />
       <div className="relative h-full p-3 sm:p-4">
-        {resolvedChartType === 'bar' && <Bar ref={chartRef} data={chartData} options={chartOptions} />}
+        {(resolvedChartType === 'bar' || resolvedChartType === 'barHorizontal') && (
+          <Bar ref={chartRef} data={chartData} options={chartOptions} />
+        )}
+        {resolvedChartType === 'pie' && <Pie ref={chartRef} data={chartData} options={chartOptions} />}
         {resolvedChartType === 'doughnut' && <Doughnut ref={chartRef} data={chartData} options={chartOptions} />}
+        {resolvedChartType === 'polar' && <PolarArea ref={chartRef} data={chartData} options={chartOptions} />}
         {resolvedChartType === 'line' && <Line ref={chartRef} data={chartData} options={chartOptions} />}
       </div>
     </div>
@@ -5167,32 +5319,34 @@ const QuestionStatCard = ({
             {getQuestionTypeLabel(stat.questionType)}
           </span>
           {showChart && isFeatured && (
-            <div className="flex items-center gap-1 bg-gradient-to-br from-white to-indigo-50 rounded-xl p-1.5 border border-indigo-200/80 shadow-md shadow-indigo-100/50">
-              <button
-                type="button"
-                onClick={() => onChartTypeChange(questionId, 'bar')}
-                className={`p-2 rounded-lg transition-all duration-200 ${resolvedChartType === 'bar' ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-300/50 scale-105' : 'text-gray-500 hover:bg-white hover:text-indigo-600'}`}
-                title="Gráfico de Barras"
-              >
-                <FontAwesomeIcon icon={faChartBar} size="sm" className="fa-icon-force-current" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onChartTypeChange(questionId, 'doughnut')}
-                className={`p-2 rounded-lg transition-all duration-200 ${resolvedChartType === 'doughnut' ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-300/50 scale-105' : 'text-gray-500 hover:bg-white hover:text-indigo-600'}`}
-                title="Gráfico de Torta"
-              >
-                <FontAwesomeIcon icon={faChartPie} size="sm" className="fa-icon-force-current" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onChartTypeChange(questionId, 'line')}
-                className={`p-2 rounded-lg transition-all duration-200 ${resolvedChartType === 'line' ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-300/50 scale-105' : 'text-gray-500 hover:bg-white hover:text-indigo-600'}`}
-                title="Gráfico de Líneas"
-              >
-                <FontAwesomeIcon icon={faChartLine} size="sm" className="fa-icon-force-current" />
-              </button>
+            <div className="flex flex-wrap items-center justify-end gap-1 max-w-[22rem] bg-gradient-to-br from-white to-indigo-50 rounded-xl p-1.5 border border-indigo-200/80 shadow-md shadow-indigo-100/50">
+              {[
+                { type: 'bar', icon: faChartColumn, title: 'Barras' },
+                { type: 'barHorizontal', icon: faChartBar, title: 'Barras horizontales' },
+                { type: 'pie', icon: faChartPie, title: 'Torta' },
+                { type: 'doughnut', icon: faCircleNotch, title: 'Dona' },
+                { type: 'polar', icon: faChartArea, title: 'Polar' },
+                { type: 'line', icon: faChartLine, title: 'Líneas' },
+              ].map(({ type, icon, title }) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => onChartTypeChange(questionId, type)}
+                  className={`p-2 rounded-lg transition-all duration-200 ${resolvedChartType === type ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-300/50 scale-105' : 'text-gray-500 hover:bg-white hover:text-indigo-600'}`}
+                  title={title}
+                >
+                  <FontAwesomeIcon icon={icon} size="sm" className="fa-icon-force-current" />
+                </button>
+              ))}
               <span className="w-px h-6 bg-indigo-200/80 mx-0.5" />
+              <button
+                type="button"
+                onClick={() => setPaletteOpen((open) => !open)}
+                className={`p-2 rounded-lg transition-all duration-200 ${paletteOpen || activePresetId !== DEFAULT_CHART_PALETTE_ID ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-300/50 scale-105' : 'text-gray-500 hover:bg-white hover:text-indigo-600'}`}
+                title="Paleta de colores"
+              >
+                <FontAwesomeIcon icon={faPalette} size="sm" className="fa-icon-force-current" />
+              </button>
               <button
                 type="button"
                 onClick={handleDownloadChart}
@@ -5206,6 +5360,60 @@ const QuestionStatCard = ({
         </div>
       </div>
 
+      {isFeatured && paletteOpen && showChart && (
+        <div className="mb-3 rounded-xl border border-indigo-100 bg-white p-3 shadow-sm">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className="text-xs font-bold text-gray-800">Paleta de esta gráfica</p>
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(false)}
+              className="text-gray-400 hover:text-gray-700 p-1"
+              title="Cerrar"
+            >
+              <FontAwesomeIcon icon={faXmark} size="sm" />
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {CHART_PALETTES.map((preset) => {
+              const selected = activePresetId === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => applyPreset(preset.id)}
+                  className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition ${selected ? 'border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200' : 'border-gray-200 bg-gray-50 hover:border-indigo-300'}`}
+                  title={preset.name}
+                >
+                  <span className="flex -space-x-1">
+                    {preset.colors.slice(0, 5).map((color) => (
+                      <span key={color} className="w-3.5 h-3.5 rounded-full border border-white" style={{ backgroundColor: color }} />
+                    ))}
+                  </span>
+                  <span className="text-[11px] font-semibold text-gray-700">{preset.name}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-3 mb-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+            Personalizar cada opción{activePresetId === 'custom' ? ' · paleta propia' : ''}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
+            {optionLabels.map((label) => (
+              <label key={label} className="flex items-center gap-2 rounded-lg px-1 py-1 hover:bg-indigo-50/70 min-w-0" title={label}>
+                <input
+                  type="color"
+                  value={colorMap[label] || '#4f46e5'}
+                  onChange={(event) => applyCustomColor(label, event.target.value)}
+                  className="w-8 h-8 shrink-0 cursor-pointer rounded border border-gray-200 bg-white p-0.5"
+                  aria-label={`Color de ${label}`}
+                />
+                <span className="truncate text-xs text-gray-700">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       {isFeatured && chartBlock}
 
       {(stat.statKind === 'categorical' || stat.statKind === 'frequency') && (
@@ -5214,6 +5422,7 @@ const QuestionStatCard = ({
           showAll={showAllRows}
           onToggleShowAll={onToggleAllRows}
           maxRows={tableMaxRows}
+          colorMap={colorMap}
         />
       )}
 
@@ -5787,7 +5996,8 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
   const [selectedResponse, setSelectedResponse] = useState(null);
   const [consentResponse, setConsentResponse] = useState(null);
   const [activeTab, setActiveTab] = useState('individual'); // 'individual', 'statistics', or 'table'
-  const [chartTypes, setChartTypes] = useState({}); // { questionId: 'bar' | 'doughnut' | 'line' }
+  const [chartTypes, setChartTypes] = useState({}); // { questionId: 'bar' | 'barHorizontal' | 'pie' | 'doughnut' | 'polar' | 'line' }
+  const [chartPalettes, setChartPalettes] = useState({});
   const [expandedQuestionText, setExpandedQuestionText] = useState({});
   const [expandedAllRows, setExpandedAllRows] = useState({});
   const [otherStatsExpanded, setOtherStatsExpanded] = useState(false);
@@ -6151,8 +6361,15 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     }));
   };
 
+  const handleChartPaletteChange = (questionId, palette) => {
+    setChartPalettes((prev) => ({
+      ...prev,
+      [questionId]: palette,
+    }));
+  };
+
   // Datos y opciones deluxe para gráficos
-  const getChartData = (stat, chartType = 'bar') => buildDeluxeChartData(stat, chartType);
+  const getChartData = (stat, chartType = 'bar', palette) => buildDeluxeChartData(stat, chartType, palette);
   const getChartOptions = (stat, chartType = 'bar') => buildDeluxeChartOptions(stat, chartType);
 
   const orderedStatEntries = (survey.questions || [])
@@ -6172,6 +6389,8 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       variant={variant}
       chartType={chartTypes[questionId]}
       onChartTypeChange={handleChartTypeChange}
+      chartPalette={chartPalettes[questionId]}
+      onChartPaletteChange={handleChartPaletteChange}
       textExpanded={!!expandedQuestionText[questionId]}
       onToggleText={() => setExpandedQuestionText((prev) => ({ ...prev, [questionId]: !prev[questionId] }))}
       showAllRows={!!expandedAllRows[questionId]}
