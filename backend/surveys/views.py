@@ -2438,11 +2438,6 @@ class PublicAttendanceList(APIView):
         survey = _load_survey_by_pk(pk)
         if not survey:
             raise NotFound(detail="Encuesta no encontrada.")
-        if not survey.get('is_public', False):
-            return Response(
-                {"detail": "Esta encuesta no es pública."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
         if not survey.get('attendance_enabled'):
             return Response(
                 {"detail": "La asistencia pública no está activa en esta encuesta."},
