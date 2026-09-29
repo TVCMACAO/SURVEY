@@ -5708,10 +5708,10 @@ const ResponsesTable = ({
     visibleQuestionIds.has(String(q.id || q._id))
   );
 
-  const thClass = 'px-1.5 py-1 text-left text-[9px] font-bold text-white uppercase tracking-wide leading-tight';
-  const tdClass = 'px-1.5 py-1 text-[10px] leading-tight text-gray-700 align-middle';
+  const thClass = 'px-1.5 py-1 text-left text-[9px] font-bold text-white uppercase tracking-wide leading-tight border border-blue-300';
+  const tdClass = 'px-1.5 py-1 text-[10px] leading-tight text-gray-700 align-middle border border-blue-500';
   const stickyTh = `${thClass} sticky left-0 z-30 bg-indigo-600 min-w-[28px] w-[28px]`;
-  const stickyTd = `${tdClass} sticky left-0 z-10 bg-white border-r border-gray-100 font-semibold text-gray-900 min-w-[28px] w-[28px] text-center`;
+  const stickyTd = `${tdClass} sticky left-0 z-10 bg-white font-semibold text-gray-900 min-w-[28px] w-[28px] text-center`;
 
   const renderCellAnswer = (answer, q) => {
     const qType = q.type || q.question_type;
@@ -5876,7 +5876,7 @@ const ResponsesTable = ({
               {visibleMeta.links && <th className={thClass}>Links</th>}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody>
             {pageResponses.map((response, index) => {
               const globalIndex = startIdx + index;
               const responseId = response.id || response._id;
@@ -9519,29 +9519,29 @@ const PublicDataTable = ({ surveyId }) => {
             {error && (
               <p className="text-xs text-red-600 mb-2">{error}</p>
             )}
-            <div className="flex-1 min-h-0 bg-white rounded-xl border border-gray-200 shadow-sm overflow-auto">
+            <div className="bg-white rounded-xl border-2 border-blue-500 shadow-sm overflow-auto">
               <table className="w-full table-fixed text-sm border-collapse">
                 <thead>
-                  <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                    <th className="sticky top-0 z-10 bg-gray-50 w-36 px-3 py-2 font-bold whitespace-nowrap align-bottom">Fecha</th>
+                  <tr className="bg-blue-50 text-left text-xs uppercase tracking-wide text-blue-900">
+                    <th className="sticky top-0 z-10 bg-blue-50 border border-blue-500 w-36 px-3 py-2 font-bold whitespace-nowrap align-bottom">Fecha</th>
                     {columns.map((column) => (
-                      <th key={column.id} className="sticky top-0 z-10 bg-gray-50 px-3 py-2 font-bold whitespace-normal break-words align-bottom">{column.label}</th>
+                      <th key={column.id} className="sticky top-0 z-10 bg-blue-50 border border-blue-500 px-3 py-2 font-bold whitespace-normal break-words align-bottom">{column.label}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.length === 0 ? (
                     <tr>
-                      <td colSpan={Math.max(1, columns.length + 1)} className="px-3 py-6 text-center text-gray-400">
+                      <td colSpan={Math.max(1, columns.length + 1)} className="border border-blue-500 px-3 py-6 text-center text-gray-400">
                         {data.total === 0 ? 'Sin respuestas aún' : 'No hay coincidencias'}
                       </td>
                     </tr>
                   ) : (
                     pageRows.map((row) => (
-                      <tr key={row.id} className="border-t border-gray-100 hover:bg-emerald-50/40">
-                        <td className="px-3 py-2 text-gray-500 whitespace-nowrap font-mono align-top">{row.created_at || '—'}</td>
+                      <tr key={row.id} className="hover:bg-blue-50/60">
+                        <td className="border border-blue-500 px-3 py-2 text-gray-500 whitespace-nowrap font-mono align-top">{row.created_at || '—'}</td>
                         {columns.map((column) => (
-                          <td key={column.id} className="px-3 py-2 text-gray-800 whitespace-normal break-words align-top">
+                          <td key={column.id} className="border border-blue-500 px-3 py-2 text-gray-800 whitespace-normal break-words align-top">
                             {row.cells?.[column.id] || '—'}
                           </td>
                         ))}
