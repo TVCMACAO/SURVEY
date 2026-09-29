@@ -12,6 +12,7 @@ import { authenticatedFetch, isAuthenticated, login, logout, ensureFreshToken } 
 import { useBreakpoint } from './hooks/useBreakpoint';
 import { APP_VERSION_LABEL, APP_VERSION, GIT_SHA, BUILD_TIME } from './version';
 import * as XLSX from 'xlsx';
+import QRCode from 'qrcode';
 
 const APK_VERSION_URL = '/api/public/apk/version/';
 const APK_DOWNLOAD_FALLBACK = '/api/public/apk/download/';
@@ -8712,6 +8713,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendanceFlags }) => {
   const [linkType, setLinkType] = useState(survey.is_public ? 'public' : 'private');
   const [updating, setUpdating] = useState(false);
+  const [qrBusy, setQrBusy] = useState(false);
   const [tableOn, setTableOn] = useState(survey.attendance_table_enabled !== false);
   const [verifyOn, setVerifyOn] = useState(survey.attendance_verify_enabled !== false);
   const [dataOn, setDataOn] = useState(survey.public_data_table_enabled === true);
@@ -8748,18 +8750,107 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendance
     }
   };
 
-  const handleCopyLink = () => {
+  const shareUrl = () => {
     const surveyId = survey.id || survey._id;
-    let url;
-    
     if (linkType === 'public') {
-      url = `${window.location.origin}/public/survey/${surveyId}`;
-    } else {
-      // Enlace privado requiere autenticación - usar la URL del dashboard con ID
-      url = `${window.location.origin}/?survey=${surveyId}`;
+      return `${window.location.origin}/public/survey/${surveyId}`;
     }
-    
-    copyToClipboard(url);
+    return `${window.location.origin}/?survey=${surveyId}`;
+  };
+
+  const handleCopyLink = () => {
+    copyToClipboard(shareUrl());
+  };
+
+  const handleDownloadQr = async () => {
+    if (qrBusy) return;
+    setQrBusy(true);
+    try {
+      const url = shareUrl();
+      const title = String(survey.title || 'Encuesta').trim() || 'Encuesta';
+      const qrData = await QRCode.toDataURL(url, {
+        width: 768,
+        margin: 2,
+        errorCorrectionLevel: 'M',
+        color: { dark: '#111827', light: '#ffffff' },
+      });
+      const qrImage = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('qr'));
+        image.src = qrData;
+      });
+      const width = qrImage.width;
+      const side = 48;
+      const fontSize = 40;
+      const lineHeight = 48;
+      const measure = document.createElement('canvas').getContext('2d');
+      measure.font = `700 ${fontSize}px system-ui, Segoe UI, sans-serif`;
+      const maxText = width - side * 2;
+      const lines = [];
+      let current = '';
+      const pushChunk = (word) => {
+        if (measure.measureText(word).width <= maxText) {
+          const next = current ? `${current} ${word}` : word;
+          if (measure.measureText(next).width <= maxText) current = next;
+          else {
+            if (current) lines.push(current);
+            current = word;
+          }
+          return;
+        }
+        if (current) {
+          lines.push(current);
+          current = '';
+        }
+        let chunk = '';
+        for (const char of word) {
+          const next = chunk + char;
+          if (measure.measureText(next).width > maxText && chunk) {
+            lines.push(chunk);
+            chunk = char;
+          } else {
+            chunk = next;
+          }
+        }
+        current = chunk;
+      };
+      title.split(/\s+/).filter(Boolean).forEach(pushChunk);
+      if (current) lines.push(current);
+      const headerLines = lines.slice(0, 4);
+      const headerHeight = side + headerLines.length * lineHeight + 8;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = headerHeight + qrImage.height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#111827';
+      ctx.font = `700 ${fontSize}px system-ui, Segoe UI, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      headerLines.forEach((line, index) => {
+        ctx.fillText(line, width / 2, side + index * lineHeight);
+      });
+      ctx.drawImage(qrImage, 0, headerHeight);
+      const slug = title
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 48) || 'encuesta';
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL('image/png');
+      link.download = `qr-${slug}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      alert('No se pudo generar el código QR.');
+    } finally {
+      setQrBusy(false);
+    }
   };
 
   const handleTogglePublic = async () => {
@@ -8833,7 +8924,7 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendance
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-black text-gray-800">Compartir Encuesta</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
@@ -9000,6 +9091,15 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendance
           </div>
         )}
         
+        <button
+          type="button"
+          onClick={handleDownloadQr}
+          disabled={qrBusy}
+          className="w-full mb-3 px-4 py-3 border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 disabled:opacity-60 text-gray-800 rounded-xl font-bold transition-colors inline-flex items-center justify-center gap-2"
+        >
+          <FontAwesomeIcon icon={faDownload} />
+          {qrBusy ? 'Generando…' : 'Descargar código QR'}
+        </button>
         <div className="flex gap-3">
           <button
             onClick={handleCopyLink}
