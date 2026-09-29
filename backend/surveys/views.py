@@ -18,7 +18,7 @@ from django.conf import settings as django_settings
 from django.http import FileResponse
 
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 
@@ -2536,6 +2536,23 @@ _PUBLIC_TABLE_SKIP_TYPES = {
 }
 
 
+def _format_bogota(value):
+    """Fecha guardada en UTC → hora de Bogotá (UTC−5, sin horario de verano)."""
+    bogota = timezone(timedelta(hours=-5))
+    if isinstance(value, datetime):
+        moment = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            moment = datetime.fromisoformat(value.strip().replace('Z', '+00:00'))
+        except ValueError:
+            return value.strip()[:16]
+    else:
+        return ''
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(bogota).strftime('%Y-%m-%d %H:%M')
+
+
 def _public_table_cell(value):
     if value is None:
         return ''
@@ -2597,11 +2614,7 @@ class PublicSurveyDataTable(APIView):
                 cells = {}
                 for column in columns:
                     cells[column['id']] = _public_table_cell(answers.get(column['id']))
-                created = resp.get('created_at')
-                if isinstance(created, datetime):
-                    created_label = created.strftime('%Y-%m-%d %H:%M')
-                else:
-                    created_label = str(created or '')[:16]
+                created_label = _format_bogota(resp.get('created_at'))
                 rows.append({'id': rid, 'created_at': created_label, 'cells': cells})
         rows.sort(key=lambda row: row.get('created_at') or '', reverse=True)
         return Response({
