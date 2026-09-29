@@ -279,6 +279,7 @@ def enforce_survey_feature_flags(validated_data, group_doc, existing_survey=None
             )
         validated_data.pop('reference_key_column', None)
         validated_data.pop('reference_mapping', None)
+        validated_data['reference_lock_fields'] = False
 
     # --- Consentimiento informado ---
     if not flags['feature_informed_consent']:
@@ -2215,8 +2216,10 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['reference_key_column'] = validated_data.get('reference_key_column') or ''
             if 'reference_mapping' in validated_data:
                 update_fields['reference_mapping'] = validated_data.get('reference_mapping') or {}
-            if 'reference_data' in validated_data and validated_data['reference_data'] is not None:
-                update_fields['reference_data'] = validated_data['reference_data']
+            if 'reference_lock_fields' in validated_data:
+                update_fields['reference_lock_fields'] = bool(validated_data.get('reference_lock_fields'))
+            # El Excel se guarda solo por el endpoint de carga. Un guardado de la
+            # encuesta no debe borrar ni reemplazar reference_data.
             if 'documento_empleado_question_id' in validated_data:
                 update_fields['documento_empleado_question_id'] = validated_data.get('documento_empleado_question_id') or ''
             if 'documento_votante_question_id' in validated_data:
@@ -2920,25 +2923,23 @@ class SurveyReferenceFileUpload(APIView):
             if row is None:
                 continue
             data_rows.append(dict(zip(headers, [to_utf8_safe(v) for v in row])))
-        try:
-            surveys_collection.update_one(
-                {"_id": survey["_id"]},
-                {"$set": {"reference_data": data_rows, "reference_row_count": len(data_rows)}}
+        column_names = [h for h in headers if h]
+        saved = surveys_collection.update_one(
+            {"_id": survey["_id"]},
+            {"$set": {
+                "reference_data": data_rows,
+                "reference_row_count": len(data_rows),
+                "reference_columns": column_names,
+            }}
+        )
+        if saved.matched_count == 0:
+            return Response(
+                {"detail": "No se pudo guardar el archivo de referenciación."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-        except Exception:
-            try:
-                surveys_collection.update_one(
-                    {"_id": ObjectId(pk)},
-                    {"$set": {"reference_data": data_rows, "reference_row_count": len(data_rows)}}
-                )
-            except Exception:
-                surveys_collection.update_one(
-                    {"id": pk},
-                    {"$set": {"reference_data": data_rows, "reference_row_count": len(data_rows)}}
-                )
         sample = data_rows[:3] if len(data_rows) > 3 else data_rows
         return Response({
-            "columns": headers,
+            "columns": column_names,
             "row_count": len(data_rows),
             "sample": sample
         })

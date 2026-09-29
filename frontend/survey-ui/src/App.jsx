@@ -923,6 +923,8 @@ const normalizeSurveyForEditor = (raw) => {
     sections,
     reference_key_column: raw.reference_key_column || '',
     reference_mapping: raw.reference_mapping || {},
+    reference_lock_fields: Boolean(raw.reference_lock_fields),
+    reference_columns: Array.isArray(raw.reference_columns) ? raw.reference_columns.filter(Boolean) : [],
     reference_row_count: raw.reference_row_count ?? 0,
     documento_empleado_question_id: raw.documento_empleado_question_id || '',
     documento_votante_question_id: raw.documento_votante_question_id || '',
@@ -2203,8 +2205,17 @@ const PublicSurveyView = ({ surveyId }) => {
     [surveyData?.reference_mapping]
   );
 
+  const referenceLockEnabled = Boolean(surveyData?.reference_lock_fields);
+
   const isReferenceFieldLocked = (questionId) => {
-    if (!referenceFieldsLocked || !questionId) return false;
+    if (!questionId) return false;
+    const question = (surveyData?.questions || []).find((q) => (q.id || q._id) === questionId);
+    const type = question?.type || question?.question_type;
+    if (type === 'Firma' || type === 'Adjuntar archivos' || type === 'Título' || type === 'titulo') return false;
+    if (referenceLockEnabled && referenceKeyQuestionId) {
+      return questionId !== referenceKeyQuestionId;
+    }
+    if (!referenceFieldsLocked) return false;
     if (questionId === referenceKeyQuestionId) return true;
     return referenceMappedQuestionIds.includes(questionId);
   };
@@ -2235,6 +2246,15 @@ const PublicSurveyView = ({ surveyId }) => {
 
     if (questionId === referenceKeyQuestionId) {
       setReferenceLookupNotFound(false);
+      if (referenceLockEnabled) {
+        setAnswers((prev) => {
+          const next = { ...prev };
+          referenceMappedQuestionIds.forEach((qid) => {
+            if (qid !== referenceKeyQuestionId) delete next[qid];
+          });
+          return next;
+        });
+      }
       if (referenceLookupDebounceRef.current) clearTimeout(referenceLookupDebounceRef.current);
       referenceLookupDebounceRef.current = setTimeout(() => {
         doReferenceLookup(value);
@@ -2383,7 +2403,7 @@ const PublicSurveyView = ({ surveyId }) => {
   const doReferenceLookup = async (keyValue) => {
     const key = String(keyValue || '').trim();
     if (!key || !surveyId || !surveyData?.reference_key_column || !surveyData?.reference_mapping) return;
-    if (referenceFieldsLocked) return;
+    if (referenceFieldsLocked && !surveyData?.reference_lock_fields) return;
     setReferenceLookupNotFound(false);
     try {
       const response = await fetch(`/api/public/surveys/${surveyId}/reference-lookup/?key=${encodeURIComponent(key)}`);
@@ -2907,6 +2927,7 @@ const PublicSurveyView = ({ surveyId }) => {
 
   const renderQuestion = (question, index) => {
     const questionId = question.id || question._id;
+    const fieldLocked = isReferenceFieldLocked(questionId);
     if (!questionId) return null;
 
     if (isQuestionBlockedByConsent(index)) {
@@ -3013,10 +3034,10 @@ const PublicSurveyView = ({ surveyId }) => {
               {questionId === referenceKeyQuestionId && referenceLookupNotFound && (
                 <p className="text-xs text-amber-600 mt-2">No se encontraron datos para este documento.</p>
               )}
-              {isReferenceFieldLocked(questionId) && (
-                <p className="text-xs text-gray-600 mt-2">Datos cargados del padrón; no se pueden editar.</p>
+              {fieldLocked && (
+                <p className="text-xs text-gray-600 mt-2">Este campo no se digita. Se completa con el archivo de referenciación.</p>
               )}
-              {questionId === referenceKeyQuestionId && referenceFieldsLocked && (
+              {questionId === referenceKeyQuestionId && referenceFieldsLocked && !referenceLockEnabled && (
                 <button
                   type="button"
                   onClick={clearReferenceLockedAnswers}
@@ -3070,10 +3091,10 @@ const PublicSurveyView = ({ surveyId }) => {
               {questionId === referenceKeyQuestionId && referenceLookupNotFound && (
                 <p className="text-xs text-amber-600 mt-2">No se encontraron datos para este documento.</p>
               )}
-              {isReferenceFieldLocked(questionId) && (
-                <p className="text-xs text-gray-600 mt-2">Datos cargados del padrón; no se pueden editar.</p>
+              {fieldLocked && (
+                <p className="text-xs text-gray-600 mt-2">Este campo no se digita. Se completa con el archivo de referenciación.</p>
               )}
-              {questionId === referenceKeyQuestionId && referenceFieldsLocked && (
+              {questionId === referenceKeyQuestionId && referenceFieldsLocked && !referenceLockEnabled && (
                 <button
                   type="button"
                   onClick={clearReferenceLockedAnswers}
@@ -3093,9 +3114,10 @@ const PublicSurveyView = ({ surveyId }) => {
               type={question.date_include_time ? 'datetime-local' : 'date'}
               value={answers[questionId] || ''}
               onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-              readOnly={isReferenceFieldLocked(questionId)}
+              readOnly={fieldLocked}
+              disabled={fieldLocked}
               className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base ${
-                isReferenceFieldLocked(questionId)
+                fieldLocked
                   ? 'bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed'
                   : 'border-gray-200 bg-gray-50/50 hover:bg-white focus:bg-white'
               }`}
@@ -3103,14 +3125,15 @@ const PublicSurveyView = ({ surveyId }) => {
           )}
 
           {question.type === 'Opción Única' && question.options && (
-            <div className="space-y-3">
+            <div className={`space-y-3 ${fieldLocked ? 'opacity-70' : ''}`}>
               {question.options.map((option, idx) => (
-                <label key={idx} className="flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer transition-all duration-200 group">
+                <label key={idx} className={`flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl transition-all duration-200 group ${fieldLocked ? 'cursor-not-allowed bg-gray-50' : 'hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer'}`}>
                   <input
                     type="radio"
                     name={`question_${questionId}`}
                     value={option}
                     checked={answers[questionId] === option}
+                    disabled={fieldLocked}
                     onChange={(e) => handleAnswerChange(questionId, e.target.value)}
                     className="w-5 h-5 text-indigo-600 focus:ring-indigo-500 focus:ring-2"
                   />
@@ -3126,11 +3149,12 @@ const PublicSurveyView = ({ surveyId }) => {
           )}
 
           {question.type === 'Casillas' && question.options && (
-            <div className="space-y-3">
+            <div className={`space-y-3 ${fieldLocked ? 'opacity-70' : ''}`}>
               {question.options.map((option, idx) => (
-                <label key={idx} className="flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer transition-all duration-200 group">
+                <label key={idx} className={`flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl transition-all duration-200 group ${fieldLocked ? 'cursor-not-allowed bg-gray-50' : 'hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer'}`}>
                   <input
                     type="checkbox"
+                    disabled={fieldLocked}
                     checked={(answers[questionId] || []).includes(option)}
                     onChange={(e) => {
                       const currentAnswers = answers[questionId] || [];
@@ -3155,8 +3179,9 @@ const PublicSurveyView = ({ surveyId }) => {
           {question.type === 'Desplegable' && question.options && (
             <select
               value={answers[questionId] || ''}
+              disabled={fieldLocked}
               onChange={(e) => handleAnswerChange(questionId, e.target.value)}
-              className="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base bg-gray-50/50 hover:bg-white focus:bg-white appearance-none cursor-pointer"
+              className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base appearance-none ${fieldLocked ? 'bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed' : 'border-gray-200 bg-gray-50/50 hover:bg-white focus:bg-white cursor-pointer'}`}
             >
               <option value="">Selecciona una opción...</option>
               {question.options.map((option, idx) => (
@@ -3171,8 +3196,9 @@ const PublicSurveyView = ({ surveyId }) => {
                 <button
                   key={rating}
                   type="button"
+                  disabled={fieldLocked}
                   onClick={() => handleAnswerChange(questionId, rating)}
-                  className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-200 shadow-lg hover:scale-110 active:scale-95 ${
+                  className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-200 shadow-lg hover:scale-110 active:scale-95 ${fieldLocked ? 'cursor-not-allowed opacity-60' : ''} ${
                     answers[questionId] >= rating
                       ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-white shadow-yellow-500/50 scale-110'
                       : 'bg-white text-gray-400 hover:bg-gray-100 border-2 border-gray-200'
@@ -3258,6 +3284,8 @@ const PublicSurveyView = ({ surveyId }) => {
                               <input
                                 type="text"
                                 value={typeof cellValue === 'string' ? cellValue : ''}
+                                readOnly={fieldLocked}
+                                disabled={fieldLocked}
                                 onChange={(e) => {
                                   const prev = answers[questionId] || {};
                                   const prevItem = prev[item.id] || {};
@@ -3271,6 +3299,7 @@ const PublicSurveyView = ({ surveyId }) => {
                                 <input
                                   type="checkbox"
                                   checked={!!cellValue}
+                                  disabled={fieldLocked}
                                   onChange={(e) => {
                                     const prev = answers[questionId] || {};
                                     const prevItem = prev[item.id] || {};
@@ -3499,9 +3528,10 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
   });
   const [referenceColumns, setReferenceColumns] = useState(() => {
     if (!initialSurveyData) return [];
+    const stored = Array.isArray(initialSurveyData.reference_columns) ? initialSurveyData.reference_columns : [];
     const refKey = initialSurveyData.reference_key_column || '';
     const refMap = initialSurveyData.reference_mapping || {};
-    return [...new Set([refKey, ...Object.values(refMap)].filter(Boolean))];
+    return [...new Set([...stored, refKey, ...Object.values(refMap)].filter(Boolean))];
   });
   const [referenceUploading, setReferenceUploading] = useState(false);
   const gearMenuDesktopRef = useRef(null);
@@ -3567,9 +3597,22 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
 
       const refKey = normalized.reference_key_column || '';
       const refMap = normalized.reference_mapping || {};
-      const derivedColumns = [...new Set([refKey, ...Object.values(refMap)].filter(Boolean))];
-      if (derivedColumns.length > 0) setReferenceColumns(derivedColumns);
-      setSurveyData(normalized);
+      const storedColumns = Array.isArray(normalized.reference_columns) ? normalized.reference_columns : [];
+      setReferenceColumns((prev) => {
+        const base = storedColumns.length ? storedColumns : prev;
+        const derivedColumns = [...new Set([...base, refKey, ...Object.values(refMap)].filter(Boolean))];
+        return derivedColumns.length ? derivedColumns : prev;
+      });
+      setSurveyData((prev) => {
+        const prevCount = Number(prev?.reference_row_count || 0);
+        const nextCount = Number(normalized.reference_row_count || 0);
+        const prevColumns = Array.isArray(prev?.reference_columns) ? prev.reference_columns : [];
+        return {
+          ...normalized,
+          reference_row_count: Math.max(prevCount, nextCount),
+          reference_columns: storedColumns.length ? storedColumns : prevColumns,
+        };
+      });
     } else {
       setSurveyData(normalizeSurveyForEditor(null));
     }
@@ -3730,6 +3773,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
       // No activar referenciación nueva; conservar lo ya guardado si existe
       data.reference_key_column = initialSurveyData?.reference_key_column || '';
       data.reference_mapping = initialSurveyData?.reference_mapping || {};
+      data.reference_lock_fields = false;
     }
     onSave(data);
   };
@@ -4171,8 +4215,13 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
                              } catch (_) {
                                throw new Error('Respuesta del servidor no válida');
                              }
-                             setReferenceColumns(data.columns || []);
-                             setSurveyData(prev => ({ ...prev, reference_row_count: data.row_count ?? 0 }));
+                            const columns = Array.isArray(data.columns) ? data.columns.filter(Boolean) : [];
+                            setReferenceColumns(columns);
+                            setSurveyData(prev => ({
+                              ...prev,
+                              reference_row_count: data.row_count ?? 0,
+                              reference_columns: columns,
+                            }));
                              e.target.value = '';
                            } catch (err) {
                              alert(err.message || 'Error al subir el archivo');
@@ -4201,8 +4250,20 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
                              {(referenceColumns.length ? referenceColumns : [...new Set([surveyData.reference_key_column, ...Object.values(surveyData.reference_mapping || {})].filter(Boolean))]).map(col => (
                                <option key={col} value={col}>{col}</option>
                              ))}
-                           </select>
+                            </select>
                          </div>
+                         <label className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 cursor-pointer">
+                           <input
+                             type="checkbox"
+                             className="mt-0.5 w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                             checked={Boolean(surveyData.reference_lock_fields)}
+                             onChange={(e) => setSurveyData((prev) => ({ ...prev, reference_lock_fields: e.target.checked }))}
+                           />
+                           <span>
+                             <span className="block text-sm font-semibold text-gray-800">Solo digitar la clave de búsqueda</span>
+                             <span className="block text-xs text-gray-500 mt-0.5">Al responder, solo se escribe la pregunta mapeada a la clave. El resto queda bloqueado y se llena con el archivo. La firma y los adjuntos siguen disponibles.</span>
+                           </span>
+                         </label>
                          <div>
                            <label className="block text-sm font-medium text-gray-700 mb-2">Mapear preguntas a columnas</label>
                            <div className="space-y-2">
@@ -10209,6 +10270,7 @@ export default function App() {
       is_public: surveyData.is_public || false,
       reference_key_column: surveyData.reference_key_column || '',
       reference_mapping: surveyData.reference_mapping || {},
+      reference_lock_fields: Boolean(surveyData.reference_lock_fields),
       documento_empleado_question_id: surveyData.documento_empleado_question_id || '',
       documento_votante_question_id: surveyData.documento_votante_question_id || '',
       header_image: surveyData.header_image || '',
@@ -10287,12 +10349,19 @@ export default function App() {
         fetchSurveys({ silent: true });
         // Sync editor from local payload + server id (avoid destructive refetch wipe)
         const newId = savedData?.id || savedData?._id || surveyData.id;
+        const serverColumns = Array.isArray(savedData?.reference_columns) ? savedData.reference_columns.filter(Boolean) : [];
+        const localColumns = Array.isArray(surveyData?.reference_columns) ? surveyData.reference_columns.filter(Boolean) : [];
         const synced = normalizeSurveyForEditor({
           ...(savedData && typeof savedData === 'object' ? savedData : {}),
           ...surveyData,
           id: newId ? String(newId) : surveyData.id,
           questions: surveyData.questions,
           sections: surveyData.sections,
+          reference_columns: localColumns.length ? localColumns : serverColumns,
+          reference_row_count: Math.max(
+            Number(savedData?.reference_row_count || 0),
+            Number(surveyData?.reference_row_count || 0),
+          ),
           webhook_secret_set: Boolean(
             savedData?.webhook_secret_set ?? surveyData.webhook_secret_set
           ),

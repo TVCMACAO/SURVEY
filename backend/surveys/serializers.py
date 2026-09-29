@@ -522,6 +522,7 @@ class SurveySerializer(serializers.Serializer):
     # Archivo de referenciación (Excel): clave de búsqueda, mapeo pregunta -> columna, datos parseados
     reference_key_column = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     reference_mapping = serializers.JSONField(required=False, default=dict)  # { question_id: column_name }
+    reference_lock_fields = serializers.BooleanField(required=False, default=False)
     reference_data = serializers.ListField(child=serializers.DictField(), required=False, allow_null=True)  # list of row dicts (not sent to client)
     reference_row_count = serializers.IntegerField(read_only=True, required=False, default=0)  # set on upload
     # IDs de preguntas para nombrar adjuntos: documento_empleado-documento_votante.ext
@@ -578,7 +579,18 @@ class SurveySerializer(serializers.Serializer):
             data['reference_data'] = instance.get('reference_data') or []
         else:
             data['reference_data'] = None
-        data['reference_row_count'] = instance.get('reference_row_count') or 0
+        stored_columns = instance.get('reference_columns') if isinstance(instance, dict) else None
+        if not isinstance(stored_columns, list) or not stored_columns:
+            rows = instance.get('reference_data') if isinstance(instance, dict) else None
+            first = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else {}
+            stored_columns = [str(key) for key in first.keys() if str(key).strip()]
+        data['reference_columns'] = stored_columns
+        row_count = instance.get('reference_row_count') if isinstance(instance, dict) else 0
+        if not row_count:
+            rows = instance.get('reference_data') if isinstance(instance, dict) else None
+            row_count = len(rows) if isinstance(rows, list) else 0
+        data['reference_row_count'] = row_count or 0
+        data['reference_lock_fields'] = bool(instance.get('reference_lock_fields', False)) if isinstance(instance, dict) else False
         data['informed_consent_enabled'] = bool(instance.get('informed_consent_enabled', False))
         ic = instance.get('informed_consent') or {}
         data['informed_consent'] = ic if isinstance(ic, dict) else {}
