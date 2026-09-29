@@ -9393,7 +9393,9 @@ const PublicDataTable = ({ surveyId }) => {
   const [data, setData] = useState(null);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const reloadRef = useRef(null);
+  const screenRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -9438,6 +9440,22 @@ const PublicDataTable = ({ surveyId }) => {
     setPage(1);
   }, [query]);
 
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === screenRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    const node = screenRef.current;
+    if (!node) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen?.();
+      return;
+    }
+    node.requestFullscreen?.();
+  };
+
   const columns = data?.columns || [];
   const needle = query.trim().toLowerCase();
   const filteredRows = (data?.rows || []).filter((row) => {
@@ -9450,8 +9468,8 @@ const PublicDataTable = ({ surveyId }) => {
   const pageRows = filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   return (
-    <div className="min-h-screen w-full bg-[#f8fafc] font-sans">
-      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-5 sm:py-8">
+    <div ref={screenRef} className="min-h-screen w-full bg-[#f8fafc] font-sans flex flex-col">
+      <div className="w-full flex-1 min-h-0 flex flex-col px-2 sm:px-4 py-4">
         <h1 className="text-xl sm:text-2xl font-black text-gray-800 mb-0.5 leading-tight">
           {data?.survey_title || 'Datos'}
         </h1>
@@ -9473,7 +9491,14 @@ const PublicDataTable = ({ surveyId }) => {
                   En vivo
                 </span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  className="px-3 py-1.5 rounded-lg text-sm font-bold border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
+                >
+                  {isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                </button>
                 <button
                   type="button"
                   onClick={() => reloadRef.current && reloadRef.current()}
@@ -9494,13 +9519,13 @@ const PublicDataTable = ({ surveyId }) => {
             {error && (
               <p className="text-xs text-red-600 mb-2">{error}</p>
             )}
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-              <table className="w-full text-xs sm:text-sm">
+            <div className="flex-1 min-h-0 bg-white rounded-xl border border-gray-200 shadow-sm overflow-auto">
+              <table className="w-full table-fixed text-sm border-collapse">
                 <thead>
-                  <tr className="bg-gray-50 text-left text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">
-                    <th className="px-2 sm:px-3 py-2 font-bold whitespace-nowrap">Fecha</th>
+                  <tr className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                    <th className="sticky top-0 z-10 bg-gray-50 w-36 px-3 py-2 font-bold whitespace-nowrap align-bottom">Fecha</th>
                     {columns.map((column) => (
-                      <th key={column.id} className="px-2 sm:px-3 py-2 font-bold whitespace-nowrap">{column.label}</th>
+                      <th key={column.id} className="sticky top-0 z-10 bg-gray-50 px-3 py-2 font-bold whitespace-normal break-words align-bottom">{column.label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -9514,9 +9539,9 @@ const PublicDataTable = ({ surveyId }) => {
                   ) : (
                     pageRows.map((row) => (
                       <tr key={row.id} className="border-t border-gray-100 hover:bg-emerald-50/40">
-                        <td className="px-2 sm:px-3 py-1.5 text-gray-500 whitespace-nowrap font-mono">{row.created_at || '—'}</td>
+                        <td className="px-3 py-2 text-gray-500 whitespace-nowrap font-mono align-top">{row.created_at || '—'}</td>
                         {columns.map((column) => (
-                          <td key={column.id} className="px-2 sm:px-3 py-1.5 text-gray-800 whitespace-nowrap max-w-[16rem] truncate">
+                          <td key={column.id} className="px-3 py-2 text-gray-800 whitespace-normal break-words align-top">
                             {row.cells?.[column.id] || '—'}
                           </td>
                         ))}
