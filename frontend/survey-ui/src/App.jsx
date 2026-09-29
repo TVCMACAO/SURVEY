@@ -966,6 +966,8 @@ const normalizeSurveyForEditor = (raw) => {
       cargo: raw.webhook_field_map?.cargo || '',
     },
     attendance_enabled: Boolean(raw.attendance_enabled),
+    attendance_table_enabled: raw.attendance_table_enabled !== false,
+    attendance_verify_enabled: raw.attendance_verify_enabled !== false,
     attendance_document_question_id: raw.attendance_document_question_id || '',
     theme: normalizeSurveyTheme(raw.theme),
     intro_image_enabled: Boolean(raw.intro_image_enabled),
@@ -4826,11 +4828,31 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
                    checked={Boolean(surveyData.attendance_enabled)}
                    onChange={(e) => setSurveyData((prev) => ({ ...prev, attendance_enabled: e.target.checked }))}
                  />
-                 <span className="text-sm font-semibold text-gray-700">Activar tabla pública y verificación</span>
+                 <span className="text-sm font-semibold text-gray-700">Activar asistencia</span>
                </label>
              </div>
              {surveyData.attendance_enabled && (
                <div className="mt-4 space-y-3">
+                 <div className="flex flex-wrap gap-4">
+                   <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                     <input
+                       type="checkbox"
+                       className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                       checked={surveyData.attendance_table_enabled !== false}
+                       onChange={(e) => setSurveyData((prev) => ({ ...prev, attendance_table_enabled: e.target.checked }))}
+                     />
+                     <span className="text-sm text-gray-700">Tabla pública</span>
+                   </label>
+                   <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                     <input
+                       type="checkbox"
+                       className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                       checked={surveyData.attendance_verify_enabled !== false}
+                       onChange={(e) => setSurveyData((prev) => ({ ...prev, attendance_verify_enabled: e.target.checked }))}
+                     />
+                     <span className="text-sm text-gray-700">Verificación</span>
+                   </label>
+                 </div>
                  <p className="text-sm text-gray-600">
                    Los inscritos son las respuestas de esta encuesta. Un encuestador logueado digita la cédula
                    y se asigna un número único del 000 al 999. La tabla pública muestra Asistió/No y el número.
@@ -8687,9 +8709,44 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 // --- VISTA: DASHBOARD DE ENCUESTAS ---
 
 // Componente de diálogo para compartir
-const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
+const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendanceFlags }) => {
   const [linkType, setLinkType] = useState(survey.is_public ? 'public' : 'private');
   const [updating, setUpdating] = useState(false);
+  const [tableOn, setTableOn] = useState(survey.attendance_table_enabled !== false);
+  const [verifyOn, setVerifyOn] = useState(survey.attendance_verify_enabled !== false);
+  const [dataOn, setDataOn] = useState(survey.public_data_table_enabled === true);
+  const [flagUpdating, setFlagUpdating] = useState('');
+
+  const toggleAttendanceFlag = async (field, next) => {
+    if (flagUpdating) return;
+    const surveyId = survey.id || survey._id;
+    const current = {
+      attendance_table_enabled: tableOn,
+      attendance_verify_enabled: verifyOn,
+      public_data_table_enabled: dataOn,
+    };
+    const setters = {
+      attendance_table_enabled: setTableOn,
+      attendance_verify_enabled: setVerifyOn,
+      public_data_table_enabled: setDataOn,
+    };
+    const previous = current[field];
+    setters[field](next);
+    setFlagUpdating(field);
+    try {
+      const response = await authenticatedFetch(`/api/surveys/${surveyId}/`, {
+        method: 'PUT',
+        body: JSON.stringify({ [field]: next }),
+      });
+      if (!response.ok) throw new Error('No se pudo actualizar');
+      if (onUpdateAttendanceFlags) onUpdateAttendanceFlags(surveyId, { [field]: next });
+    } catch (error) {
+      setters[field](previous);
+      alert(error.message || 'No se pudo actualizar');
+    } finally {
+      setFlagUpdating('');
+    }
+  };
 
   const handleCopyLink = () => {
     const surveyId = survey.id || survey._id;
@@ -8832,39 +8889,113 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus }) => {
           </div>
         </div>
 
+        <div className={`mb-3 p-4 rounded-xl border-2 ${dataOn ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-gray-50'}`}>
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <div className={`font-bold ${dataOn ? 'text-emerald-900' : 'text-gray-500'}`}>Tabla pública de datos</div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={dataOn}
+              disabled={Boolean(flagUpdating)}
+              onClick={() => toggleAttendanceFlag('public_data_table_enabled', !dataOn)}
+              className={`relative w-11 h-6 rounded-full transition shrink-0 ${dataOn ? 'bg-emerald-600' : 'bg-gray-300'} disabled:opacity-60`}
+              title={dataOn ? 'Desactivar tabla de datos' : 'Activar tabla de datos'}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition ${dataOn ? 'translate-x-5' : ''}`} />
+            </button>
+          </div>
+          {dataOn ? (
+            <>
+              <p className="text-xs text-emerald-800 mb-3 break-all">
+                {`${window.location.origin}/public/survey/${survey.id || survey._id}/datos`}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const surveyId = survey.id || survey._id;
+                  copyToClipboard(`${window.location.origin}/public/survey/${surveyId}/datos`);
+                }}
+                className="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors"
+              >
+                Copiar tabla de datos
+              </button>
+            </>
+          ) : (
+            <p className="text-xs text-gray-500">Desactivada. Muestra las respuestas en una tabla simple, sin firmas ni archivos.</p>
+          )}
+        </div>
+
         {survey.attendance_enabled && (
           <div className="mb-6 space-y-3">
-            <div className="p-4 rounded-xl border-2 border-amber-200 bg-amber-50">
-              <div className="font-bold text-amber-900 mb-1">Tabla pública de asistencia</div>
-              <p className="text-xs text-amber-800 mb-3 break-all">
-                {`${window.location.origin}/public/survey/${survey.id || survey._id}/asistencia`}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  const surveyId = survey.id || survey._id;
-                  copyToClipboard(`${window.location.origin}/public/survey/${surveyId}/asistencia`);
-                }}
-                className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm transition-colors"
-              >
-                Copiar enlace de asistencia
-              </button>
+            <div className={`p-4 rounded-xl border-2 ${tableOn ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <div className={`font-bold ${tableOn ? 'text-amber-900' : 'text-gray-500'}`}>Tabla pública de asistencia</div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={tableOn}
+                  disabled={Boolean(flagUpdating)}
+                  onClick={() => toggleAttendanceFlag('attendance_table_enabled', !tableOn)}
+                  className={`relative w-11 h-6 rounded-full transition shrink-0 ${tableOn ? 'bg-amber-500' : 'bg-gray-300'} disabled:opacity-60`}
+                  title={tableOn ? 'Desactivar tabla' : 'Activar tabla'}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition ${tableOn ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+              {tableOn ? (
+                <>
+                  <p className="text-xs text-amber-800 mb-3 break-all">
+                    {`${window.location.origin}/public/survey/${survey.id || survey._id}/asistencia`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const surveyId = survey.id || survey._id;
+                      copyToClipboard(`${window.location.origin}/public/survey/${surveyId}/asistencia`);
+                    }}
+                    className="w-full px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-sm transition-colors"
+                  >
+                    Copiar enlace de asistencia
+                  </button>
+                </>
+              ) : (
+                <p className="text-xs text-gray-500">Desactivada. El enlace público no muestra la tabla.</p>
+              )}
             </div>
-            <div className="p-4 rounded-xl border-2 border-indigo-200 bg-indigo-50">
-              <div className="font-bold text-indigo-900 mb-1">Verificación (requiere login)</div>
-              <p className="text-xs text-indigo-800 mb-3 break-all">
-                {`${window.location.origin}/survey/${survey.id || survey._id}/asistencia/verificar`}
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  const surveyId = survey.id || survey._id;
-                  copyToClipboard(`${window.location.origin}/survey/${surveyId}/asistencia/verificar`);
-                }}
-                className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-colors"
-              >
-                Copiar enlace de verificación
-              </button>
+            <div className={`p-4 rounded-xl border-2 ${verifyOn ? 'border-indigo-200 bg-indigo-50' : 'border-gray-200 bg-gray-50'}`}>
+              <div className="flex items-center justify-between gap-3 mb-1">
+                <div className={`font-bold ${verifyOn ? 'text-indigo-900' : 'text-gray-500'}`}>Verificación (requiere login)</div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={verifyOn}
+                  disabled={Boolean(flagUpdating)}
+                  onClick={() => toggleAttendanceFlag('attendance_verify_enabled', !verifyOn)}
+                  className={`relative w-11 h-6 rounded-full transition shrink-0 ${verifyOn ? 'bg-indigo-600' : 'bg-gray-300'} disabled:opacity-60`}
+                  title={verifyOn ? 'Desactivar verificación' : 'Activar verificación'}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition ${verifyOn ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+              {verifyOn ? (
+                <>
+                  <p className="text-xs text-indigo-800 mb-3 break-all">
+                    {`${window.location.origin}/survey/${survey.id || survey._id}/asistencia/verificar`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const surveyId = survey.id || survey._id;
+                      copyToClipboard(`${window.location.origin}/survey/${surveyId}/asistencia/verificar`);
+                    }}
+                    className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-colors"
+                  >
+                    Copiar enlace de verificación
+                  </button>
+                </>
+              ) : (
+                <p className="text-xs text-gray-500">Desactivada. No se puede marcar llegada ni asignar número.</p>
+              )}
             </div>
           </div>
         )}
@@ -9154,6 +9285,177 @@ const PublicAttendanceTable = ({ surveyId }) => {
   );
 };
 
+const PublicDataTable = ({ surveyId }) => {
+  const PAGE_SIZE = 20;
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [data, setData] = useState(null);
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const reloadRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const pull = async (silent) => {
+      if (cancelled) return;
+      if (!silent) setLoading(true);
+      else setRefreshing(true);
+      try {
+        const res = await fetch(`/api/public/surveys/${surveyId}/datos/`, { cache: 'no-store' });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.detail || 'No se pudo cargar la tabla.');
+        if (cancelled) return;
+        setData(body);
+        setError('');
+      } catch (e) {
+        if (!cancelled) setError(e.message || 'Error al cargar');
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
+    reloadRef.current = () => pull(true);
+    pull(false);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'hidden') pull(true);
+    }, 5000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') pull(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      reloadRef.current = null;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [surveyId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
+
+  const columns = data?.columns || [];
+  const needle = query.trim().toLowerCase();
+  const filteredRows = (data?.rows || []).filter((row) => {
+    if (!needle) return true;
+    const values = [row.created_at, ...columns.map((column) => row.cells?.[column.id])];
+    return values.some((value) => String(value || '').toLowerCase().includes(needle));
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  return (
+    <div className="min-h-screen w-full bg-[#f8fafc] font-sans">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-5 sm:py-8">
+        <h1 className="text-xl sm:text-2xl font-black text-gray-800 mb-0.5 leading-tight">
+          {data?.survey_title || 'Datos'}
+        </h1>
+        <p className="text-gray-500 text-sm mb-4">Tabla pública de datos</p>
+        {loading && !data && <p className="text-gray-600 text-sm">Cargando…</p>}
+        {error && !data && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm mb-3">{error}</div>
+        )}
+        {data && (
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs sm:text-sm text-gray-600">
+                  {data.total} respuesta{data.total === 1 ? '' : 's'}
+                  {needle ? <span className="text-emerald-700 font-semibold"> · {filteredRows.length} resultado(s)</span> : null}
+                </p>
+                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  En vivo
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => reloadRef.current && reloadRef.current()}
+                  disabled={refreshing}
+                  className="px-3 py-1.5 rounded-lg text-sm font-bold border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                >
+                  {refreshing ? 'Actualizando…' : 'Actualizar'}
+                </button>
+                <input
+                  type="search"
+                  placeholder="Buscar…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="w-full sm:w-64 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-400"
+                />
+              </div>
+            </div>
+            {error && (
+              <p className="text-xs text-red-600 mb-2">{error}</p>
+            )}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+              <table className="w-full text-xs sm:text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left text-[10px] sm:text-xs uppercase tracking-wide text-gray-500">
+                    <th className="px-2 sm:px-3 py-2 font-bold whitespace-nowrap">Fecha</th>
+                    {columns.map((column) => (
+                      <th key={column.id} className="px-2 sm:px-3 py-2 font-bold whitespace-nowrap">{column.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={Math.max(1, columns.length + 1)} className="px-3 py-6 text-center text-gray-400">
+                        {data.total === 0 ? 'Sin respuestas aún' : 'No hay coincidencias'}
+                      </td>
+                    </tr>
+                  ) : (
+                    pageRows.map((row) => (
+                      <tr key={row.id} className="border-t border-gray-100 hover:bg-emerald-50/40">
+                        <td className="px-2 sm:px-3 py-1.5 text-gray-500 whitespace-nowrap font-mono">{row.created_at || '—'}</td>
+                        {columns.map((column) => (
+                          <td key={column.id} className="px-2 sm:px-3 py-1.5 text-gray-800 whitespace-nowrap max-w-[16rem] truncate">
+                            {row.cells?.[column.id] || '—'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {filteredRows.length > PAGE_SIZE && (
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <p className="text-xs text-gray-500">Página {safePage} de {totalPages}</p>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const AttendanceVerifyModal = ({ survey, onClose }) => {
   const [documento, setDocumento] = useState('');
   const [loading, setLoading] = useState(false);
@@ -9327,8 +9629,8 @@ const AttendanceVerifyPage = ({ surveyId, onBack, onLogout, lockNavigation = fal
         const res = await authenticatedFetch(`/api/surveys/${surveyId}/`);
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.detail || 'No se pudo cargar la encuesta.');
-        if (!body.attendance_enabled) {
-          throw new Error('La asistencia no está activa en esta encuesta.');
+        if (!body.attendance_enabled || body.attendance_verify_enabled === false) {
+          throw new Error('La verificación de asistencia está desactivada.');
         }
         if (!cancelled) setSurvey(body);
       } catch (e) {
@@ -9383,7 +9685,7 @@ const AttendanceVerifyPage = ({ surveyId, onBack, onLogout, lockNavigation = fal
   );
 };
 
-const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus, onDuplicate, canEdit = true }) => {
+const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpdatePublicStatus, onUpdateAttendanceFlags, onDuplicate, canEdit = true }) => {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showAttendanceVerify, setShowAttendanceVerify] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -9414,6 +9716,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
           survey={survey}
           onClose={() => setShowShareDialog(false)}
           onUpdatePublicStatus={onUpdatePublicStatus}
+          onUpdateAttendanceFlags={onUpdateAttendanceFlags}
         />
       )}
       {showAttendanceVerify && (
@@ -9480,7 +9783,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
 
             {/* Botones de acción mejorados */}
             <div className="flex items-center justify-end gap-1">
-              {canEdit && survey.attendance_enabled && (
+              {canEdit && survey.attendance_enabled && survey.attendance_verify_enabled !== false && (
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setShowAttendanceVerify(true); }}
@@ -9541,7 +9844,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
   );
 };
 
-const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, userRole, currentUser, onViewUsers, onDuplicateSurvey }) => {
+const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, onUpdateAttendanceFlags, userRole, currentUser, onViewUsers, onDuplicateSurvey }) => {
   const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
   const [searchQuery, setSearchQuery] = React.useState('');
   const [groupFilter, setGroupFilter] = React.useState('all');
@@ -9952,6 +10255,7 @@ const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurv
                         onDelete={() => onDeleteSurvey(s.id || s._id)} 
                         onViewResponses={() => onViewResponses(s)} 
                         onUpdatePublicStatus={onUpdatePublicStatus}
+                        onUpdateAttendanceFlags={onUpdateAttendanceFlags}
                         onDuplicate={onDuplicateSurvey ? () => onDuplicateSurvey(s) : undefined}
                         canEdit={canEditSurveys}
                       />)}
@@ -9970,16 +10274,20 @@ export default function App() {
   // Check if we're on a public survey route
   const pathname = window.location.pathname;
   const publicAttendanceMatch = pathname.match(/^\/public\/survey\/([^/]+)\/asistencia\/?$/);
+  const publicDataMatch = pathname.match(/^\/public\/survey\/([^/]+)\/datos\/?$/);
   const publicSurveyMatch = pathname.match(/^\/public\/survey\/([^/]+)\/?$/);
   const verifyAttendanceMatch = pathname.match(/^\/survey\/([^/]+)\/asistencia\/verificar\/?$/);
   const publicAttendanceSurveyId = publicAttendanceMatch ? publicAttendanceMatch[1] : null;
+  const publicDataSurveyId = publicDataMatch ? publicDataMatch[1] : null;
   const verifyAttendanceSurveyId = verifyAttendanceMatch ? verifyAttendanceMatch[1] : null;
-  const publicSurveyId = publicAttendanceSurveyId || (publicSurveyMatch ? publicSurveyMatch[1] : null);
+  const publicSurveyId = publicAttendanceSurveyId || publicDataSurveyId || (publicSurveyMatch ? publicSurveyMatch[1] : null);
   const initialView = publicAttendanceSurveyId
     ? 'public_attendance'
-    : (verifyAttendanceSurveyId
-      ? 'verify_attendance'
-      : (publicSurveyId ? 'public' : 'dashboard'));
+    : (publicDataSurveyId
+      ? 'public_data'
+      : (verifyAttendanceSurveyId
+        ? 'verify_attendance'
+        : (publicSurveyId ? 'public' : 'dashboard')));
   const [view, setView] = useState(initialView); // 'dashboard' | 'editor' | 'login' | 'responses' | 'public' | 'public_attendance' | 'verify_attendance' | 'users'
   const [surveys, setSurveys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -10054,7 +10362,7 @@ export default function App() {
   // Effect to check authentication and fetch surveys on component mount
   useEffect(() => {
     // Skip auth check if this is a public survey route
-    if (publicSurveyId && view === 'public_attendance') {
+    if (publicSurveyId && (view === 'public_attendance' || view === 'public_data')) {
       setLoading(false);
       return;
     }
@@ -10312,6 +10620,8 @@ export default function App() {
         cargo: surveyData.webhook_field_map?.cargo || '',
       },
       attendance_enabled: Boolean(surveyData.attendance_enabled),
+      attendance_table_enabled: surveyData.attendance_table_enabled !== false,
+      attendance_verify_enabled: surveyData.attendance_verify_enabled !== false,
       attendance_document_question_id: surveyData.attendance_document_question_id || '',
     };
     if ((surveyData.webhook_secret || '').trim()) {
@@ -10565,6 +10875,16 @@ export default function App() {
     }
   };
 
+  const handleUpdateAttendanceFlags = (surveyId, patch) => {
+    setSurveys((prevSurveys) =>
+      prevSurveys.map((s) =>
+        (s.id === surveyId || s._id === surveyId)
+          ? { ...s, ...patch }
+          : s
+      )
+    );
+  };
+
   const handleUpdatePublicStatus = async (surveyId, isPublic) => {
     // Update the survey in the local state
     setSurveys(prevSurveys => 
@@ -10582,6 +10902,9 @@ export default function App() {
   // Public survey view (no authentication required)
   if (view === 'public_attendance' && publicAttendanceSurveyId) {
     return <PublicAttendanceTable surveyId={publicAttendanceSurveyId} />;
+  }
+  if (view === 'public_data' && publicDataSurveyId) {
+    return <PublicDataTable surveyId={publicDataSurveyId} />;
   }
   if (view === 'public' && publicSurveyId) {
     return <PublicSurveyView surveyId={publicSurveyId} />;
@@ -10700,6 +11023,7 @@ export default function App() {
               onViewResponses={handleViewResponses}
               onLogout={handleLogout}
               onUpdatePublicStatus={handleUpdatePublicStatus}
+              onUpdateAttendanceFlags={handleUpdateAttendanceFlags}
               userRole={currentUser?.role}
               currentUser={currentUser}
               onViewUsers={() => setView('users')}

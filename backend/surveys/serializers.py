@@ -546,7 +546,10 @@ class SurveySerializer(serializers.Serializer):
     webhook_secret_set = serializers.SerializerMethodField(read_only=True)
     # Asistencia pública / número 000–999
     attendance_enabled = serializers.BooleanField(required=False, default=False)
+    attendance_table_enabled = serializers.BooleanField(required=False)
+    attendance_verify_enabled = serializers.BooleanField(required=False)
     attendance_document_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
+    public_data_table_enabled = serializers.BooleanField(required=False)
 
     def get_webhook_secret_set(self, obj):
         if not isinstance(obj, dict):
@@ -604,7 +607,20 @@ class SurveySerializer(serializers.Serializer):
         data.pop('webhook_secret', None)
 
         data['attendance_enabled'] = bool(instance.get('attendance_enabled', False))
+        attendance_on = data['attendance_enabled']
+        if isinstance(instance, dict) and 'attendance_table_enabled' in instance:
+            data['attendance_table_enabled'] = bool(instance.get('attendance_table_enabled'))
+        else:
+            data['attendance_table_enabled'] = attendance_on
+        if isinstance(instance, dict) and 'attendance_verify_enabled' in instance:
+            data['attendance_verify_enabled'] = bool(instance.get('attendance_verify_enabled'))
+        else:
+            data['attendance_verify_enabled'] = attendance_on
         data['attendance_document_question_id'] = instance.get('attendance_document_question_id') or ''
+        if isinstance(instance, dict) and 'public_data_table_enabled' in instance:
+            data['public_data_table_enabled'] = bool(instance.get('public_data_table_enabled'))
+        else:
+            data['public_data_table_enabled'] = False
 
         theme = instance.get('theme') if isinstance(instance, dict) else {}
         data['theme'] = normalize_survey_theme(theme)

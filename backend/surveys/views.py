@@ -322,6 +322,15 @@ def enforce_survey_feature_flags(validated_data, group_doc, existing_survey=None
     return None
 
 
+def _attendance_flag(survey, key):
+    """Switch de tabla o verificación. Si no existe, sigue activo cuando la asistencia está encendida."""
+    if not isinstance(survey, dict) or not survey.get('attendance_enabled'):
+        return False
+    if key not in survey:
+        return True
+    return bool(survey.get(key))
+
+
 def _normalize_attendance_document(value):
     """Normaliza cédula/documento a solo dígitos."""
     if value is None:
@@ -2132,6 +2141,23 @@ class SurveyRetrieveUpdateDestroy(APIView):
                     return Response(SurveySerializer(updated_survey, context={'request': request}).data)
                 except Exception:
                     pass  # fallback to full update below
+
+            attendance_flag_keys = {'attendance_table_enabled', 'attendance_verify_enabled', 'public_data_table_enabled', 'id'}
+            if request_keys and request_keys <= attendance_flag_keys:
+                flag_patch = {}
+                if 'attendance_table_enabled' in validated_data:
+                    flag_patch['attendance_table_enabled'] = bool(validated_data.get('attendance_table_enabled'))
+                if 'attendance_verify_enabled' in validated_data:
+                    flag_patch['attendance_verify_enabled'] = bool(validated_data.get('attendance_verify_enabled'))
+                if 'public_data_table_enabled' in validated_data:
+                    flag_patch['public_data_table_enabled'] = bool(validated_data.get('public_data_table_enabled'))
+                if flag_patch:
+                    surveys_collection.update_one(
+                        {"_id": ObjectId(pk)},
+                        {"$set": flag_patch}
+                    )
+                    updated_survey = self.get_object(pk)
+                    return Response(SurveySerializer(updated_survey, context={'request': request}).data)
             
             # Si el usuario tiene un grupo asignado (no es root), forzar el uso de su grupo
             # Esto garantiza que las encuestas siempre pertenezcan al grupo del usuario
@@ -2254,6 +2280,12 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['attendance_enabled'] = bool(validated_data.get('attendance_enabled'))
             if 'attendance_document_question_id' in validated_data:
                 update_fields['attendance_document_question_id'] = (validated_data.get('attendance_document_question_id') or '').strip()
+            if 'attendance_table_enabled' in validated_data:
+                update_fields['attendance_table_enabled'] = bool(validated_data.get('attendance_table_enabled'))
+            if 'attendance_verify_enabled' in validated_data:
+                update_fields['attendance_verify_enabled'] = bool(validated_data.get('attendance_verify_enabled'))
+            if 'public_data_table_enabled' in validated_data:
+                update_fields['public_data_table_enabled'] = bool(validated_data.get('public_data_table_enabled'))
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
@@ -2441,9 +2473,9 @@ class PublicAttendanceList(APIView):
         survey = _load_survey_by_pk(pk)
         if not survey:
             raise NotFound(detail="Encuesta no encontrada.")
-        if not survey.get('attendance_enabled'):
+        if not _attendance_flag(survey, 'attendance_table_enabled'):
             return Response(
-                {"detail": "La asistencia pública no está activa en esta encuesta."},
+                {"detail": "La tabla pública de asistencia está desactivada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         group_doc = _resolve_group_doc_for_survey(survey.get('group'))
@@ -2496,6 +2528,91 @@ class PublicAttendanceList(APIView):
         })
 
 
+_PUBLIC_TABLE_SKIP_TYPES = {
+    'firma', 'signature',
+    'adjuntar archivos', 'file_upload', 'file',
+    'título', 'titulo', 'title',
+    'evaluación', 'evaluacion',
+}
+
+
+def _public_table_cell(value):
+    if value is None:
+        return ''
+    if isinstance(value, list):
+        parts = [_public_table_cell(item) for item in value]
+        return ', '.join(part for part in parts if part)
+    if isinstance(value, dict):
+        return ''
+    text = str(value).strip()
+    if not text or text.startswith('data:') or len(text) > 300:
+        return ''
+    return text
+
+
+class PublicSurveyDataTable(APIView):
+    """GET público: tabla sencilla con las respuestas de texto de la encuesta."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        survey = _load_survey_by_pk(pk)
+        if not survey:
+            raise NotFound(detail="Encuesta no encontrada.")
+        if not survey.get('public_data_table_enabled'):
+            return Response(
+                {"detail": "La tabla pública de datos está desactivada."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        columns = []
+        for question in survey.get('questions') or []:
+            if not isinstance(question, dict):
+                continue
+            qtype = str(question.get('type') or question.get('question_type') or '').strip().lower()
+            if qtype in _PUBLIC_TABLE_SKIP_TYPES:
+                continue
+            qid = str(question.get('id') or question.get('_id') or '').strip()
+            if not qid:
+                continue
+            label = str(question.get('text') or question.get('question_text') or qid).strip()
+            columns.append({'id': qid, 'label': label})
+
+        survey_id = survey.get('_id') or survey.get('id')
+        responses_collection = get_responses_collection()
+        rows = []
+        seen = set()
+        queries = [{'survey': survey_id}, {'survey': str(survey_id)}]
+        try:
+            oid = survey_id if isinstance(survey_id, ObjectId) else ObjectId(str(survey_id))
+            queries.append({'survey': oid})
+        except Exception:
+            pass
+        for query in queries:
+            for resp in responses_collection.find(query):
+                rid = str(resp.get('_id') or resp.get('id'))
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                answers = resp.get('answers') or {}
+                cells = {}
+                for column in columns:
+                    cells[column['id']] = _public_table_cell(answers.get(column['id']))
+                created = resp.get('created_at')
+                if isinstance(created, datetime):
+                    created_label = created.strftime('%Y-%m-%d %H:%M')
+                else:
+                    created_label = str(created or '')[:16]
+                rows.append({'id': rid, 'created_at': created_label, 'cells': cells})
+        rows.sort(key=lambda row: row.get('created_at') or '', reverse=True)
+        return Response({
+            'survey_id': str(survey_id),
+            'survey_title': survey.get('title') or '',
+            'columns': columns,
+            'rows': rows,
+            'total': len(rows),
+        })
+
+
 def _survey_belongs_to_group(survey, group_id):
     if not survey or not group_id:
         return False
@@ -2537,9 +2654,9 @@ def _prepare_attendance_lookup(request, pk, action_label, deny_message):
         )
     if access_err is not None:
         return access_err, None, None, None, None
-    if not survey.get('attendance_enabled'):
+    if not _attendance_flag(survey, 'attendance_verify_enabled'):
         return Response(
-            {"detail": "La asistencia no está activa en esta encuesta."},
+            {"detail": "La verificación de asistencia está desactivada."},
             status=status.HTTP_400_BAD_REQUEST,
         ), None, None, None, None
     group_doc = _resolve_group_doc_for_survey(survey.get('group'))
@@ -2688,7 +2805,10 @@ class SurveyAttendanceTicketDeliver(APIView):
             )
         if access_err is not None:
             return access_err
-        if not survey.get('attendance_enabled'):
+        if not (
+            _attendance_flag(survey, 'attendance_table_enabled')
+            or _attendance_flag(survey, 'attendance_verify_enabled')
+        ):
             return Response(
                 {"detail": "La asistencia no está activa en esta encuesta."},
                 status=status.HTTP_400_BAD_REQUEST,

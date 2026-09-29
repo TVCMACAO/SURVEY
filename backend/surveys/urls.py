@@ -12,7 +12,7 @@ from .views import (
     AttachmentUploadView, AttachmentRetrieveView, PublicAttachmentRetrieveView,
     ResponseListCreate, ResponseRetrieve, ResponseResetView,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
-    PublicSurveyView, PublicAttendanceList, ReferenceLookup, UniqueAnswerCheck, PublicResponseCreate,
+    PublicSurveyView, PublicAttendanceList, PublicSurveyDataTable, ReferenceLookup, UniqueAnswerCheck, PublicResponseCreate,
     PublicConsentOtpSend, PublicConsentOtpVerify, PublicConsentPdfEmail,
     ResponseSyncView, SyncStatusView
 )
@@ -66,6 +66,7 @@ urlpatterns = [
     # Rutas públicas (sin autenticación)
     path('public/surveys/<str:pk>/', PublicSurveyView.as_view(), name='public-survey-detail'),
     path('public/surveys/<str:pk>/attendance/', PublicAttendanceList.as_view(), name='public-attendance-list'),
+    path('public/surveys/<str:pk>/datos/', PublicSurveyDataTable.as_view(), name='public-survey-data-table'),
     path('public/surveys/<str:pk>/reference-lookup/', ReferenceLookup.as_view(), name='reference-lookup'),
     path('public/surveys/<str:pk>/unique-check/', UniqueAnswerCheck.as_view(), name='unique-answer-check'),
     path('public/surveys/<str:pk>/consent-otp/send/', PublicConsentOtpSend.as_view(), name='public-consent-otp-send'),
