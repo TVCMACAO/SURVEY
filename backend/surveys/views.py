@@ -1821,7 +1821,20 @@ class SurveyListCreate(APIView):
                 else:
                     query = deleted_condition
 
-            surveys = list(surveys_collection.find(query))
+            # El listado del panel no necesita el Excel de referencia ni las
+            # imágenes: con ellos la respuesta pasa de segundos a más de un minuto
+            # y la pantalla se queda en «Cargando...». La APK sigue pidiendo el
+            # documento completo (sin brief) para el uso offline.
+            brief = request.query_params.get('brief', '').lower() in ('1', 'true', 'yes')
+            if brief:
+                surveys = list(surveys_collection.find(query, {
+                    'reference_data': 0,
+                    'header_image': 0,
+                    'intro_image': 0,
+                    'questions.question_image': 0,
+                }))
+            else:
+                surveys = list(surveys_collection.find(query))
             
             
             # Enriquecer encuestas con información del grupo y usuario creador
@@ -2434,7 +2447,7 @@ class SurveyPermanentDeleteView(APIView):
         return Response({"detail": "Encuesta eliminada permanentemente."}, status=status.HTTP_200_OK)
 
 
-def _load_survey_by_pk(pk, require_not_deleted=True):
+def _load_survey_by_pk(pk, require_not_deleted=True, projection=None):
     surveys_collection = get_surveys_collection()
     survey = None
     deleted_filter = {
@@ -2447,19 +2460,19 @@ def _load_survey_by_pk(pk, require_not_deleted=True):
         q = {"_id": ObjectId(pk)}
         if deleted_filter:
             q = {"$and": [q, deleted_filter]}
-        survey = surveys_collection.find_one(q)
+        survey = surveys_collection.find_one(q, projection)
     except Exception:
         pass
     if not survey:
         q = {"_id": pk}
         if deleted_filter:
             q = {"$and": [q, deleted_filter]}
-        survey = surveys_collection.find_one(q)
+        survey = surveys_collection.find_one(q, projection)
     if not survey:
         q = {"id": pk}
         if deleted_filter:
             q = {"$and": [q, deleted_filter]}
-        survey = surveys_collection.find_one(q)
+        survey = surveys_collection.find_one(q, projection)
     return survey
 
 
@@ -2572,7 +2585,16 @@ class PublicSurveyDataTable(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, pk):
-        survey = _load_survey_by_pk(pk)
+        survey = _load_survey_by_pk(pk, projection={
+            'title': 1,
+            'questions.id': 1,
+            'questions._id': 1,
+            'questions.text': 1,
+            'questions.question_text': 1,
+            'questions.type': 1,
+            'questions.question_type': 1,
+            'public_data_table_enabled': 1,
+        })
         if not survey:
             raise NotFound(detail="Encuesta no encontrada.")
         if not survey.get('public_data_table_enabled'):
@@ -2596,26 +2618,34 @@ class PublicSurveyDataTable(APIView):
 
         survey_id = survey.get('_id') or survey.get('id')
         responses_collection = get_responses_collection()
-        rows = []
-        seen = set()
-        queries = [{'survey': survey_id}, {'survey': str(survey_id)}]
+        match_values = []
+        for value in (survey_id, str(survey_id)):
+            if value not in match_values:
+                match_values.append(value)
         try:
             oid = survey_id if isinstance(survey_id, ObjectId) else ObjectId(str(survey_id))
-            queries.append({'survey': oid})
+            if oid not in match_values:
+                match_values.append(oid)
         except Exception:
             pass
-        for query in queries:
-            for resp in responses_collection.find(query):
-                rid = str(resp.get('_id') or resp.get('id'))
-                if rid in seen:
-                    continue
-                seen.add(rid)
-                answers = resp.get('answers') or {}
-                cells = {}
-                for column in columns:
-                    cells[column['id']] = _public_table_cell(answers.get(column['id']))
-                created_label = _format_bogota(resp.get('created_at'))
-                rows.append({'id': rid, 'created_at': created_label, 'cells': cells})
+        # Solo los campos de texto: las firmas en base64 pesan ~20 KB y,
+        # con decenas de respuestas, bloquean los workers de gunicorn.
+        projection = {'_id': 1, 'created_at': 1}
+        for column in columns:
+            projection[f'answers.{column["id"]}'] = 1
+        rows = []
+        seen = set()
+        for resp in responses_collection.find({'survey': {'$in': match_values}}, projection):
+            rid = str(resp.get('_id') or resp.get('id'))
+            if rid in seen:
+                continue
+            seen.add(rid)
+            answers = resp.get('answers') or {}
+            cells = {}
+            for column in columns:
+                cells[column['id']] = _public_table_cell(answers.get(column['id']))
+            created_label = _format_bogota(resp.get('created_at'))
+            rows.append({'id': rid, 'created_at': created_label, 'cells': cells})
         rows.sort(key=lambda row: row.get('created_at') or '', reverse=True)
         return Response({
             'survey_id': str(survey_id),

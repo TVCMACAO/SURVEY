@@ -2210,17 +2210,25 @@ const PublicSurveyView = ({ surveyId }) => {
 
   const referenceLockEnabled = Boolean(surveyData?.reference_lock_fields);
 
+  const isQuestionReferenced = (questionId) => {
+    const column = String((surveyData?.reference_mapping || {})[questionId] ?? '').trim();
+    if (!column) return false;
+    const normalized = column.replace(/^—\s*|\s*—$/g, '').trim().toLowerCase();
+    return normalized !== 'ninguna';
+  };
+
   const isReferenceFieldLocked = (questionId) => {
     if (!questionId) return false;
     const question = (surveyData?.questions || []).find((q) => (q.id || q._id) === questionId);
     const type = question?.type || question?.question_type;
     if (type === 'Firma' || type === 'Adjuntar archivos' || type === 'Título' || type === 'titulo') return false;
     if (referenceLockEnabled && referenceKeyQuestionId) {
-      return questionId !== referenceKeyQuestionId;
+      if (questionId === referenceKeyQuestionId) return false;
+      return isQuestionReferenced(questionId);
     }
     if (!referenceFieldsLocked) return false;
     if (questionId === referenceKeyQuestionId) return true;
-    return referenceMappedQuestionIds.includes(questionId);
+    return isQuestionReferenced(questionId);
   };
 
   const clearReferenceLockedAnswers = () => {
@@ -4264,7 +4272,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
                            />
                            <span>
                              <span className="block text-sm font-semibold text-gray-800">Solo digitar la clave de búsqueda</span>
-                             <span className="block text-xs text-gray-500 mt-0.5">Al responder, solo se escribe la pregunta mapeada a la clave. El resto queda bloqueado y se llena con el archivo. La firma y los adjuntos siguen disponibles.</span>
+                             <span className="block text-xs text-gray-500 mt-0.5">Al responder, la clave se digita y los campos mapeados quedan bloqueados y se llenan con el archivo. Los marcados como Ninguna, o sin referencia, se pueden escribir. La firma y los adjuntos siguen disponibles.</span>
                            </span>
                          </label>
                          <div>
@@ -7347,7 +7355,7 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 
   useEffect(() => {
     if (userRole !== 'root' && userRole !== 'group_admin') return;
-    authenticatedFetch('/api/surveys/')
+    authenticatedFetch('/api/surveys/?brief=1')
       .then((response) => (response.ok ? response.json() : []))
       .then((data) => {
         const list = Array.isArray(data) ? data : [];
@@ -9399,8 +9407,10 @@ const PublicDataTable = ({ surveyId }) => {
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
     const pull = async (silent) => {
-      if (cancelled) return;
+      if (cancelled || inFlight) return;
+      inFlight = true;
       if (!silent) setLoading(true);
       else setRefreshing(true);
       try {
@@ -9413,6 +9423,7 @@ const PublicDataTable = ({ surveyId }) => {
       } catch (e) {
         if (!cancelled) setError(e.message || 'Error al cargar');
       } finally {
+        inFlight = false;
         if (!cancelled) {
           setLoading(false);
           setRefreshing(false);
@@ -9466,6 +9477,20 @@ const PublicDataTable = ({ surveyId }) => {
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageRows = filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const textWeight = (value) => {
+    const length = String(value || '').replace(/\s+/g, ' ').trim().length;
+    return Math.min(Math.max(length, 8), 72);
+  };
+  const fechaWeight = 24;
+  const columnWeights = columns.map((column) => {
+    const header = textWeight(column.label);
+    return (data?.rows || []).reduce(
+      (max, row) => Math.max(max, textWeight(row.cells?.[column.id])),
+      header,
+    );
+  });
+  const weightTotal = fechaWeight + columnWeights.reduce((sum, weight) => sum + weight, 0) || 1;
+  const columnShare = (weight) => `${(weight / weightTotal) * 100}%`;
 
   return (
     <div ref={screenRef} className="min-h-screen w-full bg-[#f8fafc] font-sans flex flex-col">
@@ -9480,9 +9505,9 @@ const PublicDataTable = ({ surveyId }) => {
         )}
         {data && (
           <>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+            <div className="flex flex-col gap-3 mb-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xs sm:text-sm text-gray-600">
+                <p className="text-sm text-gray-600">
                   {data.total} respuesta{data.total === 1 ? '' : 's'}
                   {needle ? <span className="text-emerald-700 font-semibold"> · {filteredRows.length} resultado(s)</span> : null}
                 </p>
@@ -9491,19 +9516,19 @@ const PublicDataTable = ({ surveyId }) => {
                   En vivo
                 </span>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
                 <button
                   type="button"
                   onClick={toggleFullscreen}
-                  className="px-3 py-1.5 rounded-lg text-sm font-bold border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
+                  className="px-3 py-2 rounded-lg text-sm font-bold border border-gray-200 bg-white text-gray-800 hover:bg-gray-50"
                 >
-                  {isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                  {isFullscreen ? 'Salir' : 'Pantalla completa'}
                 </button>
                 <button
                   type="button"
                   onClick={() => reloadRef.current && reloadRef.current()}
                   disabled={refreshing}
-                  className="px-3 py-1.5 rounded-lg text-sm font-bold border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                  className="px-3 py-2 rounded-lg text-sm font-bold border border-emerald-200 bg-white text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
                 >
                   {refreshing ? 'Actualizando…' : 'Actualizar'}
                 </button>
@@ -9512,20 +9537,29 @@ const PublicDataTable = ({ surveyId }) => {
                   placeholder="Buscar…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  className="w-full sm:w-64 px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-400"
+                  className="col-span-2 sm:w-64 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-400"
                 />
               </div>
             </div>
             {error && (
               <p className="text-xs text-red-600 mb-2">{error}</p>
             )}
-            <div className="bg-white rounded-xl border-2 border-blue-500 shadow-sm overflow-auto">
-              <table className="w-full table-fixed text-sm border-collapse">
+            <div className="bg-white rounded-xl border-2 border-blue-500 shadow-sm overflow-auto max-h-[calc(100dvh-12.5rem)]">
+              <table
+                className="w-full table-fixed border-separate border-spacing-0 text-sm"
+                style={{ minWidth: `max(100%, ${Math.round(weightTotal * 0.42)}rem)` }}
+              >
+                <colgroup>
+                  <col style={{ width: columnShare(fechaWeight) }} />
+                  {columns.map((column, index) => (
+                    <col key={column.id} style={{ width: columnShare(columnWeights[index]) }} />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr className="bg-blue-50 text-left text-xs uppercase tracking-wide text-blue-900">
-                    <th className="sticky top-0 z-10 bg-blue-50 border border-blue-500 w-36 px-3 py-2 font-bold whitespace-nowrap align-bottom">Fecha</th>
+                    <th className="sticky top-0 left-0 z-30 bg-blue-100 border border-blue-500 px-3 py-2 font-bold whitespace-nowrap align-bottom">Fecha</th>
                     {columns.map((column) => (
-                      <th key={column.id} className="sticky top-0 z-10 bg-blue-50 border border-blue-500 px-3 py-2 font-bold whitespace-normal break-words align-bottom">{column.label}</th>
+                      <th key={column.id} className="sticky top-0 z-20 bg-blue-50 border border-blue-500 px-3 py-2 font-bold whitespace-normal break-words align-bottom">{column.label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -9538,10 +9572,10 @@ const PublicDataTable = ({ surveyId }) => {
                     </tr>
                   ) : (
                     pageRows.map((row) => (
-                      <tr key={row.id} className="hover:bg-blue-50/60">
-                        <td className="border border-blue-500 px-3 py-2 text-gray-500 whitespace-nowrap font-mono align-top">{row.created_at || '—'}</td>
+                      <tr key={row.id} className="group">
+                        <td className="sticky left-0 z-10 bg-white group-hover:bg-blue-50 border border-blue-500 px-3 py-2 text-gray-500 whitespace-nowrap font-mono align-top">{row.created_at || '—'}</td>
                         {columns.map((column) => (
-                          <td key={column.id} className="border border-blue-500 px-3 py-2 text-gray-800 whitespace-normal break-words align-top">
+                          <td key={column.id} className="border border-blue-500 px-3 py-2 text-gray-800 whitespace-normal break-words align-top group-hover:bg-blue-50/60">
                             {row.cells?.[column.id] || '—'}
                           </td>
                         ))}
@@ -9552,7 +9586,7 @@ const PublicDataTable = ({ surveyId }) => {
               </table>
             </div>
             {filteredRows.length > PAGE_SIZE && (
-              <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-gray-500">Página {safePage} de {totalPages}</p>
                 <div className="flex gap-1">
                   <button
@@ -9883,7 +9917,7 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
               <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
                 <span className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 rounded-lg font-semibold">
                   <FontAwesomeIcon icon={faListUl} size="sm" className="text-indigo-500 fa-icon-force-current" />
-                  {survey.questions.length} {survey.questions.length === 1 ? 'Pregunta' : 'Preguntas'}
+                  {(survey.questions || []).length} {(survey.questions || []).length === 1 ? 'Pregunta' : 'Preguntas'}
                 </span>
                 {survey.group_name && (
                   <span className="flex items-center gap-1 px-2.5 py-1 bg-purple-100 text-purple-700 rounded-lg font-semibold">
@@ -10444,7 +10478,7 @@ export default function App() {
   const fetchSurveys = async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
     try {
-        const response = await authenticatedFetch('/api/surveys/');
+        const response = await authenticatedFetch('/api/surveys/?brief=1');
         if (!response.ok) throw new Error('Error al cargar los datos.');
         const data = await response.json();
         setSurveys(data);
@@ -10925,7 +10959,7 @@ export default function App() {
 
   const fetchDeletedSurveys = async () => {
     try {
-        const response = await authenticatedFetch('/api/surveys/?show_deleted=true');
+        const response = await authenticatedFetch('/api/surveys/?show_deleted=true&brief=1');
         if (!response.ok) throw new Error('Error al cargar las encuestas eliminadas.');
         const data = await response.json();
         const deleted = data.filter(s => s.is_deleted === true);
