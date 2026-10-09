@@ -3295,6 +3295,33 @@ const PublicSurveyView = ({ surveyId }) => {
             </>
           )}
 
+          {(question.type === 'Correo Electrónico' || question.type === 'email') && (
+            <>
+              <input
+                type="email"
+                value={answers[questionId] || ''}
+                onChange={(e) => handleAnswerChange(questionId, e.target.value)}
+                onBlur={(e) => {
+                  if (isReferenceFieldLocked(questionId)) return;
+                  if (question.unique_answer) checkUniqueAnswer(questionId, e.target.value);
+                }}
+                readOnly={isReferenceFieldLocked(questionId)}
+                className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base ${
+                  isReferenceFieldLocked(questionId)
+                    ? 'bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed'
+                    : `bg-gray-50/50 hover:bg-white focus:bg-white ${uniqueAnswerErrors[questionId] ? 'border-red-400' : 'border-gray-200'}`
+                }`}
+                placeholder="ejemplo@correo.com"
+              />
+              {fieldLocked && (
+                <p className="text-xs text-gray-600 mt-2">Este campo no se digita. Se completa con el archivo de referenciación.</p>
+              )}
+              {uniqueAnswerErrors[questionId] && (
+                <p className="text-sm text-red-600 mt-2 font-medium">{uniqueAnswerErrors[questionId]}</p>
+              )}
+            </>
+          )}
+
           {question.type === 'Fecha' && (
             <input
               type={question.date_include_time ? 'datetime-local' : 'date'}
