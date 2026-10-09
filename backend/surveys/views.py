@@ -2571,6 +2571,32 @@ def _format_bogota(value):
     return moment.astimezone(bogota).strftime('%Y-%m-%d %H:%M')
 
 
+_ADDRESS_PART_KEYS = (
+    'road_type', 'road_number', 'house_number', 'complement',
+    'neighborhood', 'city', 'department',
+)
+
+
+def _format_address_value(value):
+    """Objeto de dirección → una línea. Otros objetos quedan vacíos."""
+    if isinstance(value, str):
+        return value.strip()
+    if not isinstance(value, dict) or not any(key in value for key in _ADDRESS_PART_KEYS):
+        return ''
+
+    def part(key):
+        return str(value.get(key) or '').strip()
+
+    road = ' '.join(piece for piece in (part('road_type'), part('road_number')) if piece)
+    house = part('house_number')
+    street = ' '.join(piece for piece in (road, f'# {house}' if house else '') if piece)
+    neighborhood = part('neighborhood')
+    if neighborhood and not neighborhood.lower().startswith('barrio'):
+        neighborhood = f'Barrio {neighborhood}'
+    pieces = [street, part('complement'), neighborhood, part('city'), part('department')]
+    return ', '.join(piece for piece in pieces if piece)
+
+
 def _public_table_cell(value):
     if value is None:
         return ''
@@ -2578,7 +2604,7 @@ def _public_table_cell(value):
         parts = [_public_table_cell(item) for item in value]
         return ', '.join(part for part in parts if part)
     if isinstance(value, dict):
-        return ''
+        return _format_address_value(value)
     text = str(value).strip()
     if not text or text.startswith('data:') or len(text) > 300:
         return ''

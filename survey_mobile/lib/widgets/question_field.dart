@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
@@ -220,6 +223,11 @@ class _QuestionFieldState extends State<QuestionField> {
           initialValue: widget.value?.toString() ?? '',
           maxLines: 4,
           decoration: const InputDecoration(hintText: 'Escribe tu respuesta…'),
+          onChanged: widget.onChanged,
+        );
+      case 'address':
+        return _AddressFields(
+          value: widget.value,
           onChanged: widget.onChanged,
         );
       case 'email':
@@ -528,4 +536,251 @@ class _EvaluationTableField extends StatelessWidget {
       ),
     );
   }
+}
+
+const _addressRoadTypes = ['Calle', 'Carrera', 'Avenida', 'Diagonal', 'Transversal'];
+
+const _addressPartKeys = [
+  'road_type',
+  'road_number',
+  'house_number',
+  'complement',
+  'neighborhood',
+  'city',
+  'department',
+];
+
+class _AddressFields extends StatefulWidget {
+  final dynamic value;
+  final ValueChanged<dynamic> onChanged;
+
+  const _AddressFields({required this.value, required this.onChanged});
+
+  @override
+  State<_AddressFields> createState() => _AddressFieldsState();
+}
+
+class _AddressFieldsState extends State<_AddressFields> {
+  static const _textKeys = [
+    'road_number',
+    'house_number',
+    'complement',
+    'neighborhood',
+  ];
+
+  final Map<String, TextEditingController> _controllers = {};
+  String _roadType = '';
+  String _department = '';
+  String _city = '';
+  late final Future<List<Map<String, dynamic>>> _divipola = loadColombiaDivipola();
+
+  @override
+  void initState() {
+    super.initState();
+    final parts = _fromValue(widget.value);
+    _roadType = parts['road_type'] ?? '';
+    _department = parts['department'] ?? '';
+    _city = parts['city'] ?? '';
+    for (final key in _textKeys) {
+      _controllers[key] = TextEditingController(text: parts[key] ?? '');
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _AddressFields oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value is! Map) return;
+    final next = _fromValue(widget.value);
+    var changed = false;
+    if (_roadType != (next['road_type'] ?? '')) {
+      _roadType = next['road_type'] ?? '';
+      changed = true;
+    }
+    if (_department != (next['department'] ?? '')) {
+      _department = next['department'] ?? '';
+      changed = true;
+    }
+    if (_city != (next['city'] ?? '')) {
+      _city = next['city'] ?? '';
+      changed = true;
+    }
+    for (final key in _textKeys) {
+      final text = next[key] ?? '';
+      final controller = _controllers[key];
+      if (controller != null && controller.text != text) {
+        controller.text = text;
+      }
+    }
+    if (changed) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Map<String, String> _fromValue(dynamic value) {
+    final map = {for (final key in _addressPartKeys) key: ''};
+    if (value is Map) {
+      for (final key in _addressPartKeys) {
+        map[key] = value[key]?.toString() ?? '';
+      }
+    }
+    return map;
+  }
+
+  Map<String, String> _current() {
+    final map = {for (final key in _addressPartKeys) key: ''};
+    map['road_type'] = _roadType;
+    map['department'] = _department;
+    map['city'] = _city;
+    for (final key in _textKeys) {
+      map[key] = _controllers[key]?.text ?? '';
+    }
+    return map;
+  }
+
+  void _emit() => widget.onChanged(_current());
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.value is String && (widget.value as String).trim().isNotEmpty) {
+      return TextFormField(
+        initialValue: widget.value as String,
+        readOnly: true,
+        decoration: const InputDecoration(labelText: 'Dirección'),
+      );
+    }
+
+    InputDecoration decoration(String label, String hint) => InputDecoration(
+          labelText: label,
+          hintText: hint,
+          isDense: true,
+        );
+
+    Widget textField(String key, String label, String hint) {
+      return TextFormField(
+        controller: _controllers[key],
+        decoration: decoration(label, hint),
+        onChanged: (_) => _emit(),
+      );
+    }
+
+    return Column(
+      children: [
+        DropdownButtonFormField<String>(
+          value: _addressRoadTypes.contains(_roadType) ? _roadType : null,
+          isExpanded: true,
+          decoration: decoration('Tipo de vía', 'Selecciona'),
+          items: _addressRoadTypes
+              .map((road) => DropdownMenuItem(value: road, child: Text(road)))
+              .toList(),
+          onChanged: (value) {
+            setState(() => _roadType = value ?? '');
+            _emit();
+          },
+        ),
+        const SizedBox(height: 8),
+        textField('road_number', 'Número de vía', '15'),
+        const SizedBox(height: 8),
+        textField('house_number', 'Número de la vivienda', '8-24'),
+        const SizedBox(height: 8),
+        textField('complement', 'Complemento', 'Apartamento, bloque, torre, piso o casa'),
+        const SizedBox(height: 8),
+        textField('neighborhood', 'Barrio', 'Centro'),
+        const SizedBox(height: 8),
+        FutureBuilder<List<Map<String, dynamic>>>(
+          future: _divipola,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('Cargando municipios…'),
+              );
+            }
+            final data = snapshot.data ?? const <Map<String, dynamic>>[];
+            final departments = _withSavedOption(_departmentNames(data), _department);
+            final municipalities = _withSavedOption(_municipalitiesOf(data, _department), _city);
+            return Column(
+              children: [
+                DropdownButtonFormField<String>(
+                  value: departments.contains(_department) && _department.isNotEmpty ? _department : null,
+                  isExpanded: true,
+                  decoration: decoration('Departamento', 'Selecciona'),
+                  items: departments
+                      .map((name) => DropdownMenuItem(value: name, child: Text(name, overflow: TextOverflow.ellipsis)))
+                      .toList(),
+                  onChanged: snapshot.hasData
+                      ? (value) {
+                          final next = value ?? '';
+                          final allowed = _municipalitiesOf(data, next);
+                          setState(() {
+                            _department = next;
+                            if (!allowed.contains(_city)) _city = '';
+                          });
+                          _emit();
+                        }
+                      : null,
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: municipalities.contains(_city) && _city.isNotEmpty ? _city : null,
+                  isExpanded: true,
+                  decoration: decoration(
+                    'Ciudad o municipio',
+                    _department.isEmpty ? 'Primero elige el departamento' : 'Selecciona',
+                  ),
+                  items: municipalities
+                      .map((name) => DropdownMenuItem(value: name, child: Text(name, overflow: TextOverflow.ellipsis)))
+                      .toList(),
+                  onChanged: snapshot.hasData && _department.isNotEmpty
+                      ? (value) {
+                          setState(() => _city = value ?? '');
+                          _emit();
+                        }
+                      : null,
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+Future<List<Map<String, dynamic>>>? _colombiaDivipolaFuture;
+
+Future<List<Map<String, dynamic>>> loadColombiaDivipola() {
+  return _colombiaDivipolaFuture ??= () async {
+    final raw = await rootBundle.loadString('assets/colombia-divipola.json');
+    final decoded = jsonDecode(raw) as List;
+    return decoded.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }();
+}
+
+List<String> _departmentNames(List<Map<String, dynamic>> data) {
+  return data
+      .map((item) => item['name']?.toString() ?? '')
+      .where((name) => name.isNotEmpty)
+      .toList();
+}
+
+List<String> _municipalitiesOf(List<Map<String, dynamic>> data, String department) {
+  for (final item in data) {
+    if (item['name']?.toString() == department) {
+      final list = item['municipalities'];
+      if (list is List) return list.map((name) => name.toString()).toList();
+    }
+  }
+  return [];
+}
+
+List<String> _withSavedOption(List<String> options, String saved) {
+  final text = saved.trim();
+  if (text.isNotEmpty && !options.contains(text)) return [text, ...options];
+  return options;
 }

@@ -141,6 +141,23 @@ class _ResponseFormScreenState extends State<ResponseFormScreen> {
     });
   }
 
+  bool _addressIsComplete(dynamic value) {
+    if (value is String) return value.trim().isNotEmpty;
+    if (value is! Map) return false;
+    const requiredKeys = [
+      'road_type',
+      'road_number',
+      'house_number',
+      'neighborhood',
+      'city',
+      'department',
+    ];
+    for (final key in requiredKeys) {
+      if ((value[key]?.toString() ?? '').trim().isEmpty) return false;
+    }
+    return true;
+  }
+
   bool _validateRequired() {
     for (final q in _questions) {
       if (q.isTitle) continue;
@@ -154,6 +171,13 @@ class _ResponseFormScreenState extends State<ResponseFormScreen> {
             setState(() => _error = 'Completa: ${q.questionText}');
             return false;
           }
+        }
+        continue;
+      }
+      if (q.questionType == 'address') {
+        if (!_addressIsComplete(val)) {
+          setState(() => _error = 'Completa: ${q.questionText}');
+          return false;
         }
         continue;
       }

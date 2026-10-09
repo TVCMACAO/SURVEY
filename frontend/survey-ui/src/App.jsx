@@ -5,7 +5,7 @@ import {
   faShareNodes, faTrash, faXmark, faBars, faEllipsisVertical, faChevronLeft, 
   faPenToSquare, faFileLines, faHashtag, faAlignLeft, faImage, faEye, faChartBar, faCheck,
   faPaperPlane, faTable, faFileExcel, faDownload, faChartPie, faChartLine, faChartColumn, faChartArea, faCircleNotch, faPalette, faUsers, faUserPlus, faUser,
-  faSignature, faEraser, faEnvelope, faHeading, faCopy,
+  faSignature, faEraser, faEnvelope, faHeading, faCopy, faLocationDot,
   faChevronUp, faChevronDown, faGripVertical, faPaperclip, faSearch, faFilter
 } from '@fortawesome/free-solid-svg-icons';
 import { authenticatedFetch, isAuthenticated, login, logout, ensureFreshToken } from './auth';
@@ -13,6 +13,7 @@ import { useBreakpoint } from './hooks/useBreakpoint';
 import { APP_VERSION_LABEL, APP_VERSION, GIT_SHA, BUILD_TIME } from './version';
 import * as XLSX from 'xlsx';
 import QRCode from 'qrcode';
+import colombiaDivipola from './data/colombia-divipola.json';
 
 const APK_VERSION_URL = '/api/public/apk/version/';
 const APK_DOWNLOAD_FALLBACK = '/api/public/apk/download/';
@@ -639,6 +640,7 @@ const TOOL_BUTTON_COLORS = {
   red: 'bg-red-500 group-hover:shadow-red-500/40',
   indigo: 'bg-indigo-500 group-hover:shadow-indigo-500/40',
   teal: 'bg-teal-500 group-hover:shadow-teal-500/40',
+  rose: 'bg-rose-500 group-hover:shadow-rose-500/40',
 };
 
 const ToolButton = ({ icon, label, onClick, color }) => (
@@ -738,7 +740,7 @@ const CONDITION_OPERATORS = [
 const FRONTEND_TYPE_LABELS = [
   'Texto Corto', 'Párrafo', 'Opción Única', 'Casillas', 'Desplegable',
   'Número', 'Fecha', 'Puntuación', 'Firma', 'Adjuntar archivos',
-  'Correo Electrónico', 'Título', 'Evaluación',
+  'Correo Electrónico', 'Título', 'Evaluación', 'Dirección',
 ];
 
 const OPTION_QUESTION_TYPES = ['Opción Única', 'Casillas', 'Desplegable', 'single_choice', 'checkbox', 'dropdown'];
@@ -748,11 +750,16 @@ const evaluateCondition = (condition, answers) => {
   if (!condition || !condition.question_id) return true;
 
   const questionId = condition.question_id;
-  const answer = answers[questionId];
+  let answer = answers[questionId];
   const operator = condition.operator || 'equals';
   const value = condition.value;
 
   if (answer === undefined || answer === null || answer === '') return false;
+  if (isAddressObject(answer)) {
+    const line = formatAddressAnswer(answer);
+    if (!line) return false;
+    answer = line;
+  }
   if (Array.isArray(answer)) {
     if (answer.length === 0) return false;
     const valStr = String(value ?? '');
@@ -803,10 +810,140 @@ const mapBackendTypeToFrontend = (backendType) => {
     email: 'Correo Electrónico',
     titulo: 'Título',
     evaluation_table: 'Evaluación',
+    address: 'Dirección',
   };
   if (reverseTypeMapping[backendType]) return reverseTypeMapping[backendType];
   if (FRONTEND_TYPE_LABELS.includes(backendType)) return backendType;
   return 'Texto Corto';
+};
+
+const ADDRESS_ROAD_TYPES = ['Calle', 'Carrera', 'Avenida', 'Diagonal', 'Transversal'];
+
+const ADDRESS_FIELDS = [
+  { key: 'road_type', label: 'Tipo de vía', kind: 'select' },
+  { key: 'road_number', label: 'Número de vía', placeholder: '15' },
+  { key: 'house_number', label: 'Número de la vivienda', placeholder: '8-24' },
+  { key: 'complement', label: 'Complemento', placeholder: 'Apartamento, bloque, torre, piso o casa' },
+  { key: 'neighborhood', label: 'Barrio', placeholder: 'Centro' },
+  { key: 'department', label: 'Departamento', kind: 'department' },
+  { key: 'city', label: 'Ciudad o municipio', kind: 'municipality' },
+];
+
+const municipalitiesOf = (department) => {
+  const found = colombiaDivipola.find((item) => item.name === department);
+  return found ? found.municipalities : [];
+};
+
+const withSavedOption = (options, saved) => {
+  const text = String(saved ?? '').trim();
+  if (text && !options.includes(text)) return [text, ...options];
+  return options;
+};
+
+const ADDRESS_REQUIRED_KEYS = ['road_type', 'road_number', 'house_number', 'neighborhood', 'city', 'department'];
+
+const isAddressObject = (value) => (
+  !!value
+  && typeof value === 'object'
+  && !Array.isArray(value)
+  && ADDRESS_FIELDS.some((field) => Object.prototype.hasOwnProperty.call(value, field.key))
+);
+
+const formatAddressAnswer = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (!isAddressObject(value)) return '';
+  const text = (key) => String(value[key] ?? '').trim();
+  const road = [text('road_type'), text('road_number')].filter(Boolean).join(' ');
+  const house = text('house_number');
+  const street = [road, house ? `# ${house}` : ''].filter(Boolean).join(' ');
+  const neighborhood = text('neighborhood');
+  const barrio = neighborhood
+    ? (/^barrio\b/i.test(neighborhood) ? neighborhood : `Barrio ${neighborhood}`)
+    : '';
+  return [street, text('complement'), barrio, text('city'), text('department')].filter(Boolean).join(', ');
+};
+
+const isAddressAnswerMissing = (value) => {
+  if (typeof value === 'string') return value.trim() === '';
+  if (!isAddressObject(value)) return true;
+  return ADDRESS_REQUIRED_KEYS.some((key) => !String(value[key] ?? '').trim());
+};
+
+const AddressFields = ({ value, onChange, locked = false, variant = 'public' }) => {
+  if (typeof value === 'string' && value.trim()) {
+    const inputClass = variant === 'preview'
+      ? 'w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-100 text-gray-700'
+      : 'w-full px-5 py-4 border-2 rounded-xl bg-gray-100 border-gray-300 text-gray-700';
+    return (
+      <input
+        type="text"
+        value={value}
+        readOnly={locked}
+        onChange={(e) => { if (!locked) onChange(e.target.value); }}
+        className={inputClass}
+      />
+    );
+  }
+
+  const current = isAddressObject(value) ? value : {};
+  const setPart = (key, next) => {
+    const merged = {};
+    ADDRESS_FIELDS.forEach((field) => {
+      merged[field.key] = field.key === key ? next : String(current[field.key] ?? '');
+    });
+    if (key === 'department' && !municipalitiesOf(next).includes(merged.city)) {
+      merged.city = '';
+    }
+    onChange(merged);
+  };
+  const departmentOptions = withSavedOption(
+    colombiaDivipola.map((item) => item.name),
+    current.department,
+  );
+  const municipalityOptions = withSavedOption(
+    municipalitiesOf(String(current.department ?? '')),
+    current.city,
+  );
+  const controlClass = variant === 'preview'
+    ? 'w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white disabled:bg-gray-100 disabled:text-gray-700'
+    : `w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base ${
+      locked
+        ? 'bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed'
+        : 'bg-gray-50/50 hover:bg-white focus:bg-white border-gray-200'
+    }`;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {ADDRESS_FIELDS.map((field) => (
+        <label key={field.key} className={`block min-w-0 ${field.key === 'complement' ? 'md:col-span-2' : ''}`}>
+          <span className="block text-xs font-semibold text-gray-500 mb-1">{field.label}</span>
+          {field.kind === 'select' || field.kind === 'department' || field.kind === 'municipality' ? (
+            <select
+              value={String(current[field.key] ?? '')}
+              disabled={locked || (field.kind === 'municipality' && !String(current.department ?? '').trim())}
+              onChange={(e) => setPart(field.key, e.target.value)}
+              className={controlClass}
+            >
+              <option value="">{field.kind === 'municipality' && !String(current.department ?? '').trim() ? 'Primero elige el departamento' : 'Selecciona'}</option>
+              {(field.kind === 'select' ? ADDRESS_ROAD_TYPES : field.kind === 'department' ? departmentOptions : municipalityOptions).map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={String(current[field.key] ?? '')}
+              readOnly={locked}
+              onChange={(e) => setPart(field.key, e.target.value)}
+              placeholder={field.placeholder}
+              className={controlClass}
+            />
+          )}
+        </label>
+      ))}
+    </div>
+  );
 };
 
 /** Normalize API survey shape (question_text / question_type) into editor shape (text / type) before first paint. */
@@ -1267,6 +1404,16 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                 {data.type === 'Número' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario introducirá un número aquí...</div>}
                 {data.type === 'Fecha' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">{data.date_include_time ? 'El usuario seleccionará fecha y hora aquí...' : 'El usuario seleccionará una fecha aquí...'}</div>}
                 {data.type === 'Correo Electrónico' && <div className="h-14 bg-gray-50 rounded-xl border border-gray-200/60 flex items-center px-4 text-gray-400 text-sm italic shadow-inner">El usuario ingresará su correo electrónico aquí...</div>}
+                {data.type === 'Dirección' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {ADDRESS_FIELDS.map((field) => (
+                      <div key={field.key} className={`bg-gray-50 rounded-xl border border-gray-200/60 px-3 py-2 ${field.key === 'complement' ? 'sm:col-span-2' : ''}`}>
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">{field.label}</div>
+                        <div className="text-gray-400 text-sm italic truncate">{field.kind === 'select' ? 'Calle, Carrera, Avenida…' : (field.kind === 'department' || field.kind === 'municipality') ? 'Lista de Colombia' : field.placeholder}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {data.type === 'Firma' && <div className="h-32 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center gap-2 shadow-inner">
                   <FontAwesomeIcon icon={faSignature} size="2x" className="text-gray-400 fa-icon-force-current" />
                   <span className="text-gray-400 text-sm italic">El usuario firmará aquí...</span>
@@ -1393,6 +1540,13 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                  {data.type === 'Número' && <div className="h-10 bg-gray-100/80 rounded-lg w-full" />}
                  {data.type === 'Fecha' && <div className="h-10 bg-gray-100/80 rounded-lg w-full" />}
                  {data.type === 'Correo Electrónico' && <div className="h-10 bg-gray-100/80 rounded-lg w-full" />}
+                 {data.type === 'Dirección' && (
+                   <div className="grid grid-cols-2 gap-1.5">
+                     {ADDRESS_FIELDS.map((field) => (
+                       <div key={field.key} className={`h-8 bg-gray-100/80 rounded-lg ${field.key === 'complement' ? 'col-span-2' : ''}`} />
+                     ))}
+                   </div>
+                 )}
                  {data.type === 'Firma' && <div className="h-20 bg-gray-100/80 rounded-lg w-full border-2 border-dashed border-gray-300 flex items-center justify-center">
                    <FontAwesomeIcon icon={faSignature} size="lg" className="text-gray-400 fa-icon-force-current" />
                  </div>}
@@ -1700,6 +1854,14 @@ const SurveyPreview = ({ surveyData, onBack }) => {
               onChange={(e) => handleAnswerChange(questionId, e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               placeholder="ejemplo@correo.com"
+            />
+          )}
+
+          {question.type === 'Dirección' && (
+            <AddressFields
+              value={answers[questionId]}
+              onChange={(next) => handleAnswerChange(questionId, next)}
+              variant="preview"
             />
           )}
 
@@ -2283,7 +2445,8 @@ const PublicSurveyView = ({ surveyId }) => {
       });
       if (uniqueCheckDebounceRef.current) clearTimeout(uniqueCheckDebounceRef.current);
       uniqueCheckDebounceRef.current = setTimeout(() => {
-        checkUniqueAnswer(questionId, value);
+        const uniqueValue = isAddressObject(value) ? formatAddressAnswer(value) : value;
+        checkUniqueAnswer(questionId, uniqueValue);
         uniqueCheckDebounceRef.current = null;
       }, 450);
     }
@@ -2494,6 +2657,7 @@ const PublicSurveyView = ({ surveyId }) => {
       return !files || files.length === 0;
     }
     const val = answers[qid];
+    if (q.type === 'Dirección' || q.type === 'address') return isAddressAnswerMissing(val);
     if (val === undefined || val === null) return true;
     if (typeof val === 'string' && val.trim() === '') return true;
     if (Array.isArray(val) && val.length === 0) return true;
@@ -2602,8 +2766,11 @@ const PublicSurveyView = ({ surveyId }) => {
     for (const q of uniqueQs) {
       const qid = q.id || q._id;
       const val = answers[qid];
-      if (val === undefined || val === null || String(val).trim() === '') continue;
-      const exists = await checkUniqueAnswer(qid, val);
+      const uniqueValue = (q.type === 'Dirección' || q.type === 'address' || isAddressObject(val))
+        ? formatAddressAnswer(val)
+        : val;
+      if (uniqueValue === undefined || uniqueValue === null || String(uniqueValue).trim() === '') continue;
+      const exists = await checkUniqueAnswer(qid, uniqueValue);
       if (exists) {
         alert(
           `Ya existe una respuesta con este valor en "${q.text || q.question_text || 'la pregunta'}". `
@@ -3061,6 +3228,14 @@ const PublicSurveyView = ({ surveyId }) => {
                 <p className="text-sm text-red-600 mt-2 font-medium">{uniqueAnswerErrors[questionId]}</p>
               )}
             </>
+          )}
+
+          {question.type === 'Dirección' && (
+            <AddressFields
+              value={answers[questionId]}
+              onChange={(next) => handleAnswerChange(questionId, next)}
+              locked={isReferenceFieldLocked(questionId)}
+            />
           )}
 
           {question.type === 'Párrafo' && (
@@ -3642,6 +3817,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
     { label: 'Firma', icon: faSignature, color: 'indigo', type: 'Firma' },
     { label: 'Adjuntar archivos', icon: faPaperclip, color: 'teal', type: 'Adjuntar archivos' },
     { label: 'Correo Electrónico', icon: faEnvelope, color: 'blue', type: 'Correo Electrónico' },
+    { label: 'Dirección', icon: faLocationDot, color: 'rose', type: 'Dirección' },
     { label: 'Evaluación', icon: faTable, color: 'teal', type: 'Evaluación' },
   ];
 
@@ -3826,11 +4002,11 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
   return (
     <>
       {!showPreview && (
-      <nav className={`fixed z-50 transition-all duration-300 border-gray-200/50 backdrop-blur-xl bg-white/70 md:w-[135px] md:h-screen md:left-0 md:top-0 md:border-r md:flex-col bottom-0 w-full h-auto border-t flex flex-row items-center md:justify-start px-2 sm:px-3 py-2 sm:py-2.5 md:py-4 gap-1.5 sm:gap-2 md:gap-2 shadow-2xl md:shadow-none overflow-x-auto md:overflow-y-auto md:overflow-x-hidden scrollbar-hide`}>
+      <nav className={`fixed z-50 transition-all duration-300 border-gray-200/50 backdrop-blur-xl bg-white/70 md:w-[220px] md:h-screen md:left-0 md:top-0 md:border-r md:flex-col bottom-0 w-full h-auto border-t flex flex-row items-center md:justify-start px-2 sm:px-3 py-2 sm:py-2.5 md:py-3 gap-1.5 sm:gap-2 md:gap-2 shadow-2xl md:shadow-none overflow-x-auto md:overflow-x-hidden md:overflow-y-hidden scrollbar-hide`}>
         <div className="hidden md:flex md:flex-col md:h-full md:w-full">
           
           {/* Contenedor scrollable para las herramientas */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide md:flex md:flex-col md:gap-2 md:px-2">
+          <div className="flex-1 overflow-visible md:grid md:grid-cols-2 md:auto-rows-min md:content-start md:gap-0.5 md:px-1">
             {questionTools.map(tool => <ToolButton key={tool.label} icon={tool.icon} label={tool.label} color={tool.color} onClick={() => addQuestion(tool.type)} />)}
           </div>
 
@@ -3872,7 +4048,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
           onBack={() => setShowPreview(false)} 
         />
       ) : (
-      <main className="flex-1 relative z-10 md:pl-[135px] pb-24 md:pb-0 min-h-screen">
+      <main className="flex-1 relative z-10 md:pl-[220px] pb-24 md:pb-0 min-h-screen">
         <header className="sticky top-0 z-40 px-4 py-3 md:py-4 md:px-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white/50 backdrop-blur-md border-b border-white/40">
            <div className="flex items-center gap-3 flex-1 min-w-0">
              <button className="p-2 -ml-2 text-gray-500 flex-shrink-0" onClick={onBack} title="Volver">
@@ -5032,6 +5208,8 @@ const getQuestionTypeLabel = (questionType) => {
     Fecha: 'Fecha',
     email: 'Correo',
     'Correo Electrónico': 'Correo',
+    address: 'Dirección',
+    'Dirección': 'Dirección',
     signature: 'Firma',
     Firma: 'Firma',
     file_upload: 'Adjuntos',
@@ -6362,6 +6540,9 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
         }
       });
       return parts.length ? parts.join(' | ') : 'Sin respuesta';
+    }
+    if (questionType === 'Dirección' || questionType === 'address' || isAddressObject(answer)) {
+      return formatAddressAnswer(answer) || 'Sin respuesta';
     }
     if (Array.isArray(answer)) {
       return answer.join(', ');
@@ -10662,6 +10843,7 @@ export default function App() {
       'Firma': 'signature',
       'Adjuntar archivos': 'file_upload',
       'Correo Electrónico': 'email',
+      'Dirección': 'address',
       'Título': 'titulo',
       'Evaluación': 'evaluation_table'
     };

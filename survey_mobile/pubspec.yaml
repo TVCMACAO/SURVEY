@@ -51,3 +51,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo_survey.png
+    - assets/colombia-divipola.json
