@@ -1329,6 +1329,11 @@ class SurveyListCreate(APIView):
             # Fallback: usar request.data directamente
             request_data_copy = request.data
         
+        # El panel llegó a enviar un id de grupo que ya no existe. Si llega,
+        # se reemplaza por el grupo del usuario para no rechazar el guardado.
+        if isinstance(request_data_copy, dict) and str(request_data_copy.get('group') or '') == '693ad3cccced5113d39dc29d':
+            request_data_copy['group'] = str(user_group_id) if user_group_id else None
+
         if user_role == 'group_admin' and user_group_id:
             # Forzar el grupo del admin antes de validar
             request_data_copy['group'] = str(user_group_id)

@@ -10665,8 +10665,6 @@ export default function App() {
       'Título': 'titulo',
       'Evaluación': 'evaluation_table'
     };
-    const DEFAULT_GROUP_ID = '693ad3cccced5113d39dc29d';
-    
     // Check if it's an existing survey or a new one
     const method = surveyData.id ? 'PUT' : 'POST'; // Use PUT for update, POST for create
     const url = surveyData.id ? `/api/surveys/${surveyData.id}/` : '/api/surveys/';
@@ -10700,10 +10698,17 @@ export default function App() {
       return;
     }
 
+    const legacyMissingGroupId = '693ad3cccced5113d39dc29d';
+    const surveyGroup = surveyData.group ? String(surveyData.group) : '';
+    const userGroup = currentUser?.user_group_id ? String(currentUser.user_group_id) : '';
+    const resolvedGroup = (surveyGroup && surveyGroup !== legacyMissingGroupId)
+      ? surveyGroup
+      : (userGroup || null);
+
     const surveyPayload = { 
       title: surveyData.title, 
       description: surveyData.description || '', 
-      group: DEFAULT_GROUP_ID, 
+      group: resolvedGroup, 
       questions: surveyData.questions.map((q, index) => {
         const questionText = q.text ?? q.question_text ?? '';
         const displayType = q.type || q.question_type;
