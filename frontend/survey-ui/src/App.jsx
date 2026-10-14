@@ -1002,6 +1002,22 @@ const getSurveyTheme = (surveyOrTheme) => {
   };
 };
 
+const sanitizeOptionLimits = (limits, options) => {
+  if (!limits || typeof limits !== 'object' || Array.isArray(limits)) return {};
+  const allowed = new Set(options || []);
+  const out = {};
+  Object.entries(limits).forEach(([label, raw]) => {
+    const n = parseInt(raw, 10);
+    if (allowed.has(label) && Number.isFinite(n) && n > 0) out[label] = n;
+  });
+  return out;
+};
+
+const optionLimitOf = (question, option) => {
+  const n = parseInt(question?.option_limits?.[option], 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
 const normalizeSurveyForEditor = (raw) => {
   if (!raw) {
     return {
@@ -1046,6 +1062,7 @@ const normalizeSurveyForEditor = (raw) => {
       required: q.required || false,
       unique_answer: Boolean(q.unique_answer),
       options: Array.isArray(q.options) ? q.options : [],
+      option_limits: sanitizeOptionLimits(q.option_limits, Array.isArray(q.options) ? q.options : []),
       section_id: q.section_id || null,
       conditional_logic: q.conditional_logic || null,
     };
@@ -1235,7 +1252,10 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
           .map(row => (row && row[0] != null ? String(row[0]).trim() : ''))
           .filter(s => s.length > 0)
           .map(s => s.length > MAX_LEN ? s.slice(0, MAX_LEN) : s);
-        onUpdate({ options });
+        onUpdate({
+          options,
+          option_limits: sanitizeOptionLimits(data.option_limits, options),
+        });
       } catch (err) {
         console.error(err);
         alert('No se pudo leer el archivo Excel.');
@@ -1330,14 +1350,58 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
               <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-100/50">
                 {isOptionType && (
                   <div className="space-y-2 sm:space-y-3">
+                     {(data.type === 'Opción Única' || data.type === 'Desplegable') && (
+                       <p className="text-[11px] text-gray-500">Cupo: máximo de personas por opción. Vacío = sin límite.</p>
+                     )}
                      {data.options?.map((opt, idx) => (
                        <div key={idx} className="flex items-center gap-2 sm:gap-3 animate-fadeIn">
                          {data.type === 'Opción Única' && <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-indigo-200 flex-shrink-0" />}
                          {data.type === 'Casillas' && <div className="w-4 h-4 sm:w-5 sm:h-5 rounded border-2 border-indigo-200 flex-shrink-0" />}
                          {data.type === 'Desplegable' && <span className="text-gray-400 text-xs sm:text-sm flex-shrink-0">{idx + 1}.</span>}
 
-                         <input value={opt} onChange={(e) => { const newOpts = [...(data.options || [])]; newOpts[idx] = e.target.value; onUpdate({ options: newOpts }); }} className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" />
-                         <button type="button" onClick={(ev) => { ev.stopPropagation(); onUpdate({ options: (data.options || []).filter((_, i) => i !== idx) }); }} className="flex-shrink-0 p-1"><FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" /></button>
+                         <input value={opt} onChange={(e) => {
+                           const next = e.target.value;
+                           const newOpts = [...(data.options || [])];
+                           const previous = newOpts[idx];
+                           newOpts[idx] = next;
+                           const limits = { ...(data.option_limits || {}) };
+                           if (previous !== next && Object.prototype.hasOwnProperty.call(limits, previous)) {
+                             const cap = limits[previous];
+                             delete limits[previous];
+                             if (String(next).trim()) limits[next] = cap;
+                           }
+                           onUpdate({ options: newOpts, option_limits: limits });
+                         }} className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" />
+                         {(data.type === 'Opción Única' || data.type === 'Desplegable') && (
+                           <input
+                             type="number"
+                             min="1"
+                             inputMode="numeric"
+                             placeholder="Cupo"
+                             title="Máximo de personas. Vacío = sin límite"
+                             value={(data.option_limits || {})[opt] ?? ''}
+                             onClick={(e) => e.stopPropagation()}
+                             onChange={(e) => {
+                               const limits = { ...(data.option_limits || {}) };
+                               const raw = e.target.value.trim();
+                               const n = parseInt(raw, 10);
+                               if (!raw || !Number.isFinite(n) || n <= 0) delete limits[opt];
+                               else limits[opt] = n;
+                               onUpdate({ option_limits: limits });
+                             }}
+                             className="w-16 shrink-0 bg-gray-50/80 hover:bg-white rounded-lg px-2 py-1.5 sm:py-2 text-xs focus:bg-white focus:ring-2 focus:ring-indigo-100 border border-transparent focus:border-indigo-200 shadow-sm"
+                           />
+                         )}
+                         <button type="button" onClick={(ev) => {
+                           ev.stopPropagation();
+                           const removed = (data.options || [])[idx];
+                           const limits = { ...(data.option_limits || {}) };
+                           delete limits[removed];
+                           onUpdate({
+                             options: (data.options || []).filter((_, i) => i !== idx),
+                             option_limits: limits,
+                           });
+                         }} className="flex-shrink-0 p-1"><FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" /></button>
                        </div>
                      ))}
                      <div className="flex flex-wrap items-center gap-2 mt-2 sm:mt-3">
@@ -2218,6 +2282,8 @@ const PublicSurveyView = ({ surveyId }) => {
   const [referenceLookupNotFound, setReferenceLookupNotFound] = useState(false);
   const [referenceFieldsLocked, setReferenceFieldsLocked] = useState(false);
   const [uniqueAnswerErrors, setUniqueAnswerErrors] = useState({}); // questionId -> message
+  const [optionCounts, setOptionCounts] = useState({});
+  const [forcedFullOptions, setForcedFullOptions] = useState({});
   const referenceLookupDebounceRef = React.useRef(null);
   const uniqueCheckDebounceRef = React.useRef(null);
   // Consent OTP gate: locked | verified | denied
@@ -2305,6 +2371,7 @@ const PublicSurveyView = ({ surveyId }) => {
           type: mapBackendTypeToFrontend(q.question_type || q.type),
           text: q.text || q.question_text || '',
           options: q.options || [],
+          option_limits: (q.option_limits && typeof q.option_limits === 'object') ? q.option_limits : {},
           section_id: q.section_id || null,
           conditional_logic: q.conditional_logic || null,
           evaluation_items: q.evaluation_items || [],
@@ -2344,6 +2411,39 @@ const PublicSurveyView = ({ surveyId }) => {
       fetchSurvey();
     }
   }, [surveyId]);
+
+  useEffect(() => {
+    const sid = surveyData?.id || surveyData?._id;
+    const hasLimits = (surveyData?.questions || []).some((q) => (
+      q.option_limits && typeof q.option_limits === 'object' && Object.keys(q.option_limits).length > 0
+    ));
+    if (!sid || !hasLimits || submitted) return undefined;
+    let cancelled = false;
+    const pull = async () => {
+      try {
+        const res = await fetch(`/api/public/surveys/${sid}/option-counts/`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const body = await res.json();
+        if (!cancelled) setOptionCounts(body.counts || {});
+      } catch (_) {}
+    };
+    pull();
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'hidden') pull();
+    }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [surveyData?.id, surveyData?._id, surveyData?.questions, submitted]);
+
+  const optionIsFull = (question, option) => {
+    const limit = optionLimitOf(question, option);
+    if (limit == null) return false;
+    if (forcedFullOptions[question.id]?.[option]) return true;
+    const taken = Number(optionCounts[question.id]?.[option] || 0);
+    return taken >= limit;
+  };
 
   // Update visible sections when answers change
   useEffect(() => {
@@ -2864,6 +2964,22 @@ const PublicSurveyView = ({ surveyId }) => {
             }));
           }
         }
+        if (response.status === 409 && errorData.code === 'option_quota_full') {
+          const qid = errorData.question_id;
+          const option = errorData.option;
+          if (qid && option) {
+            setForcedFullOptions((prev) => ({
+              ...prev,
+              [qid]: { ...(prev[qid] || {}), [option]: true },
+            }));
+            setAnswers((prev) => {
+              if (prev[qid] !== option) return prev;
+              const next = { ...prev };
+              delete next[qid];
+              return next;
+            });
+          }
+        }
         throw new Error(errorData.detail || 'Error al enviar las respuestas');
       }
 
@@ -3339,25 +3455,32 @@ const PublicSurveyView = ({ surveyId }) => {
 
           {question.type === 'Opción Única' && question.options && (
             <div className={`space-y-3 ${fieldLocked ? 'opacity-70' : ''}`}>
-              {question.options.map((option, idx) => (
-                <label key={idx} className={`flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl transition-all duration-200 group ${fieldLocked ? 'cursor-not-allowed bg-gray-50' : 'hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer'}`}>
+              {question.options.map((option, idx) => {
+                const full = optionIsFull(question, option);
+                const disabled = fieldLocked || full;
+                return (
+                <label key={idx} className={`flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl transition-all duration-200 group ${disabled ? 'cursor-not-allowed bg-gray-50 opacity-70' : 'hover:border-indigo-300 hover:bg-indigo-50/50 cursor-pointer'}`}>
                   <input
                     type="radio"
                     name={`question_${questionId}`}
                     value={option}
                     checked={answers[questionId] === option}
-                    disabled={fieldLocked}
+                    disabled={disabled}
                     onChange={(e) => handleAnswerChange(questionId, e.target.value)}
                     className="w-5 h-5 text-indigo-600 focus:ring-indigo-500 focus:ring-2"
                   />
-                  <span className="text-gray-700 font-medium group-hover:text-indigo-700 transition-colors flex-1">{option}</span>
-                  {answers[questionId] === option && (
+                  <span className={`font-medium transition-colors flex-1 ${disabled ? 'text-gray-400' : 'text-gray-700 group-hover:text-indigo-700'}`}>
+                    {option}
+                    {full && <span className="ml-2 text-xs font-semibold text-amber-700">Cupo lleno</span>}
+                  </span>
+                  {answers[questionId] === option && !full && (
                     <div className="w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center">
                       <FontAwesomeIcon icon={faCheck} size="xs" className="text-white" />
                     </div>
                   )}
                 </label>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -3397,9 +3520,14 @@ const PublicSurveyView = ({ surveyId }) => {
               className={`w-full px-5 py-4 border-2 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 text-base appearance-none ${fieldLocked ? 'bg-gray-100 border-gray-300 text-gray-700 cursor-not-allowed' : 'border-gray-200 bg-gray-50/50 hover:bg-white focus:bg-white cursor-pointer'}`}
             >
               <option value="">Selecciona una opción...</option>
-              {question.options.map((option, idx) => (
-                <option key={idx} value={option}>{option}</option>
-              ))}
+              {question.options.map((option, idx) => {
+                const full = optionIsFull(question, option);
+                return (
+                  <option key={idx} value={option} disabled={full}>
+                    {full ? `${option} (Cupo lleno)` : option}
+                  </option>
+                );
+              })}
             </select>
           )}
 
@@ -8926,6 +9054,21 @@ const UserManagementView = ({ onBack, onLogout, userRole }) => {
 // --- VISTA: DASHBOARD DE ENCUESTAS ---
 
 // Componente de diálogo para compartir
+const PUBLIC_TABLE_SKIP_TYPES = new Set([
+  'firma', 'signature',
+  'adjuntar archivos', 'file_upload', 'file',
+  'título', 'titulo', 'title',
+  'evaluación', 'evaluacion', 'evaluation_table',
+]);
+
+const publicTableQuestionsOf = (survey) => (survey?.questions || [])
+  .map((question) => ({
+    id: String(question.id || question._id || ''),
+    label: question.text || question.question_text || 'Pregunta',
+    type: String(question.type || question.question_type || '').trim().toLowerCase(),
+  }))
+  .filter((question) => question.id && !PUBLIC_TABLE_SKIP_TYPES.has(question.type));
+
 const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendanceFlags }) => {
   const [linkType, setLinkType] = useState(survey.is_public ? 'public' : 'private');
   const [updating, setUpdating] = useState(false);
@@ -8934,6 +9077,12 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendance
   const [verifyOn, setVerifyOn] = useState(survey.attendance_verify_enabled !== false);
   const [dataOn, setDataOn] = useState(survey.public_data_table_enabled === true);
   const [flagUpdating, setFlagUpdating] = useState('');
+  const tableQuestions = publicTableQuestionsOf(survey);
+  const [tableColumns, setTableColumns] = useState(() => {
+    const saved = survey.public_data_table_question_ids;
+    if (Array.isArray(saved)) return saved.map(String);
+    return publicTableQuestionsOf(survey).map((question) => question.id);
+  });
 
   const toggleAttendanceFlag = async (field, next) => {
     if (flagUpdating) return;
@@ -8960,6 +9109,32 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendance
       if (onUpdateAttendanceFlags) onUpdateAttendanceFlags(surveyId, { [field]: next });
     } catch (error) {
       setters[field](previous);
+      alert(error.message || 'No se pudo actualizar');
+    } finally {
+      setFlagUpdating('');
+    }
+  };
+
+  const toggleTableColumn = async (questionId) => {
+    if (flagUpdating) return;
+    const surveyId = survey.id || survey._id;
+    const previous = tableColumns;
+    const next = previous.includes(questionId)
+      ? previous.filter((id) => id !== questionId)
+      : [...previous, questionId];
+    setTableColumns(next);
+    setFlagUpdating('public_data_table_question_ids');
+    try {
+      const response = await authenticatedFetch(`/api/surveys/${surveyId}/`, {
+        method: 'PUT',
+        body: JSON.stringify({ public_data_table_question_ids: next }),
+      });
+      if (!response.ok) throw new Error('No se pudo actualizar');
+      if (onUpdateAttendanceFlags) {
+        onUpdateAttendanceFlags(surveyId, { public_data_table_question_ids: next });
+      }
+    } catch (error) {
+      setTableColumns(previous);
       alert(error.message || 'No se pudo actualizar');
     } finally {
       setFlagUpdating('');
@@ -9226,6 +9401,28 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendance
               >
                 Copiar tabla de datos
               </button>
+              <div className="mt-3">
+                <p className="text-xs font-bold text-emerald-900 mb-2">Datos que aparecen</p>
+                {tableQuestions.length === 0 ? (
+                  <p className="text-xs text-emerald-800">Esta encuesta no tiene campos de texto para la tabla.</p>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                    {tableQuestions.map((question) => (
+                      <label key={question.id} className="flex items-start gap-2 text-xs text-emerald-950 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
+                          checked={tableColumns.includes(question.id)}
+                          disabled={Boolean(flagUpdating)}
+                          onChange={() => toggleTableColumn(question.id)}
+                        />
+                        <span className="leading-snug">{question.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[11px] text-emerald-800/80 mt-2">La fecha siempre se muestra. Firmas, archivos y títulos no entran en la tabla.</p>
+              </div>
             </>
           ) : (
             <p className="text-xs text-gray-500">Desactivada. Muestra las respuestas en una tabla simple, sin firmas ni archivos.</p>
@@ -10929,6 +11126,9 @@ export default function App() {
           type: backendType,
           question_type: backendType,
           options: q.options ?? [],
+          option_limits: (displayType === 'Opción Única' || displayType === 'Desplegable')
+            ? sanitizeOptionLimits(q.option_limits, q.options ?? [])
+            : {},
           description: q.description ?? '',
           required: (displayType === 'Título') ? false : Boolean(q.required),
           unique_answer: (displayType === 'Título') ? false : Boolean(q.unique_answer),

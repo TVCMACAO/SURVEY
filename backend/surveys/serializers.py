@@ -396,6 +396,7 @@ class QuestionSerializer(serializers.Serializer):
     text = serializers.CharField(max_length=10000, required=False, allow_blank=True, default='')
     type = serializers.CharField(max_length=50, required=False, allow_blank=True, default='short_text')
     options = serializers.ListField(child=serializers.CharField(max_length=200), required=False, allow_empty=True, default=list)
+    option_limits = serializers.JSONField(required=False, default=dict)
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default='')
     required = serializers.BooleanField(required=False, default=False)
     unique_answer = serializers.BooleanField(required=False, default=False)  # Reject duplicate values across responses
@@ -430,6 +431,25 @@ class QuestionSerializer(serializers.Serializer):
             normalized_data.pop('question_type', None)
 
         return super().to_internal_value(normalized_data)
+
+    def validate_option_limits(self, value):
+        """Cupo por texto de opción. Solo enteros mayores que cero."""
+        if value in (None, ''):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('El cupo por opción debe ser un objeto.')
+        cleaned = {}
+        for key, raw in value.items():
+            label = str(key)
+            if label == '' or raw in (None, ''):
+                continue
+            try:
+                number = int(raw)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError('El cupo debe ser un número entero.')
+            if number > 0:
+                cleaned[label] = number
+        return cleaned
 
     def validate_conditional_logic(self, value):
         if value is None:
@@ -476,6 +496,9 @@ class QuestionSerializer(serializers.Serializer):
         # Include other fields
         if 'options' in data:
             result['options'] = data['options']
+        limits = data.get('option_limits')
+        if isinstance(limits, dict) and limits:
+            result['option_limits'] = limits
         if 'description' in data:
             result['description'] = data['description']
         if 'required' in data:
@@ -550,6 +573,12 @@ class SurveySerializer(serializers.Serializer):
     attendance_verify_enabled = serializers.BooleanField(required=False)
     attendance_document_question_id = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     public_data_table_enabled = serializers.BooleanField(required=False)
+    # None = todas las preguntas visibles. Lista = solo esos ids.
+    public_data_table_question_ids = serializers.ListField(
+        child=serializers.CharField(max_length=255),
+        required=False,
+        allow_null=True,
+    )
 
     def get_webhook_secret_set(self, obj):
         if not isinstance(obj, dict):
@@ -621,6 +650,11 @@ class SurveySerializer(serializers.Serializer):
             data['public_data_table_enabled'] = bool(instance.get('public_data_table_enabled'))
         else:
             data['public_data_table_enabled'] = False
+        saved_columns = instance.get('public_data_table_question_ids') if isinstance(instance, dict) else None
+        if isinstance(saved_columns, list):
+            data['public_data_table_question_ids'] = [str(item).strip() for item in saved_columns if str(item).strip()]
+        else:
+            data['public_data_table_question_ids'] = None
 
         theme = instance.get('theme') if isinstance(instance, dict) else {}
         data['theme'] = normalize_survey_theme(theme)

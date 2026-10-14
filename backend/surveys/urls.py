@@ -12,7 +12,7 @@ from .views import (
     AttachmentUploadView, AttachmentRetrieveView, PublicAttachmentRetrieveView,
     ResponseListCreate, ResponseRetrieve, ResponseResetView,
     CurrentUserView, UserListCreate, UserRetrieveUpdateDestroy,
-    PublicSurveyView, PublicAttendanceList, PublicSurveyDataTable, ReferenceLookup, UniqueAnswerCheck, PublicResponseCreate,
+    PublicSurveyView, PublicAttendanceList, PublicSurveyDataTable, ReferenceLookup, UniqueAnswerCheck, PublicOptionCounts, PublicResponseCreate,
     PublicConsentOtpSend, PublicConsentOtpVerify, PublicConsentPdfEmail,
     ResponseSyncView, SyncStatusView
 )
@@ -69,6 +69,7 @@ urlpatterns = [
     path('public/surveys/<str:pk>/datos/', PublicSurveyDataTable.as_view(), name='public-survey-data-table'),
     path('public/surveys/<str:pk>/reference-lookup/', ReferenceLookup.as_view(), name='reference-lookup'),
     path('public/surveys/<str:pk>/unique-check/', UniqueAnswerCheck.as_view(), name='unique-answer-check'),
+    path('public/surveys/<str:pk>/option-counts/', PublicOptionCounts.as_view(), name='public-option-counts'),
     path('public/surveys/<str:pk>/consent-otp/send/', PublicConsentOtpSend.as_view(), name='public-consent-otp-send'),
     path('public/surveys/<str:pk>/consent-otp/verify/', PublicConsentOtpVerify.as_view(), name='public-consent-otp-verify'),
     path('public/surveys/<str:pk>/consent-pdf/email/', PublicConsentPdfEmail.as_view(), name='public-consent-pdf-email'),

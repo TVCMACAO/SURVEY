@@ -45,6 +45,7 @@ from .unique_answers import (
     normalize_unique_value,
     unique_questions,
 )
+from .option_limits import drop_if_over_quota, find_full_option, option_counts
 from .consent_otp import (
     normalize_email,
     encrypt_otp_code,
@@ -2160,7 +2161,7 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 except Exception:
                     pass  # fallback to full update below
 
-            attendance_flag_keys = {'attendance_table_enabled', 'attendance_verify_enabled', 'public_data_table_enabled', 'id'}
+            attendance_flag_keys = {'attendance_table_enabled', 'attendance_verify_enabled', 'public_data_table_enabled', 'public_data_table_question_ids', 'id'}
             if request_keys and request_keys <= attendance_flag_keys:
                 flag_patch = {}
                 if 'attendance_table_enabled' in validated_data:
@@ -2169,6 +2170,11 @@ class SurveyRetrieveUpdateDestroy(APIView):
                     flag_patch['attendance_verify_enabled'] = bool(validated_data.get('attendance_verify_enabled'))
                 if 'public_data_table_enabled' in validated_data:
                     flag_patch['public_data_table_enabled'] = bool(validated_data.get('public_data_table_enabled'))
+                if 'public_data_table_question_ids' in validated_data:
+                    raw_ids = validated_data.get('public_data_table_question_ids') or []
+                    flag_patch['public_data_table_question_ids'] = [
+                        str(item).strip() for item in raw_ids if str(item).strip()
+                    ]
                 if flag_patch:
                     surveys_collection.update_one(
                         {"_id": ObjectId(pk)},
@@ -2625,6 +2631,7 @@ class PublicSurveyDataTable(APIView):
             'questions.type': 1,
             'questions.question_type': 1,
             'public_data_table_enabled': 1,
+            'public_data_table_question_ids': 1,
         })
         if not survey:
             raise NotFound(detail="Encuesta no encontrada.")
@@ -2633,6 +2640,11 @@ class PublicSurveyDataTable(APIView):
                 {"detail": "La tabla pública de datos está desactivada."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        saved_ids = survey.get('public_data_table_question_ids')
+        selected_ids = None
+        if isinstance(saved_ids, list):
+            selected_ids = {str(item).strip() for item in saved_ids if str(item).strip()}
 
         columns = []
         for question in survey.get('questions') or []:
@@ -2643,6 +2655,8 @@ class PublicSurveyDataTable(APIView):
                 continue
             qid = str(question.get('id') or question.get('_id') or '').strip()
             if not qid:
+                continue
+            if selected_ids is not None and qid not in selected_ids:
                 continue
             label = str(question.get('text') or question.get('question_text') or qid).strip()
             columns.append({'id': qid, 'label': label})
@@ -3267,6 +3281,28 @@ class UniqueAnswerCheck(APIView):
                 f'Ya existe una respuesta registrada con este valor en "{label}". '
                 'Cada documento solo puede registrarse una vez en esta encuesta.'
             ),
+        })
+
+
+class PublicOptionCounts(APIView):
+    """Cuántas respuestas hay en cada opción con cupo. El formulario público las consulta."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        surveys_collection = get_surveys_collection()
+        try:
+            survey = surveys_collection.find_one({'_id': ObjectId(pk)})
+        except Exception:
+            survey = surveys_collection.find_one({'_id': pk}) or surveys_collection.find_one({'id': pk})
+        if not survey or survey.get('is_deleted'):
+            raise NotFound(detail='Encuesta no encontrada.')
+        if not survey.get('is_public', False):
+            return Response(
+                {'detail': 'Esta encuesta no es pública.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        return Response({
+            'counts': option_counts(survey, get_responses_collection()),
         })
 
 
@@ -3965,6 +4001,12 @@ class PublicResponseCreate(APIView):
             if dup_err is not None:
                 return dup_err
 
+            quota_full = find_full_option(
+                survey, validated_data.get('answers') or {}, responses_collection
+            )
+            if quota_full is not None:
+                return Response(quota_full, status=status.HTTP_409_CONFLICT)
+
             consent_email = None
             consent_otp_verified_at = None
             if survey.get('informed_consent_enabled'):
@@ -4014,6 +4056,14 @@ class PublicResponseCreate(APIView):
                     insert_doc['signature_consent_at'] = datetime.utcnow()
 
             result = responses_collection.insert_one(insert_doc)
+            over = drop_if_over_quota(
+                survey,
+                validated_data.get('answers') or {},
+                responses_collection,
+                result.inserted_id,
+            )
+            if over is not None:
+                return Response(over, status=status.HTTP_409_CONFLICT)
             new_response = responses_collection.find_one({'_id': result.inserted_id})
             try:
                 maybe_enqueue_rifas_webhook(survey, new_response)
@@ -4140,6 +4190,12 @@ class ResponseListCreate(APIView):
             )
             if dup_err is not None:
                 return dup_err
+
+            quota_full = find_full_option(
+                survey, validated_data.get('answers') or {}, responses_collection
+            )
+            if quota_full is not None:
+                return Response(quota_full, status=status.HTTP_409_CONFLICT)
             
             # Asegurarse de que el usuario autenticado es el surveyor (si está autenticado)
             if request.user and request.user.is_authenticated:
@@ -4158,6 +4214,14 @@ class ResponseListCreate(APIView):
             if validated_data.get('signature_consent_at'):
                 insert_auth['signature_consent_at'] = validated_data['signature_consent_at']
             result = responses_collection.insert_one(insert_auth)
+            over = drop_if_over_quota(
+                survey,
+                validated_data.get('answers') or {},
+                responses_collection,
+                result.inserted_id,
+            )
+            if over is not None:
+                return Response(over, status=status.HTTP_409_CONFLICT)
             new_response = responses_collection.find_one({'_id': result.inserted_id})
             new_response['id'] = str(new_response['_id'])
             return Response(ResponseSerializer(new_response).data, status=status.HTTP_201_CREATED)
@@ -4329,6 +4393,20 @@ class ResponseSyncView(APIView):
                         'question_id': (dup_err.data or {}).get('question_id') if hasattr(dup_err, 'data') else None,
                     })
                     continue
+
+                quota_full = find_full_option(
+                    survey, response_data.get('answers') or {}, responses_collection
+                )
+                if quota_full is not None:
+                    errors.append({
+                        'index': idx,
+                        'local_id': response_data.get('local_id'),
+                        'error': quota_full['detail'],
+                        'code': 'option_quota_full',
+                        'question_id': quota_full['question_id'],
+                        'option': quota_full['option'],
+                    })
+                    continue
                 
                 # Insertar respuesta
                 from datetime import datetime
@@ -4368,7 +4446,23 @@ class ResponseSyncView(APIView):
                     except Exception:
                         insert_batch['signature_consent_at'] = datetime.utcnow()
                 result = responses_collection.insert_one(insert_batch)
-                
+                over = drop_if_over_quota(
+                    survey,
+                    response_data.get('answers') or {},
+                    responses_collection,
+                    result.inserted_id,
+                )
+                if over is not None:
+                    errors.append({
+                        'index': idx,
+                        'local_id': response_data.get('local_id'),
+                        'error': over['detail'],
+                        'code': 'option_quota_full',
+                        'question_id': over['question_id'],
+                        'option': over['option'],
+                    })
+                    continue
+
                 new_response = responses_collection.find_one({'_id': result.inserted_id})
                 new_response['id'] = str(new_response['_id'])
                 
