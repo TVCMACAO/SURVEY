@@ -1073,13 +1073,28 @@ const sanitizeBands = (bands) => {
 
 const bandRangeInvalid = (bands) => (bands || []).some((band) => Number(band.min) > Number(band.max));
 
+const emptyEmergencyContact = () => ({ name: '', role: '', phone: '', email: '', note: '' });
+
+const sanitizeEmergencyContact = (raw) => {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return {
+    name: String(source.name || '').trim(),
+    role: String(source.role || '').trim(),
+    phone: String(source.phone || '').trim(),
+    email: String(source.email || '').trim(),
+    note: String(source.note || '').trim(),
+  };
+};
+
+const hasEmergencyContact = (contact) => Object.values(sanitizeEmergencyContact(contact)).some(Boolean);
+
 const BAND_CARD_STYLE = {
   green: 'border-emerald-300 bg-emerald-50',
   yellow: 'border-amber-300 bg-amber-50',
   red: 'border-rose-300 bg-rose-50',
 };
 
-const TestResultCards = ({ sectionScores }) => {
+const TestResultCards = ({ sectionScores, emergencyContact }) => {
   const cards = (sectionScores || []).map((section) => ({
     key: section.section_id,
     heading: section.title || 'Sección',
@@ -1087,6 +1102,8 @@ const TestResultCards = ({ sectionScores }) => {
     band: section.band,
   }));
   if (!cards.length) return null;
+  const contact = sanitizeEmergencyContact(emergencyContact);
+  const showEmergency = cards.some((card) => card.band?.color === 'red') && hasEmergencyContact(contact);
   return (
     <div className="space-y-4 text-left">
       {cards.map((card) => (
@@ -1107,6 +1124,21 @@ const TestResultCards = ({ sectionScores }) => {
           )}
         </div>
       ))}
+      {showEmergency && (
+        <div className="rounded-2xl border border-rose-300 bg-rose-50 p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-rose-700">En caso de emergencia</p>
+          <p className="text-sm text-gray-600 mt-1">Contacta al profesional de la empresa</p>
+          {contact.name && <p className="font-black text-gray-900 mt-2">{contact.name}</p>}
+          {contact.role && <p className="text-sm text-gray-700">{contact.role}</p>}
+          {contact.phone && (
+            <a href={`tel:${contact.phone}`} className="block text-sm font-bold text-rose-800 mt-2">{contact.phone}</a>
+          )}
+          {contact.email && (
+            <a href={`mailto:${contact.email}`} className="block text-sm font-bold text-rose-800">{contact.email}</a>
+          )}
+          {contact.note && <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{contact.note}</p>}
+        </div>
+      )}
     </div>
   );
 };
@@ -1187,6 +1219,7 @@ const normalizeSurveyForEditor = (raw, createKind) => {
       title: isTest ? 'Mi Nuevo Test' : 'Mi Nueva Encuesta',
       description: isTest ? 'Descripción breve del test' : 'Descripción breve de la encuesta',
       total_bands: [],
+      emergency_contact: emptyEmergencyContact(),
       questions: [],
       sections: isTest ? [defaultTestSection()] : [],
       informed_consent_enabled: false,
@@ -1254,6 +1287,7 @@ const normalizeSurveyForEditor = (raw, createKind) => {
     ...raw,
     kind: raw.kind === 'test' ? 'test' : 'survey',
     total_bands: sanitizeBands(raw.total_bands),
+    emergency_contact: sanitizeEmergencyContact(raw.emergency_contact),
     questions: questionsInSections,
     sections,
     reference_key_column: raw.reference_key_column || '',
@@ -3392,7 +3426,10 @@ const PublicSurveyView = ({ surveyId }) => {
           {!testResult && <p className="text-gray-600 text-center">Tu respuesta ha sido enviada exitosamente.</p>}
           {testResult && (
             <div className="mt-6">
-              <TestResultCards sectionScores={testResult.section_scores} />
+              <TestResultCards
+                sectionScores={testResult.section_scores}
+                emergencyContact={surveyData?.emergency_contact}
+              />
             </div>
           )}
           {submitEmailStatus === 'sending' && (
@@ -4671,6 +4708,47 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, createKi
              onHeaderImageChange={(header_image) => setSurveyData((prev) => ({ ...prev, header_image }))}
              onHeaderImageRemove={() => setSurveyData((prev) => ({ ...prev, header_image: '' }))}
            />
+
+           {isTest && (
+             <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
+               <h3 className="text-lg font-bold text-gray-800">Contacto de emergencia</h3>
+               <p className="text-sm text-gray-500 mt-1 mb-4">Se muestra en el resultado cuando alguna sección queda en rojo.</p>
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                 {[
+                   ['name', 'Nombre del profesional', 'text'],
+                   ['role', 'Cargo', 'text'],
+                   ['phone', 'Teléfono', 'tel'],
+                   ['email', 'Correo', 'email'],
+                 ].map(([key, label, type]) => (
+                   <label key={key} className="block">
+                     <span className="block text-xs font-bold text-gray-600 mb-1">{label}</span>
+                     <input
+                       type={type}
+                       value={surveyData.emergency_contact?.[key] || ''}
+                       onChange={(e) => setSurveyData((prev) => ({
+                         ...prev,
+                         emergency_contact: { ...sanitizeEmergencyContact(prev.emergency_contact), [key]: e.target.value },
+                       }))}
+                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                     />
+                   </label>
+                 ))}
+                 <label className="block md:col-span-2">
+                   <span className="block text-xs font-bold text-gray-600 mb-1">Nota</span>
+                   <textarea
+                     rows={2}
+                     value={surveyData.emergency_contact?.note || ''}
+                     onChange={(e) => setSurveyData((prev) => ({
+                       ...prev,
+                       emergency_contact: { ...sanitizeEmergencyContact(prev.emergency_contact), note: e.target.value },
+                     }))}
+                     placeholder="Horario, extensión o indicación breve"
+                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                   />
+                 </label>
+               </div>
+             </div>
+           )}
 
            {/* Apariencia / colores de la encuesta pública */}
            {!isTest && groupFeatures.feature_appearance && (
@@ -7557,6 +7635,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                   <div className="mt-4">
                     <TestResultCards
                       sectionScores={selectedResponse.section_scores}
+                      emergencyContact={survey?.emergency_contact}
                     />
                   </div>
                 )}
@@ -11620,7 +11699,8 @@ export default function App() {
       description: surveyData.description || '', 
       group: resolvedGroup,
       kind: isTestSave ? 'test' : 'survey',
-      total_bands: isTestSave ? sanitizeBands(surveyData.total_bands) : [], 
+      total_bands: isTestSave ? sanitizeBands(surveyData.total_bands) : [],
+      emergency_contact: isTestSave ? sanitizeEmergencyContact(surveyData.emergency_contact) : {}, 
       questions: surveyData.questions.map((q, index) => {
         const questionText = q.text ?? q.question_text ?? '';
         const displayType = q.type || q.question_type;

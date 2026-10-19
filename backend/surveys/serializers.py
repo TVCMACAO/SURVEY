@@ -581,6 +581,21 @@ def clean_score_bands(value):
     return cleaned
 
 
+def clean_emergency_contact(value):
+    """Datos del profesional que se muestran si el resultado queda en rojo."""
+    if value in (None, ''):
+        return {}
+    if not isinstance(value, dict):
+        raise serializers.ValidationError('El contacto de emergencia debe ser un objeto.')
+    limits = {'name': 200, 'role': 200, 'phone': 80, 'email': 200, 'note': 1000}
+    cleaned = {}
+    for key, limit in limits.items():
+        cleaned[key] = str(value.get(key) or '').strip()[:limit]
+    if not any(cleaned.values()):
+        return {}
+    return cleaned
+
+
 class SectionSerializer(serializers.Serializer):
     """Serializer for survey sections"""
     id = serializers.CharField(max_length=255, required=False) # Section ID (generated if not provided)
@@ -646,6 +661,7 @@ class SurveySerializer(serializers.Serializer):
     )
     kind = serializers.ChoiceField(choices=['survey', 'test'], required=False, default='survey')
     total_bands = serializers.JSONField(required=False, default=list)
+    emergency_contact = serializers.JSONField(required=False, default=dict)
 
     def get_webhook_secret_set(self, obj):
         if not isinstance(obj, dict):
@@ -729,6 +745,8 @@ class SurveySerializer(serializers.Serializer):
         data['kind'] = kind if kind in ('survey', 'test') else 'survey'
         total_bands = instance.get('total_bands') if isinstance(instance, dict) else None
         data['total_bands'] = total_bands if isinstance(total_bands, list) else []
+        contact = instance.get('emergency_contact') if isinstance(instance, dict) else None
+        data['emergency_contact'] = contact if isinstance(contact, dict) else {}
 
         return data
 
@@ -751,6 +769,9 @@ class SurveySerializer(serializers.Serializer):
 
     def validate_total_bands(self, value):
         return clean_score_bands(value)
+
+    def validate_emergency_contact(self, value):
+        return clean_emergency_contact(value)
 
     def validate(self, attrs):
         questions = attrs.get('questions') or []

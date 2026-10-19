@@ -1644,6 +1644,7 @@ class SurveyListCreate(APIView):
             'is_public': validated_data.get('is_public', False),
             'kind': validated_data.get('kind') if validated_data.get('kind') in ('survey', 'test') else 'survey',
             'total_bands': validated_data.get('total_bands') or [],
+            'emergency_contact': validated_data.get('emergency_contact') or {},
             'is_deleted': False,  # Por defecto no está eliminada
             'created_by': (
                 created_by_override
@@ -2318,6 +2319,8 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['kind'] = kind if kind in ('survey', 'test') else 'survey'
             if 'total_bands' in request.data:
                 update_fields['total_bands'] = validated_data.get('total_bands') or []
+            if 'emergency_contact' in request.data:
+                update_fields['emergency_contact'] = validated_data.get('emergency_contact') or {}
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
