@@ -397,6 +397,7 @@ class QuestionSerializer(serializers.Serializer):
     type = serializers.CharField(max_length=50, required=False, allow_blank=True, default='short_text')
     options = serializers.ListField(child=serializers.CharField(max_length=200), required=False, allow_empty=True, default=list)
     option_limits = serializers.JSONField(required=False, default=dict)
+    option_scores = serializers.JSONField(required=False, default=dict)
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default='')
     required = serializers.BooleanField(required=False, default=False)
     unique_answer = serializers.BooleanField(required=False, default=False)  # Reject duplicate values across responses
@@ -440,7 +441,7 @@ class QuestionSerializer(serializers.Serializer):
             raise serializers.ValidationError('El cupo por opción debe ser un objeto.')
         cleaned = {}
         for key, raw in value.items():
-            label = str(key)
+            label = str(key).strip()
             if label == '' or raw in (None, ''):
                 continue
             try:
@@ -449,6 +450,24 @@ class QuestionSerializer(serializers.Serializer):
                 raise serializers.ValidationError('El cupo debe ser un número entero.')
             if number > 0:
                 cleaned[label] = number
+        return cleaned
+
+    def validate_option_scores(self, value):
+        """Puntos de cada opción de un test. El cero es válido."""
+        if value in (None, ''):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('Los puntos por opción deben ser un objeto.')
+        cleaned = {}
+        for key, raw in value.items():
+            label = str(key).strip()
+            if label == '' or raw in (None, ''):
+                continue
+            try:
+                number = int(raw)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError('Los puntos deben ser un número entero.')
+            cleaned[label] = number
         return cleaned
 
     def validate_conditional_logic(self, value):
@@ -499,6 +518,9 @@ class QuestionSerializer(serializers.Serializer):
         limits = data.get('option_limits')
         if isinstance(limits, dict) and limits:
             result['option_limits'] = limits
+        scores = data.get('option_scores')
+        if isinstance(scores, dict) and scores:
+            result['option_scores'] = scores
         if 'description' in data:
             result['description'] = data['description']
         if 'required' in data:
@@ -520,12 +542,55 @@ class QuestionSerializer(serializers.Serializer):
             result['question_image'] = data['question_image']
         return result
 
+BAND_COLORS = {'green', 'yellow', 'red'}
+
+
+def clean_score_bands(value):
+    """Rangos de recomendación: mínimo, máximo, color, título y viñetas."""
+    if value in (None, ''):
+        return []
+    if not isinstance(value, list):
+        raise serializers.ValidationError('Los rangos deben ser una lista.')
+    cleaned = []
+    for band in value:
+        if not isinstance(band, dict):
+            continue
+        try:
+            low = int(band.get('min'))
+            high = int(band.get('max'))
+        except (TypeError, ValueError):
+            raise serializers.ValidationError('El rango debe usar números enteros.')
+        if low > high:
+            raise serializers.ValidationError('El mínimo del rango no puede ser mayor que el máximo.')
+        color = band.get('color') if band.get('color') in BAND_COLORS else 'green'
+        title = str(band.get('title') or '').strip()
+        items = []
+        for item in band.get('items') or []:
+            text = str(item).strip()
+            if text:
+                items.append(text)
+        if not title and not items:
+            continue
+        cleaned.append({
+            'min': low,
+            'max': high,
+            'color': color,
+            'title': title,
+            'items': items,
+        })
+    return cleaned
+
+
 class SectionSerializer(serializers.Serializer):
     """Serializer for survey sections"""
     id = serializers.CharField(max_length=255, required=False) # Section ID (generated if not provided)
     title = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True)
     order = serializers.IntegerField(required=False, default=0) # Order of the section
+    score_bands = serializers.JSONField(required=False, default=list)
+
+    def validate_score_bands(self, value):
+        return clean_score_bands(value)
 
 class SurveySerializer(serializers.Serializer):
     id = ObjectIdField(read_only=True)
@@ -579,6 +644,8 @@ class SurveySerializer(serializers.Serializer):
         required=False,
         allow_null=True,
     )
+    kind = serializers.ChoiceField(choices=['survey', 'test'], required=False, default='survey')
+    total_bands = serializers.JSONField(required=False, default=list)
 
     def get_webhook_secret_set(self, obj):
         if not isinstance(obj, dict):
@@ -658,6 +725,10 @@ class SurveySerializer(serializers.Serializer):
 
         theme = instance.get('theme') if isinstance(instance, dict) else {}
         data['theme'] = normalize_survey_theme(theme)
+        kind = instance.get('kind') if isinstance(instance, dict) else None
+        data['kind'] = kind if kind in ('survey', 'test') else 'survey'
+        total_bands = instance.get('total_bands') if isinstance(instance, dict) else None
+        data['total_bands'] = total_bands if isinstance(total_bands, list) else []
 
         return data
 
@@ -677,6 +748,9 @@ class SurveySerializer(serializers.Serializer):
                     key: 'Color inválido. Usa formato #RGB, #RRGGBB o #RRGGBBAA.'
                 })
         return normalized
+
+    def validate_total_bands(self, value):
+        return clean_score_bands(value)
 
     def validate(self, attrs):
         questions = attrs.get('questions') or []
@@ -727,6 +801,8 @@ class ResponseSerializer(serializers.Serializer):
     consent_otp_verified_at = serializers.DateTimeField(required=False, allow_null=True, read_only=True)
     attendance_code = serializers.CharField(read_only=True, allow_blank=True, allow_null=True, default=None)
     attendance_ticket_delivered = serializers.BooleanField(read_only=True, default=False)
+    section_scores = serializers.JSONField(required=False, allow_null=True)
+    total_score = serializers.JSONField(required=False, allow_null=True)
 
     def create(self, validated_data):
         pass

@@ -1002,13 +1002,20 @@ const getSurveyTheme = (surveyOrTheme) => {
   };
 };
 
+const matchOptionKey = (label, options) => {
+  const list = options || [];
+  if (list.includes(label)) return label;
+  const trimmed = String(label).trim();
+  return list.find((opt) => String(opt).trim() === trimmed) || null;
+};
+
 const sanitizeOptionLimits = (limits, options) => {
   if (!limits || typeof limits !== 'object' || Array.isArray(limits)) return {};
-  const allowed = new Set(options || []);
   const out = {};
   Object.entries(limits).forEach(([label, raw]) => {
+    const key = matchOptionKey(label, options);
     const n = parseInt(raw, 10);
-    if (allowed.has(label) && Number.isFinite(n) && n > 0) out[label] = n;
+    if (key && Number.isFinite(n) && n > 0) out[key] = n;
   });
   return out;
 };
@@ -1018,13 +1025,170 @@ const optionLimitOf = (question, option) => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-const normalizeSurveyForEditor = (raw) => {
-  if (!raw) {
+const sanitizeOptionScores = (scores, options) => {
+  if (!scores || typeof scores !== 'object' || Array.isArray(scores)) return {};
+  const out = {};
+  Object.entries(scores).forEach(([label, raw]) => {
+    const key = matchOptionKey(label, options);
+    const n = parseInt(raw, 10);
+    if (key && Number.isFinite(n)) out[key] = n;
+  });
+  return out;
+};
+
+const retargetKeyedMap = (source, previous, next) => {
+  const map = { ...(source || {}) };
+  if (previous !== next && Object.prototype.hasOwnProperty.call(map, previous)) {
+    const value = map[previous];
+    delete map[previous];
+    if (String(next).trim()) map[next] = value;
+  }
+  return map;
+};
+
+const BAND_COLORS = [
+  { id: 'green', label: 'Verde' },
+  { id: 'yellow', label: 'Amarillo' },
+  { id: 'red', label: 'Rojo' },
+];
+
+const sanitizeBands = (bands) => {
+  if (!Array.isArray(bands)) return [];
+  return bands.map((band) => {
+    const min = parseInt(band?.min, 10);
+    const max = parseInt(band?.max, 10);
+    const color = BAND_COLORS.some((item) => item.id === band?.color) ? band.color : 'green';
+    const items = Array.isArray(band?.items)
+      ? band.items.map((item) => String(item).trim()).filter(Boolean)
+      : [];
     return {
-      title: 'Mi Nueva Encuesta',
-      description: 'Descripción breve de la encuesta',
+      min: Number.isFinite(min) ? min : 0,
+      max: Number.isFinite(max) ? max : 0,
+      color,
+      title: String(band?.title || '').trim(),
+      items,
+    };
+  }).filter((band) => band.title || band.items.length || band.min !== 0 || band.max !== 0);
+};
+
+const bandRangeInvalid = (bands) => (bands || []).some((band) => Number(band.min) > Number(band.max));
+
+const BAND_CARD_STYLE = {
+  green: 'border-emerald-300 bg-emerald-50',
+  yellow: 'border-amber-300 bg-amber-50',
+  red: 'border-rose-300 bg-rose-50',
+};
+
+const TestResultCards = ({ sectionScores }) => {
+  const cards = (sectionScores || []).map((section) => ({
+    key: section.section_id,
+    heading: section.title || 'Sección',
+    score: section.score,
+    band: section.band,
+  }));
+  if (!cards.length) return null;
+  return (
+    <div className="space-y-4 text-left">
+      {cards.map((card) => (
+        <div key={card.key} className={`rounded-2xl border p-4 ${BAND_CARD_STYLE[card.band?.color] || 'border-gray-200 bg-white'}`}>
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">{card.heading}</p>
+          <p className="text-lg font-black text-gray-800 mt-1">{card.score} {Number(card.score) === 1 ? 'punto' : 'puntos'}</p>
+          {card.band ? (
+            <>
+              {card.band.title && <p className="font-bold text-gray-900 mt-2">{card.band.title}</p>}
+              {(card.band.items || []).length > 0 && (
+                <ul className="list-disc pl-5 mt-2 space-y-1 text-sm text-gray-700">
+                  {card.band.items.map((item, index) => <li key={index}>{item}</li>)}
+                </ul>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-gray-500 mt-2">Este puntaje no tiene recomendaciones.</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const ScoreBandsEditor = ({ bands, onChange }) => {
+  const list = Array.isArray(bands) ? bands : [];
+  const update = (index, patch) => {
+    onChange(list.map((band, i) => (i === index ? { ...band, ...patch } : band)));
+  };
+  return (
+    <div className="space-y-3">
+      {list.map((band, index) => (
+        <div key={index} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-white">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="number"
+              value={band.min ?? 0}
+              onChange={(e) => update(index, { min: e.target.value })}
+              className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+              title="Desde"
+            />
+            <span className="text-xs text-gray-400">a</span>
+            <input
+              type="number"
+              value={band.max ?? 0}
+              onChange={(e) => update(index, { max: e.target.value })}
+              className="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+              title="Hasta"
+            />
+            <select
+              value={band.color || 'green'}
+              onChange={(e) => update(index, { color: e.target.value })}
+              className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white"
+            >
+              {BAND_COLORS.map((color) => <option key={color.id} value={color.id}>{color.label}</option>)}
+            </select>
+            <button type="button" onClick={() => onChange(list.filter((_, i) => i !== index))} className="ml-auto text-xs font-bold text-red-500">Quitar</button>
+          </div>
+          <input
+            type="text"
+            value={band.title || ''}
+            onChange={(e) => update(index, { title: e.target.value })}
+            placeholder="Título, ej. VERDE — Bienestar emocional"
+            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+          />
+          <textarea
+            value={(band.items || []).join('\n')}
+            onChange={(e) => update(index, { items: e.target.value.split('\n') })}
+            placeholder="Una recomendación por línea"
+            className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-sm min-h-[72px]"
+          />
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...list, { min: 0, max: 0, color: 'green', title: '', items: [] }])}
+        className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
+      >
+        Agregar rango
+      </button>
+    </div>
+  );
+};
+
+const defaultTestSection = () => ({
+  id: generateId(),
+  title: 'Sección 1',
+  description: '',
+  order: 0,
+  score_bands: [],
+});
+
+const normalizeSurveyForEditor = (raw, createKind) => {
+  if (!raw) {
+    const isTest = createKind === 'test';
+    return {
+      kind: isTest ? 'test' : 'survey',
+      title: isTest ? 'Mi Nuevo Test' : 'Mi Nueva Encuesta',
+      description: isTest ? 'Descripción breve del test' : 'Descripción breve de la encuesta',
+      total_bands: [],
       questions: [],
-      sections: [],
+      sections: isTest ? [defaultTestSection()] : [],
       informed_consent_enabled: false,
       informed_consent: buildDefaultInformedConsent(),
       theme: { ...EMPTY_SURVEY_THEME },
@@ -1063,18 +1227,34 @@ const normalizeSurveyForEditor = (raw) => {
       unique_answer: Boolean(q.unique_answer),
       options: Array.isArray(q.options) ? q.options : [],
       option_limits: sanitizeOptionLimits(q.option_limits, Array.isArray(q.options) ? q.options : []),
+      option_scores: sanitizeOptionScores(q.option_scores, Array.isArray(q.options) ? q.options : []),
       section_id: q.section_id || null,
       conditional_logic: q.conditional_logic || null,
     };
   });
-  const sections = (raw.sections || []).map((s, index) => ({
+  let sections = (raw.sections || []).map((s, index) => ({
     ...s,
     id: s.id || `section_${index}`,
     order: s.order || index,
+    score_bands: sanitizeBands(s.score_bands),
   })).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const isExistingTest = raw.kind === 'test';
+  if (isExistingTest && sections.length === 0) {
+    sections = [defaultTestSection()];
+  }
+  const sectionIds = new Set(sections.map((section) => section.id));
+  const firstSectionId = sections[0]?.id || null;
+  const questionsInSections = isExistingTest
+    ? questions.map((question) => ({
+      ...question,
+      section_id: question.section_id && sectionIds.has(question.section_id) ? question.section_id : firstSectionId,
+    }))
+    : questions;
   return {
     ...raw,
-    questions,
+    kind: raw.kind === 'test' ? 'test' : 'survey',
+    total_bands: sanitizeBands(raw.total_bands),
+    questions: questionsInSections,
     sections,
     reference_key_column: raw.reference_key_column || '',
     reference_mapping: raw.reference_mapping || {},
@@ -1229,7 +1409,7 @@ const QuestionImageEditor = ({ image, onChange, onRemove }) => {
   );
 };
 
-const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections = [], onAssignSection, allQuestions = [], onMoveUp, onMoveDown, canMoveUp = false, canMoveDown = false }) => {
+const QuestionBlock = ({ data, isActive, onClick, onDelete, onDuplicate, onUpdate, sections = [], onAssignSection, allQuestions = [], onMoveUp, onMoveDown, canMoveUp = false, canMoveDown = false, isTest = false }) => {
   const isOptionType = ['Opción Única', 'Casillas', 'Desplegable'].includes(data.type);
   const isEvaluationType = data.type === 'Evaluación';
   const fileInputRef = React.useRef(null);
@@ -1255,6 +1435,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
         onUpdate({
           options,
           option_limits: sanitizeOptionLimits(data.option_limits, options),
+          option_scores: sanitizeOptionScores(data.option_scores, options),
         });
       } catch (err) {
         console.error(err);
@@ -1296,9 +1477,17 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
             <div className="animate-fadeIn w-full">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-0 mb-4">
                 <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md uppercase tracking-wide border border-indigo-100">{data.type}</span>
-                <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-lg transition-colors self-end sm:self-auto">
-                  <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
-                </button>
+                <div className="flex items-center gap-1 self-end sm:self-auto">
+                  {onDuplicate && (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); onDuplicate(); }} className="px-2 py-1.5 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-colors text-xs font-bold flex items-center gap-1" title="Duplicar pregunta con sus opciones y puntos">
+                      <FontAwesomeIcon icon={faCopy} size="sm" className="fa-icon-force-current" />
+                      Duplicar
+                    </button>
+                  )}
+                  <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-lg transition-colors">
+                    <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
+                  </button>
+                </div>
               </div>
               
               {data.type === 'Párrafo' ? (
@@ -1350,7 +1539,10 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
               <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-100/50">
                 {isOptionType && (
                   <div className="space-y-2 sm:space-y-3">
-                     {(data.type === 'Opción Única' || data.type === 'Desplegable') && (
+                     {isTest && data.type === 'Opción Única' && (
+                       <p className="text-[11px] text-gray-500">Puntos de cada respuesta. El cero es válido.</p>
+                     )}
+                     {!isTest && (data.type === 'Opción Única' || data.type === 'Desplegable') && (
                        <p className="text-[11px] text-gray-500">Cupo: máximo de personas por opción. Vacío = sin límite.</p>
                      )}
                      {data.options?.map((opt, idx) => (
@@ -1364,15 +1556,32 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                            const newOpts = [...(data.options || [])];
                            const previous = newOpts[idx];
                            newOpts[idx] = next;
-                           const limits = { ...(data.option_limits || {}) };
-                           if (previous !== next && Object.prototype.hasOwnProperty.call(limits, previous)) {
-                             const cap = limits[previous];
-                             delete limits[previous];
-                             if (String(next).trim()) limits[next] = cap;
-                           }
-                           onUpdate({ options: newOpts, option_limits: limits });
+                           onUpdate({
+                             options: newOpts,
+                             option_limits: retargetKeyedMap(data.option_limits, previous, next),
+                             option_scores: retargetKeyedMap(data.option_scores, previous, next),
+                           });
                          }} className="flex-1 bg-gray-50/80 hover:bg-white rounded-lg px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all border-transparent focus:border-indigo-200 shadow-sm" />
-                         {(data.type === 'Opción Única' || data.type === 'Desplegable') && (
+                         {isTest && data.type === 'Opción Única' && (
+                           <input
+                             type="number"
+                             inputMode="numeric"
+                             placeholder="Puntos"
+                             title="Puntos de esta respuesta"
+                             value={(data.option_scores || {})[opt] ?? ''}
+                             onClick={(e) => e.stopPropagation()}
+                             onChange={(e) => {
+                               const scores = { ...(data.option_scores || {}) };
+                               const raw = e.target.value.trim();
+                               const n = parseInt(raw, 10);
+                               if (!raw || !Number.isFinite(n)) delete scores[opt];
+                               else scores[opt] = n;
+                               onUpdate({ option_scores: scores });
+                             }}
+                             className="w-16 shrink-0 bg-gray-50/80 hover:bg-white rounded-lg px-2 py-1.5 sm:py-2 text-xs focus:bg-white focus:ring-2 focus:ring-indigo-100 border border-transparent focus:border-indigo-200 shadow-sm"
+                           />
+                         )}
+                         {!isTest && (data.type === 'Opción Única' || data.type === 'Desplegable') && (
                            <input
                              type="number"
                              min="1"
@@ -1396,10 +1605,13 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                            ev.stopPropagation();
                            const removed = (data.options || [])[idx];
                            const limits = { ...(data.option_limits || {}) };
+                           const scores = { ...(data.option_scores || {}) };
                            delete limits[removed];
+                           delete scores[removed];
                            onUpdate({
                              options: (data.options || []).filter((_, i) => i !== idx),
                              option_limits: limits,
+                             option_scores: scores,
                            });
                          }} className="flex-shrink-0 p-1"><FontAwesomeIcon icon={faXmark} size="sm" className="text-gray-300 hover:text-red-400 fa-icon-force-current" /></button>
                        </div>
@@ -1496,7 +1708,7 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                     <span>Obligatorio</span>
                   </label>
                 )}
-                {data.type !== 'Título' && (
+                {!isTest && data.type !== 'Título' && (
                   <label className="flex items-center gap-1.5 cursor-pointer shrink-0" title="No permite el mismo valor en otra respuesta de esta encuesta">
                     <input type="checkbox" checked={!!data.unique_answer} onChange={() => onUpdate({ unique_answer: !data.unique_answer })} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500 w-3 h-3" onClick={e => e.stopPropagation()} />
                     <span>Valor único</span>
@@ -1511,8 +1723,8 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
                 {sections.length > 0 && (
                   <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                     <span className="text-gray-400">Sección</span>
-                    <select value={data.section_id || ''} onChange={(e) => onUpdate({ section_id: e.target.value || null })} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white focus:ring-1 focus:ring-indigo-400 min-w-0 max-w-[140px]">
-                      <option value="">Sin sección</option>
+                    <select value={data.section_id || (isTest ? (sections[0]?.id || '') : '')} onChange={(e) => onUpdate({ section_id: e.target.value || null })} className="px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white focus:ring-1 focus:ring-indigo-400 min-w-0 max-w-[140px]">
+                      {!isTest && <option value="">Sin sección</option>}
                       {sections.map(section => <option key={section.id} value={section.id}>{section.title}</option>)}
                     </select>
                   </div>
@@ -1640,6 +1852,38 @@ const QuestionBlock = ({ data, isActive, onClick, onDelete, onUpdate, sections =
 
 const compressHeaderImageFile = compressSurveyImageFile;
 
+const renderInlineFormat = (text) => {
+  const parts = [];
+  const pattern = /\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+  let last = 0;
+  let match = pattern.exec(text);
+  let key = 0;
+  while (match) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    if (match[1]) parts.push(<strong key={key} className="font-bold text-inherit">{match[1]}</strong>);
+    else parts.push(<em key={key}>{match[2]}</em>);
+    key += 1;
+    last = match.index + match[0].length;
+    match = pattern.exec(text);
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+};
+
+const FormattedDescription = ({ text, className = '', style }) => {
+  const source = String(text || '');
+  const paragraphs = source.split(/\n{2,}/);
+  return (
+    <div className={className} style={{ ...(style || {}), whiteSpace: 'pre-wrap' }}>
+      {paragraphs.map((paragraph, index) => (
+        <p key={index} className={index < paragraphs.length - 1 ? 'mb-3' : ''}>
+          {renderInlineFormat(paragraph)}
+        </p>
+      ))}
+    </div>
+  );
+};
+
 const SurveyFormHeader = ({
   title,
   description,
@@ -1655,6 +1899,30 @@ const SurveyFormHeader = ({
   onHeaderImageRemove,
 }) => {
   const fileInputRef = useRef(null);
+  const descriptionRef = useRef(null);
+
+  const resizeDescription = (el) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  const applyDescriptionFormat = (marker) => {
+    const el = descriptionRef.current;
+    const value = description || '';
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    const selected = value.slice(start, end) || 'texto';
+    const next = `${value.slice(0, start)}${marker}${selected}${marker}${value.slice(end)}`;
+    onDescriptionChange?.(next);
+    const cursor = start + marker.length;
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(cursor, cursor + selected.length);
+      resizeDescription(el);
+    });
+  };
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
@@ -1747,12 +2015,26 @@ const SurveyFormHeader = ({
               placeholder="Formulario sin título"
               rows={1}
             />
-            <input
+            <div className="mt-3 md:mt-4 flex items-center gap-2">
+              <button type="button" onClick={() => applyDescriptionFormat('**')} className="px-2 py-1 text-xs font-black rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50" title="Negrita">
+                B
+              </button>
+              <button type="button" onClick={() => applyDescriptionFormat('*')} className="px-2 py-1 text-xs italic rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50" title="Cursiva">
+                I
+              </button>
+              <span className="text-[11px] text-gray-400">Enter hace un párrafo</span>
+            </div>
+            <textarea
+              ref={descriptionRef}
               value={description}
-              onChange={(e) => onDescriptionChange?.(e.target.value)}
-              className={`w-full mt-3 md:mt-4 text-base md:text-lg bg-transparent border-none focus:ring-0 p-0 placeholder-gray-400 border-b border-gray-100 pb-1 focus:outline-none ${descriptionColor ? '' : 'text-gray-500'} ${centered ? 'text-center' : ''}`}
-              style={descriptionStyle}
+              onChange={(e) => {
+                resizeDescription(e.target);
+                onDescriptionChange?.(e.target.value);
+              }}
+              className={`w-full mt-2 text-base md:text-lg bg-transparent border-none focus:ring-0 p-0 placeholder-gray-400 border-b border-gray-100 pb-1 focus:outline-none resize-none overflow-hidden ${descriptionColor ? '' : 'text-gray-500'} ${centered ? 'text-center' : ''}`}
+              style={{ ...(descriptionStyle || {}), whiteSpace: 'pre-wrap', lineHeight: '1.5' }}
               placeholder="Descripción del formulario"
+              rows={2}
             />
           </>
         ) : (
@@ -1763,12 +2045,20 @@ const SurveyFormHeader = ({
             >
               {title || 'Formulario sin título'}
             </h1>
-            <p
-              className={`mt-2 md:mt-3 text-base md:text-lg leading-relaxed ${descriptionColor ? '' : 'text-gray-500'} ${centered ? 'mx-auto max-w-3xl' : ''}`}
-              style={descriptionStyle}
-            >
-              {description || 'Descripción del formulario'}
-            </p>
+            {description ? (
+              <FormattedDescription
+                text={description}
+                className={`mt-2 md:mt-3 text-base md:text-lg leading-relaxed ${descriptionColor ? '' : 'text-gray-500'} ${centered ? 'mx-auto max-w-3xl' : ''}`}
+                style={descriptionStyle}
+              />
+            ) : (
+              <p
+                className={`mt-2 md:mt-3 text-base md:text-lg leading-relaxed ${descriptionColor ? '' : 'text-gray-500'} ${centered ? 'mx-auto max-w-3xl' : ''}`}
+                style={descriptionStyle}
+              >
+                Descripción del formulario
+              </p>
+            )}
           </>
         )}
       </div>
@@ -2277,6 +2567,8 @@ const PublicSurveyView = ({ surveyId }) => {
   const [error, setError] = useState(null);
   // Section state
   const [currentSection, setCurrentSection] = useState(null);
+  const sectionStartRef = React.useRef(null);
+  const pendingSectionScrollRef = React.useRef(false);
   const [sectionHistory, setSectionHistory] = useState([]);
   const [visibleSections, setVisibleSections] = useState([]);
   const [referenceLookupNotFound, setReferenceLookupNotFound] = useState(false);
@@ -2301,6 +2593,7 @@ const PublicSurveyView = ({ surveyId }) => {
   const [signatureConsentAt, setSignatureConsentAt] = useState(null);
   const [introImageSeen, setIntroImageSeen] = useState(false);
   const [submitEmailStatus, setSubmitEmailStatus] = useState(''); // '', sending, queued, sent, error
+  const [testResult, setTestResult] = useState(null);
 
   useEffect(() => {
     if (consentResendCooldown <= 0) return undefined;
@@ -2309,6 +2602,13 @@ const PublicSurveyView = ({ surveyId }) => {
     }, 1000);
     return () => clearInterval(t);
   }, [consentResendCooldown]);
+
+  useEffect(() => {
+    if (!pendingSectionScrollRef.current) return undefined;
+    pendingSectionScrollRef.current = false;
+    sectionStartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return undefined;
+  }, [currentSection]);
 
   // Function to evaluate conditional logic (shared module-level evaluateCondition)
   const getVisibleSections = (sections) => {
@@ -2817,8 +3117,12 @@ const PublicSurveyView = ({ surveyId }) => {
             `Completa las preguntas obligatorias de «${section.title || 'esta sección'}» antes de continuar.`
             + ` Faltan: ${names}${missing.length > 3 ? '...' : ''}`
           );
+          pendingSectionScrollRef.current = true;
           if (section.id !== currentSection) {
             setCurrentSection(section.id);
+          } else {
+            sectionStartRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            pendingSectionScrollRef.current = false;
           }
           return false;
         }
@@ -2828,6 +3132,7 @@ const PublicSurveyView = ({ surveyId }) => {
       setSectionHistory((prev) => prev.slice(0, Math.max(0, prev.length - (currentIndex - targetIndex))));
     }
 
+    pendingSectionScrollRef.current = true;
     setCurrentSection(targetSectionId);
     return true;
   };
@@ -2985,6 +3290,12 @@ const PublicSurveyView = ({ surveyId }) => {
 
       const saved = await response.json().catch(() => ({}));
       const savedId = saved?.id || saved?._id || '';
+      if (Array.isArray(saved.section_scores) || saved.total_score) {
+        setTestResult({
+          section_scores: saved.section_scores || [],
+          total_score: saved.total_score || null,
+        });
+      }
 
       const shouldEmailPdf = Boolean(
         consentCfg
@@ -3072,13 +3383,18 @@ const PublicSurveyView = ({ surveyId }) => {
 
   if (submitted) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-indigo-50 to-purple-50">
-        <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md text-center">
+      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-indigo-50 to-purple-50 p-4">
+        <div className={`bg-white rounded-2xl shadow-xl p-8 w-full ${testResult ? 'max-w-2xl' : 'max-w-md text-center'}`}>
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <FontAwesomeIcon icon={faCheck} size="2x" className="text-green-600" />
           </div>
-          <h2 className="text-2xl font-black text-gray-800 mb-2">¡Gracias por tu respuesta!</h2>
-          <p className="text-gray-600">Tu respuesta ha sido enviada exitosamente.</p>
+          <h2 className="text-2xl font-black text-gray-800 mb-2 text-center">{testResult ? 'Tu resultado' : '¡Gracias por tu respuesta!'}</h2>
+          {!testResult && <p className="text-gray-600 text-center">Tu respuesta ha sido enviada exitosamente.</p>}
+          {testResult && (
+            <div className="mt-6">
+              <TestResultCards sectionScores={testResult.section_scores} />
+            </div>
+          )}
           {submitEmailStatus === 'sending' && (
             <p className="text-sm text-indigo-700 mt-3">Preparando el PDF de autorización…</p>
           )}
@@ -3703,11 +4019,13 @@ const PublicSurveyView = ({ surveyId }) => {
 
         {/* Section Navigator */}
         {surveyData.sections && surveyData.sections.length > 0 && (
-          <SectionNavigator
-            sections={surveyData.sections}
-            currentSection={currentSection}
-            visibleSections={visibleSections}
-          />
+          <div ref={sectionStartRef} className="scroll-mt-4">
+            <SectionNavigator
+              sections={surveyData.sections}
+              currentSection={currentSection}
+              visibleSections={visibleSections}
+            />
+          </div>
         )}
 
         {/* Formulario mejorado: Enter en input no envía; solo el botón Enviar envía */}
@@ -3723,6 +4041,10 @@ const PublicSurveyView = ({ surveyId }) => {
           {surveyData.questions && surveyData.questions.length > 0 ? (
             <div className="space-y-6">
               {(() => {
+                const renderList = (questions) => questions.map((q, index) => {
+                  const globalIndex = surveyData.questions.findIndex((q2) => q2.id === q.id);
+                  return renderQuestion(q, globalIndex >= 0 ? globalIndex : index);
+                });
                 // Group questions by section if sections exist
                 if (surveyData.sections && surveyData.sections.length > 0) {
                   // Get questions for current section
@@ -3736,15 +4058,10 @@ const PublicSurveyView = ({ surveyId }) => {
                   });
                   
                   // Render questions with section context
-                  return currentSectionQuestions.map((q, index) => {
-                    // Find global index for numbering
-                    const globalIndex = surveyData.questions.findIndex(q2 => q2.id === q.id);
-                    return renderQuestion(q, globalIndex >= 0 ? globalIndex : index);
-                  });
-                } else {
-                  // No sections, render all questions
-                  return surveyData.questions.map((q, index) => renderQuestion(q, index));
+                  return renderList(currentSectionQuestions);
                 }
+                // No sections, render all questions
+                return surveyData.questions.map((q, index) => renderQuestion(q, index));
               })()}
               {consentCfg && acceptanceQId && consentGate !== 'verified' && acceptanceQuestionIndex >= 0 && (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -3846,11 +4163,12 @@ const PublicSurveyView = ({ surveyId }) => {
   );
 };
 
-const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { // Added initialSurveyData
+const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser, createKind = 'survey' }) => { // Added initialSurveyData
   const [activeQuestionId, setActiveQuestionId] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
-  const [surveyData, setSurveyData] = useState(() => normalizeSurveyForEditor(initialSurveyData));
+  const [surveyData, setSurveyData] = useState(() => normalizeSurveyForEditor(initialSurveyData, createKind));
   const [showSectionManager, setShowSectionManager] = useState(false);
+  const [showTotalEditor, setShowTotalEditor] = useState(false);
   const [webhookTesting, setWebhookTesting] = useState(false);
   const [webhookTestMsg, setWebhookTestMsg] = useState('');
   const [webhookTestErr, setWebhookTestErr] = useState('');
@@ -3934,7 +4252,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
   // Update surveyData if initialSurveyData changes (e.g., when editing a new survey)
   useEffect(() => {
     if (initialSurveyData) {
-      const normalized = normalizeSurveyForEditor(initialSurveyData);
+      const normalized = normalizeSurveyForEditor(initialSurveyData, createKind);
 
       const refKey = normalized.reference_key_column || '';
       const refMap = normalized.reference_mapping || {};
@@ -3955,11 +4273,18 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
         };
       });
     } else {
-      setSurveyData(normalizeSurveyForEditor(null));
+      setSurveyData(normalizeSurveyForEditor(null, createKind));
     }
-  }, [initialSurveyData]);
+  }, [initialSurveyData, createKind]);
 
-  const questionTools = [
+  const isTest = surveyData.kind === 'test';
+  const questionTools = isTest
+    ? [
+        { label: 'Opción Única', icon: faListUl, color: 'purple', type: 'Opción Única' },
+        { label: 'Texto Corto', icon: faFont, color: 'blue', type: 'Texto Corto' },
+        { label: 'Número', icon: faHashtag, color: 'yellow', type: 'Número' },
+      ]
+    : [
     { label: 'Texto Corto', icon: faFont, color: 'blue', type: 'Texto Corto' },
     { label: 'Párrafo', icon: faAlignLeft, color: 'gray', type: 'Párrafo' },
     { label: 'Título', icon: faHeading, color: 'gray', type: 'Título' },
@@ -3979,25 +4304,49 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
   const addQuestion = (type) => {
     const num = (surveyData.questions || []).length + 1;
     const defaultText = `Pregunta ${num}`;
-    const base = { id: generateId(), type, text: defaultText, description: '', required: false, section_id: null, conditional_logic: null };
-    const newQ = type === 'Evaluación'
-      ? {
-          ...base,
-          options: [],
-          evaluation_items: [
-            { id: generateId(), label: 'Item1' },
-            { id: generateId(), label: 'Item2' },
-            { id: generateId(), label: 'Item3' },
-          ],
-          evaluation_columns: [
-            { id: generateId(), label: 'CUMPLE', inputType: 'checkbox' },
-            { id: generateId(), label: 'NO CUMPLE', inputType: 'checkbox' },
-            { id: generateId(), label: 'OBSERVACIONES', inputType: 'text' },
-          ],
+    const questionId = generateId();
+    setSurveyData(prev => {
+      let sections = prev.sections || [];
+      let sectionId = null;
+      if (isTest) {
+        if (!sections.length) {
+          const created = defaultTestSection();
+          sections = [created];
         }
-      : { ...base, options: ['Opción Única', 'Casillas', 'Desplegable'].includes(type) ? ['Opción 1'] : [] };
-    setSurveyData(prev => ({ ...prev, questions: [...(prev.questions || []), newQ] }));
-    setActiveQuestionId(newQ.id);
+        sectionId = sections[0].id;
+      }
+      const base = {
+        id: questionId,
+        type,
+        text: defaultText,
+        description: '',
+        required: isTest,
+        section_id: sectionId,
+        conditional_logic: null,
+      };
+      const newQ = type === 'Evaluación'
+        ? {
+            ...base,
+            options: [],
+            evaluation_items: [
+              { id: generateId(), label: 'Item1' },
+              { id: generateId(), label: 'Item2' },
+              { id: generateId(), label: 'Item3' },
+            ],
+            evaluation_columns: [
+              { id: generateId(), label: 'CUMPLE', inputType: 'checkbox' },
+              { id: generateId(), label: 'NO CUMPLE', inputType: 'checkbox' },
+              { id: generateId(), label: 'OBSERVACIONES', inputType: 'text' },
+            ],
+          }
+        : {
+            ...base,
+            options: ['Opción Única', 'Casillas', 'Desplegable'].includes(type) ? ['Opción 1'] : [],
+            option_scores: isTest && type === 'Opción Única' ? { 'Opción 1': 0 } : {},
+          };
+      return { ...prev, sections, questions: [...(prev.questions || []), newQ] };
+    });
+    setActiveQuestionId(questionId);
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   };
 
@@ -4025,13 +4374,40 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
 
   const deleteSection = (id) => {
     setSurveyData(prev => {
-      // Remove section
-      const updatedSections = (prev.sections || []).filter(s => s.id !== id);
-      // Remove section_id from questions in this section
-      const updatedQuestions = prev.questions.map(q => 
-        q.section_id === id ? { ...q, section_id: null } : q
+      let updatedSections = (prev.sections || []).filter(s => s.id !== id);
+      if (prev.kind === 'test' && updatedSections.length === 0) {
+        updatedSections = [defaultTestSection()];
+      }
+      const fallbackId = prev.kind === 'test' ? (updatedSections[0]?.id || null) : null;
+      const updatedQuestions = prev.questions.map(q =>
+        q.section_id === id ? { ...q, section_id: fallbackId } : q
       );
       return { ...prev, sections: updatedSections, questions: updatedQuestions };
+    });
+  };
+
+  const duplicateSection = (id) => {
+    setSurveyData((prev) => {
+      const sections = [...(prev.sections || [])];
+      const index = sections.findIndex((section) => section.id === id);
+      if (index < 0) return prev;
+      const source = sections[index];
+      const newSection = {
+        ...source,
+        id: generateId(),
+        title: source.title || 'Sección',
+        description: source.description || '',
+        order: index + 1,
+        score_bands: (source.score_bands || []).map((band) => ({
+          ...band,
+          items: [...(band.items || [])],
+        })),
+      };
+      const nextSections = sections.map((section, sectionIndex) => (
+        sectionIndex > index ? { ...section, order: sectionIndex + 1 } : section
+      ));
+      nextSections.splice(index + 1, 0, newSection);
+      return { ...prev, sections: nextSections };
     });
   };
 
@@ -4065,6 +4441,38 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
 
   const deleteQuestion = (id) => {
     setSurveyData(prev => ({ ...prev, questions: prev.questions.filter(q => q.id !== id) }));
+  };
+
+  const duplicateQuestion = (id) => {
+    const source = (surveyData.questions || []).find((q) => q.id === id);
+    if (!source) return;
+    const copy = {
+      ...source,
+      id: generateId(),
+      text: source.text || source.question_text || '',
+      options: [...(source.options || [])],
+      option_scores: { ...(source.option_scores || {}) },
+      option_limits: { ...(source.option_limits || {}) },
+      evaluation_items: (source.evaluation_items || []).map((item) => ({ ...item, id: generateId() })),
+      evaluation_columns: (source.evaluation_columns || []).map((col) => ({ ...col, id: generateId() })),
+    };
+    delete copy.question_text;
+    delete copy.question_type;
+    delete copy._id;
+    setSurveyData((prev) => {
+      let sections = prev.sections || [];
+      if (prev.kind === 'test' && !sections.length) {
+        sections = [defaultTestSection()];
+      }
+      if (prev.kind === 'test' && !copy.section_id) {
+        copy.section_id = sections[0]?.id || null;
+      }
+      const questions = [...(prev.questions || [])];
+      const index = questions.findIndex((q) => q.id === id);
+      questions.splice(index + 1, 0, copy);
+      return { ...prev, sections, questions };
+    });
+    setActiveQuestionId(copy.id);
   };
 
   const moveQuestionUp = (id) => {
@@ -4211,7 +4619,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
              </button>
              <div className="min-w-0 flex-1">
                <h1 className="text-lg md:text-xl lg:text-2xl font-black text-gray-800 tracking-tight leading-tight break-words">{surveyData.title}</h1>
-               <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">Modo Edición</span>
+               <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest hidden md:inline-block mt-1">{isTest ? 'Test' : 'Modo Edición'}</span>
              </div>
            </div>
            <div className="flex gap-2 flex-shrink-0 w-full md:w-auto">
@@ -4265,7 +4673,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
            />
 
            {/* Apariencia / colores de la encuesta pública */}
-           {groupFeatures.feature_appearance && (
+           {!isTest && groupFeatures.feature_appearance && (
            <div id="apariencia-encuesta" className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
              <button
                type="button"
@@ -4682,7 +5090,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
            )}
 
            {/* Consentimiento informado */}
-           {groupFeatures.feature_informed_consent && (
+           {!isTest && groupFeatures.feature_informed_consent && (
            <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                <button
@@ -4985,7 +5393,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
            )}
 
            {/* Webhook rifas */}
-           {groupFeatures.feature_webhook_rifas && (
+           {!isTest && groupFeatures.feature_webhook_rifas && (
            <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-4 sm:p-6 shadow-lg">
              <div className="flex flex-wrap items-center justify-between gap-3">
                <button
@@ -5154,7 +5562,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
            )}
 
            {/* Asistencia pública / número 000–999 */}
-           {groupFeatures.feature_attendance_public && (
+           {!isTest && groupFeatures.feature_attendance_public && (
            <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-4 sm:p-6 shadow-lg">
              <div className="flex flex-wrap items-center justify-between gap-3">
                <h3 className="text-base sm:text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -5217,6 +5625,26 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
            </div>
            )}
 
+           {isTest && ((surveyData.total_bands || []).length > 0 || showTotalEditor) && (
+             <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
+               <h3 className="text-lg font-bold text-gray-800 mb-1">Resultado total del test</h3>
+               <p className="text-sm text-gray-500 mb-4">Estos rangos usan la suma de todas las secciones. No son los mismos números de cada sección.</p>
+               <ScoreBandsEditor
+                 bands={surveyData.total_bands || []}
+                 onChange={(total_bands) => setSurveyData((prev) => ({ ...prev, total_bands }))}
+               />
+             </div>
+           )}
+           {isTest && !(surveyData.total_bands || []).length && !showTotalEditor && (
+             <button
+               type="button"
+               onClick={() => setShowTotalEditor(true)}
+               className="mb-6 text-sm font-bold text-indigo-600 hover:text-indigo-800"
+             >
+               Agregar resultado total
+             </button>
+           )}
+
            {/* Section Manager */}
            {showSectionManager && (
              <div className="mb-6 bg-white/90 backdrop-blur-xl rounded-2xl border border-white/80 p-6 shadow-lg">
@@ -5230,22 +5658,56 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
                  </button>
                </div>
                <div className="space-y-3 mb-4">
-                 {(surveyData.sections || []).map((section, index) => (
-                   <div key={section.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                     <input
-                       type="text"
-                       value={section.title}
-                       onChange={(e) => updateSection(section.id, { ...section, title: e.target.value })}
-                       className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                       placeholder="Título de la sección"
-                     />
-                     <button
-                       onClick={() => deleteSection(section.id)}
-                       className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                       title="Eliminar sección"
-                     >
-                       <FontAwesomeIcon icon={faTrash} size="sm" />
-                     </button>
+                 {(surveyData.sections || []).map((section) => (
+                   <div key={section.id} className="p-3 bg-gray-50 rounded-lg space-y-3">
+                     <div className="flex items-center gap-3">
+                       <input
+                         type="text"
+                         value={section.title}
+                         onChange={(e) => updateSection(section.id, { ...section, title: e.target.value })}
+                         className="flex-1 px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                         placeholder="Título de la sección"
+                       />
+                       <button
+                         type="button"
+                         onClick={() => duplicateSection(section.id)}
+                         className="px-2 py-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg text-xs font-bold flex items-center gap-1 shrink-0"
+                         title="Duplicar la sección y sus rangos"
+                       >
+                         <FontAwesomeIcon icon={faCopy} size="sm" />
+                         Duplicar
+                       </button>
+                       <button
+                         onClick={() => deleteSection(section.id)}
+                         className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                         title="Eliminar sección"
+                       >
+                         <FontAwesomeIcon icon={faTrash} size="sm" />
+                       </button>
+                     </div>
+                     {isTest && (
+                       <div className="space-y-2">
+                         <p className="text-xs font-bold text-gray-600">Recomendaciones de esta sección</p>
+                         <ScoreBandsEditor
+                           bands={section.score_bands || []}
+                           onChange={(score_bands) => updateSection(section.id, { ...section, score_bands })}
+                         />
+                         {(surveyData.sections || []).length > 1 && (
+                           <button
+                             type="button"
+                             onClick={() => setSurveyData((prev) => ({
+                               ...prev,
+                               sections: (prev.sections || []).map((item) => (
+                                 item.id === section.id ? item : { ...item, score_bands: section.score_bands || [] }
+                               )),
+                             }))}
+                             className="text-xs font-bold text-purple-700"
+                           >
+                             Copiar estos rangos a las demás secciones
+                           </button>
+                         )}
+                       </div>
+                     )}
                    </div>
                  ))}
                </div>
@@ -5272,7 +5734,8 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
                    data={q} 
                    isActive={activeQuestionId === q.id} 
                    onClick={() => setActiveQuestionId(q.id)} 
-                   onDelete={() => deleteQuestion(q.id)} 
+                   onDelete={() => deleteQuestion(q.id)}
+                   onDuplicate={() => duplicateQuestion(q.id)} 
                    onUpdate={(newData) => updateQuestion(q.id, newData)}
                    sections={surveyData.sections || []}
                    onAssignSection={(sectionId) => assignQuestionToSection(q.id, sectionId)}
@@ -5281,6 +5744,7 @@ const SurveyEditor = ({ onSave, onBack, initialSurveyData, currentUser }) => { /
                    onMoveDown={() => moveQuestionDown(q.id)}
                    canMoveUp={index > 0}
                    canMoveDown={index < surveyData.questions.length - 1}
+                   isTest={isTest}
                  />
                ))
              )}
@@ -7089,6 +7553,13 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                   {selectedResponse.device_id && `Dispositivo: ${selectedResponse.device_id}`}
                   {(selectedResponse.surveyor_name || selectedResponse.surveyor_id) && ` • Encuestador: ${selectedResponse.surveyor_name || selectedResponse.surveyor_id}`}
                 </p>
+                {(selectedResponse.section_scores || selectedResponse.total_score) && (
+                  <div className="mt-4">
+                    <TestResultCards
+                      sectionScores={selectedResponse.section_scores}
+                    />
+                  </div>
+                )}
                 {(selectedResponse.consent_email || selectedResponse.consent_otp_verified_at) && (
                   <div className="mt-3 text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 space-y-0.5">
                     <p className="font-bold">Trazabilidad consentimiento</p>
@@ -7443,6 +7914,16 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                           <p className="text-xs text-gray-500 truncate mt-0.5" title={`${preview.label}: ${preview.value}`}>
                             <span className="font-medium text-gray-600">{preview.label}:</span> {preview.value}
                           </p>
+                        )}
+                        {(response.section_scores || []).length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {(response.section_scores || []).map((section) => (
+                              <p key={section.section_id} className="text-xs text-gray-700 truncate" title={section.band?.title || ''}>
+                                <span className="font-medium">{section.title || 'Sección'}:</span> {section.score} {Number(section.score) === 1 ? 'punto' : 'puntos'}
+                                {section.band?.title ? ` · ${section.band.title}` : ''}
+                              </p>
+                            ))}
+                          </div>
                         )}
                         {survey?.informed_consent_enabled && (
                           <button
@@ -9371,6 +9852,7 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendance
           </div>
         </div>
 
+        {survey.kind !== 'test' && (
         <div className={`mb-3 p-4 rounded-xl border-2 ${dataOn ? 'border-emerald-200 bg-emerald-50' : 'border-gray-200 bg-gray-50'}`}>
           <div className="flex items-center justify-between gap-3 mb-1">
             <div className={`font-bold ${dataOn ? 'text-emerald-900' : 'text-gray-500'}`}>Tabla pública de datos</div>
@@ -9428,8 +9910,9 @@ const ShareDialog = ({ survey, onClose, onUpdatePublicStatus, onUpdateAttendance
             <p className="text-xs text-gray-500">Desactivada. Muestra las respuestas en una tabla simple, sin firmas ni archivos.</p>
           )}
         </div>
+        )}
 
-        {survey.attendance_enabled && (
+        {survey.kind !== 'test' && survey.attendance_enabled && (
           <div className="mb-6 space-y-3">
             <div className={`p-4 rounded-xl border-2 ${tableOn ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}>
               <div className="flex items-center justify-between gap-3 mb-1">
@@ -10303,6 +10786,11 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
           {/* Header con título y badge - SIN FLEX, igual que eliminadas */}
           <div className="mb-4">
             <h3 className="text-xl font-black text-gray-800">{survey.title || 'Sin título'}</h3>
+            {survey.kind === 'test' && (
+              <span className="inline-block mt-2 mr-2 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold">
+                Test
+              </span>
+            )}
             {survey.is_public && (
               <span className="inline-block mt-2 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
                 Pública
@@ -10865,6 +11353,8 @@ export default function App() {
   const [loginCredentials, setLoginCredentials] = useState({ username: '', password: '' });
   const [currentUser, setCurrentUser] = useState(null); // Usuario actual con su rol
   const [deletedSurveys, setDeletedSurveys] = useState([]); // Encuestas eliminadas
+  const [showKindPicker, setShowKindPicker] = useState(false);
+  const [newSurveyKind, setNewSurveyKind] = useState('survey');
   // After first save of a new survey, skip the destructive refetch that wipes surveyToEdit
   const skipNextSurveyFetchRef = useRef(false);
 
@@ -11104,6 +11594,20 @@ export default function App() {
       return;
     }
 
+    const isTestSave = surveyData.kind === 'test';
+    if (isTestSave) {
+      const missingSection = (surveyData.questions || []).filter((q) => !q.section_id);
+      if (!(surveyData.sections || []).length || missingSection.length) {
+        alert('En un test, cada pregunta debe pertenecer a una sección.');
+        return;
+      }
+      const badSection = (surveyData.sections || []).find((section) => bandRangeInvalid(section.score_bands));
+      if (badSection || bandRangeInvalid(surveyData.total_bands)) {
+        alert('Un rango tiene el mínimo mayor que el máximo.');
+        return;
+      }
+    }
+
     const legacyMissingGroupId = '693ad3cccced5113d39dc29d';
     const surveyGroup = surveyData.group ? String(surveyData.group) : '';
     const userGroup = currentUser?.user_group_id ? String(currentUser.user_group_id) : '';
@@ -11114,7 +11618,9 @@ export default function App() {
     const surveyPayload = { 
       title: surveyData.title, 
       description: surveyData.description || '', 
-      group: resolvedGroup, 
+      group: resolvedGroup,
+      kind: isTestSave ? 'test' : 'survey',
+      total_bands: isTestSave ? sanitizeBands(surveyData.total_bands) : [], 
       questions: surveyData.questions.map((q, index) => {
         const questionText = q.text ?? q.question_text ?? '';
         const displayType = q.type || q.question_type;
@@ -11126,8 +11632,11 @@ export default function App() {
           type: backendType,
           question_type: backendType,
           options: q.options ?? [],
-          option_limits: (displayType === 'Opción Única' || displayType === 'Desplegable')
+          option_limits: (!isTestSave && (displayType === 'Opción Única' || displayType === 'Desplegable'))
             ? sanitizeOptionLimits(q.option_limits, q.options ?? [])
+            : {},
+          option_scores: (isTestSave && displayType === 'Opción Única')
+            ? sanitizeOptionScores(q.option_scores, q.options ?? [])
             : {},
           description: q.description ?? '',
           required: (displayType === 'Título') ? false : Boolean(q.required),
@@ -11146,7 +11655,8 @@ export default function App() {
         id: s.id || `section_${index}`,
         title: s.title ?? '',
         description: s.description ?? '',
-        order: s.order ?? index
+        order: s.order ?? index,
+        score_bands: isTestSave ? sanitizeBands(s.score_bands) : [],
       })),
       is_public: surveyData.is_public || false,
       reference_key_column: surveyData.reference_key_column || '',
@@ -11387,8 +11897,14 @@ export default function App() {
   };
 
   const handleNewSurvey = () => {
-      setEditingSurveyId(null); // Clear any editing state
-      setSurveyToEdit(null); // Clear pre-filled data
+      setShowKindPicker(true);
+  }
+
+  const startNewSurvey = (kind) => {
+      setNewSurveyKind(kind === 'test' ? 'test' : 'survey');
+      setShowKindPicker(false);
+      setEditingSurveyId(null);
+      setSurveyToEdit(null);
       setView('editor');
   }
 
@@ -11622,12 +12138,41 @@ export default function App() {
           </div>
       ) : (
           <SurveyEditor 
-              key={editingSurveyId || 'new'}
+              key={editingSurveyId || `new-${newSurveyKind}`}
               onSave={handleSaveSurvey}
               onBack={handleBackToDashboard}
               initialSurveyData={surveyToEdit}
               currentUser={currentUser}
+              createKind={editingSurveyId ? 'survey' : newSurveyKind}
           />
+      )}
+
+      {showKindPicker && (
+        <div className="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6">
+            <h2 className="text-xl font-black text-gray-800 mb-2">¿Qué vas a crear?</h2>
+            <p className="text-sm text-gray-500 mb-5">La encuesta recoge respuestas. El test suma puntos y muestra recomendaciones.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => startNewSurvey('survey')}
+                className="p-4 rounded-xl border-2 border-indigo-200 hover:border-indigo-500 hover:bg-indigo-50 text-left"
+              >
+                <span className="block font-black text-gray-800">Encuesta</span>
+                <span className="block text-xs text-gray-500 mt-1">Preguntas, secciones y enlace público, como hasta ahora.</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => startNewSurvey('test')}
+                className="p-4 rounded-xl border-2 border-amber-200 hover:border-amber-500 hover:bg-amber-50 text-left"
+              >
+                <span className="block font-black text-gray-800">Test</span>
+                <span className="block text-xs text-gray-500 mt-1">Cada respuesta vale puntos. Al final hay un resultado por sección y el total.</span>
+              </button>
+            </div>
+            <button type="button" onClick={() => setShowKindPicker(false)} className="mt-4 text-sm font-bold text-gray-500">Cancelar</button>
+          </div>
+        </div>
       )}
 
       <style>{`

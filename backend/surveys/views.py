@@ -46,6 +46,7 @@ from .unique_answers import (
     unique_questions,
 )
 from .option_limits import drop_if_over_quota, find_full_option, option_counts
+from .test_scores import score_test_response
 from .consent_otp import (
     normalize_email,
     encrypt_otp_code,
@@ -1641,6 +1642,8 @@ class SurveyListCreate(APIView):
             'group': validated_data['group'],
             'questions': normalize_questions_for_mongo(validated_data.get('questions', [])),
             'is_public': validated_data.get('is_public', False),
+            'kind': validated_data.get('kind') if validated_data.get('kind') in ('survey', 'test') else 'survey',
+            'total_bands': validated_data.get('total_bands') or [],
             'is_deleted': False,  # Por defecto no está eliminada
             'created_by': (
                 created_by_override
@@ -2310,6 +2313,11 @@ class SurveyRetrieveUpdateDestroy(APIView):
                 update_fields['attendance_verify_enabled'] = bool(validated_data.get('attendance_verify_enabled'))
             if 'public_data_table_enabled' in validated_data:
                 update_fields['public_data_table_enabled'] = bool(validated_data.get('public_data_table_enabled'))
+            if 'kind' in request.data:
+                kind = validated_data.get('kind')
+                update_fields['kind'] = kind if kind in ('survey', 'test') else 'survey'
+            if 'total_bands' in request.data:
+                update_fields['total_bands'] = validated_data.get('total_bands') or []
             # Build query - try ObjectId first, then fallback to other formats
             try:
                 query = {"_id": ObjectId(pk)}
@@ -4055,6 +4063,10 @@ class PublicResponseCreate(APIView):
                 except Exception:
                     insert_doc['signature_consent_at'] = datetime.utcnow()
 
+            scored = score_test_response(survey, validated_data.get('answers') or {})
+            if scored:
+                insert_doc['section_scores'] = scored['section_scores']
+                insert_doc['total_score'] = scored['total_score']
             result = responses_collection.insert_one(insert_doc)
             over = drop_if_over_quota(
                 survey,
@@ -4213,6 +4225,10 @@ class ResponseListCreate(APIView):
             }
             if validated_data.get('signature_consent_at'):
                 insert_auth['signature_consent_at'] = validated_data['signature_consent_at']
+            scored = score_test_response(survey, validated_data.get('answers') or {})
+            if scored:
+                insert_auth['section_scores'] = scored['section_scores']
+                insert_auth['total_score'] = scored['total_score']
             result = responses_collection.insert_one(insert_auth)
             over = drop_if_over_quota(
                 survey,
@@ -4445,6 +4461,10 @@ class ResponseSyncView(APIView):
                             insert_batch['signature_consent_at'] = raw_sc
                     except Exception:
                         insert_batch['signature_consent_at'] = datetime.utcnow()
+                scored = score_test_response(survey, response_data.get('answers') or {})
+                if scored:
+                    insert_batch['section_scores'] = scored['section_scores']
+                    insert_batch['total_score'] = scored['total_score']
                 result = responses_collection.insert_one(insert_batch)
                 over = drop_if_over_quota(
                     survey,
