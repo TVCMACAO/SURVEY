@@ -1125,18 +1125,22 @@ const TestResultCards = ({ sectionScores, emergencyContact }) => {
         </div>
       ))}
       {showEmergency && (
-        <div className="rounded-2xl border border-rose-300 bg-rose-50 p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-rose-700">En caso de emergencia</p>
-          <p className="text-sm text-gray-600 mt-1">Contacta al profesional de la empresa</p>
-          {contact.name && <p className="font-black text-gray-900 mt-2">{contact.name}</p>}
-          {contact.role && <p className="text-sm text-gray-700">{contact.role}</p>}
-          {contact.phone && (
-            <a href={`tel:${contact.phone}`} className="block text-sm font-bold text-rose-800 mt-2">{contact.phone}</a>
-          )}
-          {contact.email && (
-            <a href={`mailto:${contact.email}`} className="block text-sm font-bold text-rose-800">{contact.email}</a>
-          )}
-          {contact.note && <p className="text-sm text-gray-700 mt-2 whitespace-pre-wrap">{contact.note}</p>}
+        <div className="mt-6 rounded-2xl border-2 border-slate-900 bg-white overflow-hidden">
+          <div className="bg-slate-900 px-4 py-2.5">
+            <p className="text-xs font-bold uppercase tracking-wide text-white">Contacto de emergencia</p>
+          </div>
+          <div className="px-4 py-4">
+            <p className="text-sm text-slate-500">Profesional de la empresa</p>
+            {contact.name && <p className="font-black text-slate-900 mt-1 text-lg">{contact.name}</p>}
+            {contact.role && <p className="text-sm font-semibold text-slate-600">{contact.role}</p>}
+            {contact.phone && (
+              <a href={`tel:${contact.phone}`} className="block text-base font-bold text-indigo-700 mt-3">{contact.phone}</a>
+            )}
+            {contact.email && (
+              <a href={`mailto:${contact.email}`} className="block text-sm font-bold text-indigo-700">{contact.email}</a>
+            )}
+            {contact.note && <p className="text-sm text-slate-600 mt-3 whitespace-pre-wrap">{contact.note}</p>}
+          </div>
         </div>
       )}
     </div>
