@@ -4285,7 +4285,12 @@ class ResponseResetView(APIView):
             if err is not None:
                 return err
         responses_collection = get_responses_collection()
-        result = responses_collection.delete_many({'survey': survey_oid})
+        result = responses_collection.delete_many({
+            '$or': [
+                {'survey': survey_oid},
+                {'survey': str(survey_oid)},
+            ]
+        })
         return Response(
             {"detail": "Respuestas eliminadas.", "deleted_count": result.deleted_count},
             status=status.HTTP_200_OK

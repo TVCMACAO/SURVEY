@@ -7734,7 +7734,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
                 : 'Descargar consentimientos ZIP'}
             </button>
           )}
-          {userRole === 'group_admin' && responses.length > 0 && onResetResponses && (
+          {(userRole === 'root' || userRole === 'group_admin') && responses.length > 0 && onResetResponses && (
             <button
               type="button"
               onClick={() => onResetResponses(survey)}
@@ -7742,7 +7742,7 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
               title="Borrar todas las respuestas de esta encuesta"
             >
               <FontAwesomeIcon icon={faTrash} size="sm" className="fa-icon-force-current" />
-              Reiniciar respuestas
+              Borrar respuestas
             </button>
           )}
         </div>
