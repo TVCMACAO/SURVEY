@@ -7468,6 +7468,18 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
     if (includeAttendance) {
       headers.push('Asistió', 'Número asignado', 'Boletas');
     }
+    const sectionColumns = survey?.kind === 'test'
+      ? (survey.sections || [])
+        .filter((section) => section && (section.id || section.title))
+        .map((section) => ({
+          id: String(section.id || ''),
+          title: section.title || 'Sección',
+        }))
+      : [];
+    sectionColumns.forEach((section) => {
+      headers.push(`${section.title} — Puntos`);
+      headers.push(`${section.title} — Resultado`);
+    });
     headers.push('Link público');
 
     const metaCols = 10;
@@ -7489,9 +7501,10 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
       else if (i === 6) col.width = 28;
       else if (i === 7) col.width = 12;
       else if (i === headers.length - 1) col.width = 40;
-      else if (includeAttendance && i === headers.length - 4) col.width = 12;
-      else if (includeAttendance && i === headers.length - 3) col.width = 16;
-      else if (includeAttendance && i === headers.length - 2) col.width = 14;
+      else if (includeAttendance && i === headers.length - 4 - sectionColumns.length * 2) col.width = 12;
+      else if (includeAttendance && i === headers.length - 3 - sectionColumns.length * 2) col.width = 16;
+      else if (includeAttendance && i === headers.length - 2 - sectionColumns.length * 2) col.width = 14;
+      else if (i >= headers.length - 1 - sectionColumns.length * 2 && i < headers.length - 1) col.width = (headers.length - 1 - i) % 2 === 1 ? 42 : 14;
       else col.width = 24;
     });
 
@@ -7560,6 +7573,19 @@ const SurveyResponsesView = ({ survey, responses, onBack, loading, userRole, onR
         rowValues.push(code ? 'Sí' : 'No');
         rowValues.push(code || '-');
         rowValues.push(response.attendance_ticket_delivered ? 'Entregada' : (code ? 'Pendiente' : '-'));
+      }
+
+      if (sectionColumns.length) {
+        const scoresBySection = new Map(
+          (response.section_scores || []).map((section) => [String(section.section_id || ''), section])
+        );
+        sectionColumns.forEach((section) => {
+          const found = scoresBySection.get(section.id);
+          const score = found && found.score != null && found.score !== '' ? found.score : '-';
+          const result = found?.band?.title || '-';
+          rowValues.push(score);
+          rowValues.push(result);
+        });
       }
 
       const links = getResponsePublicLinks(response, questions);
@@ -10979,13 +11005,48 @@ const SurveyCard = ({ survey, onEdit, onDelete, onViewResponses, onShare, onUpda
   );
 };
 
+const DASHBOARD_FILTERS_KEY = 'survey_dashboard_filters';
+const DASHBOARD_SORTS = new Set(['newest', 'oldest', 'title_asc', 'title_desc', 'questions_desc']);
+const DASHBOARD_PUBLIC = new Set(['all', 'public', 'private']);
+
+const readDashboardFilters = () => {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(DASHBOARD_FILTERS_KEY) || 'null');
+    if (!parsed || typeof parsed !== 'object') return {};
+    return {
+      searchQuery: typeof parsed.searchQuery === 'string' ? parsed.searchQuery : '',
+      groupFilter: typeof parsed.groupFilter === 'string' && parsed.groupFilter ? parsed.groupFilter : 'all',
+      publicFilter: DASHBOARD_PUBLIC.has(parsed.publicFilter) ? parsed.publicFilter : 'all',
+      sortBy: DASHBOARD_SORTS.has(parsed.sortBy) ? parsed.sortBy : 'newest',
+      activeTab: parsed.activeTab === 'deleted' ? 'deleted' : 'active',
+    };
+  } catch {
+    return {};
+  }
+};
+
 const SurveyDashboard = ({ surveys, deletedSurveys = [], onNewSurvey, onEditSurvey, onDeleteSurvey, onRestoreSurvey, onPermanentDeleteSurvey, onViewResponses, onLogout, onUpdatePublicStatus, onUpdateAttendanceFlags, userRole, currentUser, onViewUsers, onDuplicateSurvey }) => {
-  const [activeTab, setActiveTab] = React.useState('active'); // 'active' or 'deleted'
-  const [searchQuery, setSearchQuery] = React.useState('');
-  const [groupFilter, setGroupFilter] = React.useState('all');
-  const [publicFilter, setPublicFilter] = React.useState('all');
-  const [sortBy, setSortBy] = React.useState('newest');
+  const savedFilters = React.useMemo(() => readDashboardFilters(), []);
+  const [activeTab, setActiveTab] = React.useState(savedFilters.activeTab || 'active'); // 'active' or 'deleted'
+  const [searchQuery, setSearchQuery] = React.useState(savedFilters.searchQuery || '');
+  const [groupFilter, setGroupFilter] = React.useState(savedFilters.groupFilter || 'all');
+  const [publicFilter, setPublicFilter] = React.useState(savedFilters.publicFilter || 'all');
+  const [sortBy, setSortBy] = React.useState(savedFilters.sortBy || 'newest');
   const [filtersExpanded, setFiltersExpanded] = React.useState(true);
+
+  React.useEffect(() => {
+    try {
+      sessionStorage.setItem(DASHBOARD_FILTERS_KEY, JSON.stringify({
+        searchQuery,
+        groupFilter,
+        publicFilter,
+        sortBy,
+        activeTab,
+      }));
+    } catch {
+      /* el navegador puede bloquear el almacenamiento */
+    }
+  }, [searchQuery, groupFilter, publicFilter, sortBy, activeTab]);
 
   // Filtrar encuestas activas y eliminadas
   const activeSurveys = React.useMemo(
@@ -11607,6 +11668,7 @@ export default function App() {
   const handleLogout = () => {
     logout();
     setCurrentUser(null);
+    try { sessionStorage.removeItem(DASHBOARD_FILTERS_KEY); } catch { /* ignore */ }
     try { window.history.replaceState({}, '', '/'); } catch (_) { /* ignore */ }
     setView('login');
     setSurveys([]);
